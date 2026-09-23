@@ -1,0 +1,9 @@
+node_modules/
+.expo/
+dist/
+.env
+*.log
+.DS_Store
+directus/uploads/*
+!directus/uploads/.gitkeep
+pgdata/

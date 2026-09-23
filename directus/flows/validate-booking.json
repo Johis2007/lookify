@@ -1,0 +1,16 @@
+{
+  "name": "validate-booking-no-overlap",
+  "description": "Fase 1 MVP: rechaza bookings si el profesional tiene otro activo (pending/accepted/in_progress). Importar desde Directus Studio > Flows > Import, luego ajustar operation Run Script.",
+  "trigger": "event",
+  "collection": "bookings",
+  "event": "items.create",
+  "operations": [
+    {
+      "key": "check_overlap",
+      "type": "run-script",
+      "options": {
+        "code": "const active = await services.itemsService('bookings').readByQuery({ filter: { professional: { _eq: $trigger.payload.professional }, status: { _in: ['pending','accepted','in_progress'] } }, limit: 1 }); if (active && active.length) { throw new Error('PROFESSIONAL_BUSY: el profesional ya tiene una reserva activa'); }"
+      }
+    }
+  ]
+}

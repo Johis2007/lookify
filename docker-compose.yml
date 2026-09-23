@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_DATABASE:-lookify}
+      POSTGRES_USER: ${DB_USER:-lookify}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-lookify_pwd}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lookify"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+
+  directus:
+    image: directus/directus:latest
+    restart: unless-stopped
+    ports:
+      - "8055:8055"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DB_CLIENT: pg
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${DB_DATABASE:-lookify}
+      DB_USER: ${DB_USER:-lookify}
+      DB_PASSWORD: ${DB_PASSWORD:-lookify_pwd}
+      CACHE_ENABLED: "true"
+      CACHE_STORE: redis
+      CACHE_REDIS: redis://redis:6379
+      KEY: ${DIRECTUS_KEY:-cambiar-key-32chars-minimo}
+      SECRET: ${DIRECTUS_SECRET:-cambiar-secret-32chars-minimo}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@lookify.app}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Lookify123!}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+    volumes:
+      - directus_uploads:/directus/uploads
+      - ./directus/snapshots:/directus/snapshots
+
+  realtime-server:
+    build: ./apps/realtime-server
+    restart: unless-stopped
+    ports:
+      - "4001:4001"
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      PORT: 4001
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgres://${DB_USER:-lookify}:${DB_PASSWORD:-lookify_pwd}@postgres:5432/${DB_DATABASE:-lookify}
+      CROS_ORIGIN: "*"
+
+volumes:
+  pgdata: {}
+  directus_uploads: {}
