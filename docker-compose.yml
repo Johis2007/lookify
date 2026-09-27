@@ -49,6 +49,15 @@ services:
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@lookify.app}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Lookify123!}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
+      # CORS: sin esto el navegador (Expo web) bloquea fetch -> "Failed to fetch".
+      # DEV abierto; en prod restringir CORS_ORIGIN a tu dominio.
+      CORS_ENABLED: "true"
+      CORS_ORIGIN: "*"
+      CORS_METHODS: "GET,POST,PATCH,PUT,DELETE,OPTIONS"
+      CORS_ALLOWED_HEADERS: "Content-Type,Authorization"
+      CORS_EXPOSED_HEADERS: "Content-Range"
+      CORS_CREDENTIALS: "true"
+      CORS_MAX_AGE: 18000
     volumes:
       - directus_uploads:/directus/uploads
       - ./directus/snapshots:/directus/snapshots
