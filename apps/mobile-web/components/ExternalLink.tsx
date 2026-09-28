@@ -3,7 +3,9 @@ import * as WebBrowser from 'expo-web-browser';
 import type { ComponentProps } from 'react';
 import { Platform } from 'react-native';
 
-export function ExternalLink(props: Omit<ComponentProps<typeof Link>, 'href'> & { href: string }) {
+type LinkProps = ComponentProps<typeof Link>;
+
+export function ExternalLink(props: Omit<LinkProps, 'href'> & { href: LinkProps['href'] }) {
   return (
     <Link
       target="_blank"

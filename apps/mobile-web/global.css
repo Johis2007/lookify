@@ -1,3 +1,4 @@
-@import "nativewind/css";
+/* NativeWind v4 - Styles are handled via babel plugin and Tailwind config */
+/* No need to import nativewind/css in v4 */
 
 /* Custom global styles if needed */
