@@ -128,6 +128,17 @@ export function leaveProfRoom(professionalId: string) {
 }
 
 /**
+ * Unirse/salir de zona geográfica para recibir updates en tiempo real
+ */
+export function joinZone(lat: number, lng: number) {
+  getSocket().emit('join:zone', { lat, lng });
+}
+
+export function leaveZone(lat: number, lng: number) {
+  getSocket().emit('leave:zone', { lat, lng });
+}
+
+/**
  * Escuchar profesionales cercanos (broadcast del server a clientes)
  */
 export function onZoneUpdate(callback: (professionals: any[]) => void) {

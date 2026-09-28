@@ -78,6 +78,20 @@ io.on('connection', (socket) => {
     if (professional_id) socket.leave(`prof:${professional_id}`);
   });
 
+  // Cliente se une a zona geográfica para recibir updates en tiempo real
+  socket.on('join:zone', ({ lat, lng }) => {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    const zone = geohash5(lat, lng);
+    socket.join(`zone:${zone}`);
+    console.log(`Client ${socket.id} joined zone:${zone}`);
+  });
+
+  socket.on('leave:zone', ({ lat, lng }) => {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    const zone = geohash5(lat, lng);
+    socket.leave(`zone:${zone}`);
+  });
+
   // Query cercanos desde cliente (on-demand)
   socket.on('nearby:request', async ({ lat, lng, radius = 5000, service_id }) => {
     try {

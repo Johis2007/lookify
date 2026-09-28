@@ -6,7 +6,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { getCurrentLocation } from '@/lib/location';
 import { directus } from '@/lib/directus';
 import { readItems } from '@directus/sdk';
-import { getSocket, connectSocket, onZoneUpdate, requestNearby, onNearbyResponse, joinBookingRoom } from '@/lib/socket';
+import { connectSocket, onZoneUpdate, onNearbyResponse, joinZone, leaveZone } from '@/lib/socket';
 
 const { width, height } = Dimensions.get('window');
 const ASPECT_RATIO = width / height;
@@ -99,6 +99,11 @@ function MapScreen() {
     loadData();
     connectSocket();
     
+    // Unirse a zona para recibir updates en tiempo real
+    if (userLocation) {
+      joinZone(userLocation.lat, userLocation.lng);
+    }
+    
     // Escuchar actualizaciones de zona en tiempo real
     const unsubZone = onZoneUpdate((pros) => {
       setProfessionals(prev => {
@@ -118,10 +123,13 @@ function MapScreen() {
     });
 
     return () => {
+      if (userLocation) {
+        leaveZone(userLocation.lat, userLocation.lng);
+      }
       unsubZone();
       unsubNearby();
     };
-  }, []);
+  }, [userLocation]);
 
   const handleRegionChange = (newRegion: any) => setRegion(newRegion);
 
