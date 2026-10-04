@@ -5,13 +5,25 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 
-export type AdminSection = 'dashboard' | 'requests' | 'verification' | 'services';
+export type AdminSection =
+  | 'dashboard'
+  | 'requests'
+  | 'verification'
+  | 'services'
+  | 'users'
+  | 'payments'
+  | 'reports'
+  | 'settings';
 
 const NAV: { key: AdminSection; label: string; icon: string; href: string; badge?: string }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '📊', href: '/admin/dashboard' },
   { key: 'requests', label: 'Solicitudes en vivo', icon: '📡', href: '/admin/requests', badge: 'live' },
   { key: 'verification', label: 'Profesionales', icon: '🎖', href: '/admin/verification' },
+  { key: 'users', label: 'Usuarios', icon: '👥', href: '/admin/users' },
   { key: 'services', label: 'Servicios y tarifas', icon: '💈', href: '/admin/services' },
+  { key: 'payments', label: 'Pagos y liquidaciones', icon: '💰', href: '/admin/payments' },
+  { key: 'reports', label: 'Reportes y reseñas', icon: '⭐', href: '/admin/reports' },
+  { key: 'settings', label: 'Configuración', icon: '⚙️', href: '/admin/settings' },
 ];
 
 export function AdminShell({
