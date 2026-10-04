@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { watchThrottled, type LatLng } from './location';
+import { ensureLocationPermission } from './permissions';
 import {
   emitHeartbeat,
   emitLocation,
@@ -60,7 +61,31 @@ export function useProLive(
     setPublishing(false);
   }, []);
 
-  useEffect(() => () => stopPublishing(), [stopPublishing]);
+  // Ref espejo del estado para la limpieza al desmontar (sin setState).
+  // authFetch va en ref porque rota con cada refresh del token.
+  const liveRef = useRef({ isOnline: false, professionalId: null as number | null });
+  liveRef.current = { isOnline, professionalId };
+  const fetchRef = useRef(authFetch);
+  fetchRef.current = authFetch;
+
+  // Al desmontar en caliente (ej. logout): marcar offline en servidor y
+  // Directus para no dejar fantasma "online" en el radar.
+  useEffect(() => {
+    const doStop = stopPublishing;
+    return () => {
+      doStop();
+      const snap = liveRef.current;
+      if (snap.isOnline && snap.professionalId) {
+        const pid = snap.professionalId;
+        emitProOffline(pid);
+        fetchRef.current(`/items/beauty_professionals/${pid}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ is_online: false }),
+        }).catch(() => {});
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopPublishing]);
 
   const publishFix = useCallback(
     async (ll: LatLng) => {
@@ -103,6 +128,13 @@ export function useProLive(
         /* best-effort: el socket igual marca presencia */
       }
       if (on) {
+        // Sin permiso de ubicación no se marca online: evita estado
+        // inconsistente (online sin GPS) y guía a Ajustes si lo negó.
+        const locOk = await ensureLocationPermission();
+        if (!locOk) {
+          setError('Activa la ubicación para ponerte online.');
+          return;
+        }
         emitProOnline(professionalId);
         setIsOnline(true);
         setPublishing(true);
@@ -111,7 +143,11 @@ export function useProLive(
             publishFix(ll).catch(() => {});
           });
         } catch {
-          setError('Sin permiso de ubicación.');
+          setError('No se pudo iniciar el GPS.');
+          stopPublishing();
+          emitProOffline(professionalId);
+          setIsOnline(false);
+          return;
         }
         emitHeartbeat(professionalId);
         if (heartbeat.current) clearInterval(heartbeat.current);

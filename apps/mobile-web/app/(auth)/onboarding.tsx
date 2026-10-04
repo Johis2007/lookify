@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
+import { ensureLocationPermission } from '@/lib/permissions';
 
 const SLIDES = [
   { emoji: '📍', title: 'Encuentra belleza cerca', sub: 'Profesionales online a menos de 10 km en el mapa de Chapinero.' },
@@ -33,7 +34,15 @@ export default function Onboarding() {
         </View>
         <Pressable
           style={styles.btn}
-          onPress={() => (last ? router.replace('/(tabs)') : setI(i + 1))}
+          onPress={async () => {
+            if (last) {
+              // Pide ubicación al terminar (no bloquea si la niega: el radar la pedirá de nuevo).
+              await ensureLocationPermission(false);
+              router.replace('/(tabs)');
+            } else {
+              setI(i + 1);
+            }
+          }}
         >
           <Text style={styles.btnT}>{last ? 'Explorar Lookify →' : 'Siguiente →'}</Text>
         </Pressable>

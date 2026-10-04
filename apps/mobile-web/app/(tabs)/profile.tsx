@@ -1,10 +1,10 @@
-import * as ImagePicker from 'expo-image-picker';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { confirmNative } from '@/components/ConfirmDialog';
+import { chooseProfessionalPhoto } from '@/lib/permissions';
 import { ensureProfessionalProfile, uploadProfessionalAvatar } from '@/lib/professional';
 import { useProLive } from '@/lib/proLive';
 
@@ -33,23 +33,19 @@ export default function Profile() {
   };
   const pickAvatar = async () => {
     if (!user) return;
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!perm.granted) {
-      setMsg('Permiso de galería denegado.');
-      return;
-    }
-    const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.7 });
-    if (res.canceled || !res.assets[0]) return;
-    setBusy(true);
-    try {
-      const url = await uploadProfessionalAvatar(authFetch, user.id, res.assets[0].uri);
-      setAvatar(url);
-      setMsg('Avatar actualizado ✨');
-    } catch (e: any) {
-      setMsg(e.message);
-    } finally {
-      setBusy(false);
-    }
+    // Selector cámara o galería (pide el permiso correspondiente en español).
+    chooseProfessionalPhoto(async (uri) => {
+      setBusy(true);
+      try {
+        const url = await uploadProfessionalAvatar(authFetch, user.id, uri);
+        setAvatar(url);
+        setMsg('Avatar actualizado ✨');
+      } catch (e: any) {
+        setMsg(e.message);
+      } finally {
+        setBusy(false);
+      }
+    });
   };
   const signOut = async () => {
     const ok = await confirmNative('Cerrar sesión', '¿Seguro que quieres salir de Lookify?', 'Salir');

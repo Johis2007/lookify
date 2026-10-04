@@ -62,10 +62,17 @@ export async function fetchMyBookings(authFetch: FetchFn, userId: string, asPro:
 }
 
 export async function createReview(authFetch: FetchFn, payload: { booking: number; client: string; professional: number; rating: number; comment?: string }) {
+  // Idempotente: si ya existe reseña para la reserva, no duplicar.
+  const ex = await authFetch(`/items/reviews?filter[booking][_eq]=${payload.booking}&fields=id&limit=1`);
+  if (ex.ok) {
+    const { data: rows } = await ex.json().catch(() => ({ data: [] }));
+    if (Array.isArray(rows) && rows.length > 0) throw new Error('Esta reserva ya fue calificada.');
+  }
   const r = await authFetch('/items/reviews', { method: 'POST', body: JSON.stringify(payload) });
   if (!r.ok) throw new Error('No se pudo guardar la calificación');
-  // espejo en bookings para resumen rápido
-  await authFetch(`/items/bookings/${payload.booking}`, { method: 'PATCH', body: JSON.stringify({ rating: payload.rating, review_comment: payload.comment || null, status: 'completed', completed_at: new Date().toISOString() }) });
+  // espejo en bookings para resumen rápido (si falla, se avisa: reintentar es seguro por el check de arriba)
+  const b = await authFetch(`/items/bookings/${payload.booking}`, { method: 'PATCH', body: JSON.stringify({ rating: payload.rating, review_comment: payload.comment || null, status: 'completed', completed_at: new Date().toISOString() }) });
+  if (!b.ok) throw new Error('Calificación guardada pero la reserva no se marcó completada.');
   return (await r.json()).data;
 }
 

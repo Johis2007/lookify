@@ -1,9 +1,19 @@
 import 'dotenv/config';
-import { createServer } from 'http';
+import { createServer, type IncomingMessage } from 'http';
 import { Server } from 'socket.io';
 import Redis from 'ioredis';
 import pg from 'pg';
 import pino from 'pino';
+import {
+  AuthError,
+  professionalExists,
+  resolveAttachableBooking,
+  resolveBookingAccess,
+  resolveOwnNewBooking,
+  resolveOwnProfessionalId,
+  verifyAccessToken,
+  type AuthedUser,
+} from './auth.js';
 
 const PORT = Number(process.env.PORT || 4001);
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -19,6 +29,14 @@ const log = (msg: string, extra?: Record<string, unknown>) => logger.info(extra 
 const logErr = (msg: string, extra?: Record<string, unknown>) => logger.error(extra || {}, msg);
 const logWarn = (msg: string, extra?: Record<string, unknown>) => logger.warn(extra || {}, msg);
 
+// Fase 7: el SECRET firma los JWT de Directus. Sin él no se puede autenticar:
+// fallo cerrado y ruidoso en vez de un servidor "abierto".
+const DIRECTUS_SECRET = process.env.DIRECTUS_SECRET || '';
+if (!DIRECTUS_SECRET) {
+  logger.fatal('DIRECTUS_SECRET no definido: define el mismo SECRET de Directus.');
+  process.exit(1);
+}
+
 // Métricas en memoria (Fase 6: visibles en /health).
 const stats = {
   startedAt: Date.now(),
@@ -33,6 +51,7 @@ const stats = {
   batchRuns: 0,
   batchErrors: 0,
   batchRows: 0,
+  authRejected: 0,
 };
 
 function corsOrigin(origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) {
@@ -40,6 +59,18 @@ function corsOrigin(origin: string | undefined, cb: (err: Error | null, ok?: boo
   if (origin && CORS_LIST.includes(origin)) return cb(null, true);
   logWarn('cors blocked', { origin });
   return cb(new Error('CORS blocked'));
+}
+
+function httpBearer(req: IncomingMessage): AuthedUser | null {
+  // Fase 7: /realtime/* exige Bearer <access token de Directus>.
+  const h = req.headers.authorization || '';
+  const m = /^Bearer (.+)$/.exec(h.trim());
+  if (!m) return null;
+  try {
+    return verifyAccessToken(m[1], DIRECTUS_SECRET);
+  } catch {
+    return null;
+  }
 }
 
 const httpServer = createServer((req, res) => {
@@ -72,6 +103,13 @@ const httpServer = createServer((req, res) => {
   if (req.url && req.url.startsWith('/realtime/nearby')) {
     // Fase 3/5: query geo centralizada (PostGIS, anti-saturación con limit).
     // Fase 6: mide latencia p95 (ver scripts/load-test.mjs).
+    // Fase 7: requiere Bearer (mismo JWT que el socket).
+    if (!httpBearer(req)) {
+      stats.nearbyErrors += 1;
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'unauthorized' }));
+      return;
+    }
     const t0 = Date.now();
     (async () => {
       try {
@@ -124,6 +162,26 @@ const io = new Server(httpServer, {
 });
 const redis = new Redis(REDIS_URL);
 const pool = new pg.Pool({ connectionString: DATABASE_URL });
+
+// Fase 7: handshake autenticado. Sin JWT válido no hay conexión.
+// El cliente recibe connect_error con message = código ('UNAUTHORIZED' o
+// 'TOKEN_EXPIRED'); el detalle queda en el log del servidor.
+io.use((socket, next) => {
+  const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
+  if (typeof token !== 'string' || !token) {
+    stats.authRejected += 1;
+    return next(new Error('UNAUTHORIZED'));
+  }
+  try {
+    socket.data.user = verifyAccessToken(token, DIRECTUS_SECRET);
+    next();
+  } catch (e) {
+    stats.authRejected += 1;
+    const code = e instanceof AuthError ? e.code : 'UNAUTHORIZED';
+    logWarn('handshake rechazado', { code });
+    next(new Error(code));
+  }
+});
 
 redis.on('error', (e) => logErr('redis error', { err: e?.message || String(e) }));
 pool.on('error', (e) => logErr('pg pool error', { err: e?.message || String(e) }));
@@ -182,55 +240,76 @@ async function attachBooking(professionalId: string, bookingId: string) {
 }
 
 io.on('connection', (socket) => {
+  // Fase 7: identidad verificada en el handshake (io.use). Todos los eventos
+  // sensibles se atan a este usuario; el professional_id del payload se ignora.
+  const me = socket.data.user as AuthedUser;
   stats.connectionsTotal += 1;
   stats.connectionsCurrent += 1;
-  socket.on('prof:online', async ({ professional_id }) => {
-    if (!isValidId(professional_id)) return;
-    const pid = String(professional_id);
+  if (me.isAdmin) socket.join('admins');
+
+  const forbidden = (action: string) => {
+    socket.emit('error', { code: 'FORBIDDEN', message: `Sin acceso para ${action}` });
+    logWarn('forbidden', { action, user: me.userId });
+  };
+
+  socket.on('prof:online', async () => {
+    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    if (pid === null) { forbidden('prof:online'); return; }
     socket.join(`prof:${pid}`);
     await redis.set(`online:${pid}`, '1', 'EX', 40);
-    log('prof:online', { pid });
+    log('prof:online', { pid, user: me.userId });
   });
 
-  socket.on('prof:offline', async ({ professional_id }) => {
-    if (!isValidId(professional_id)) return;
-    const pid = String(professional_id);
+  socket.on('prof:offline', async () => {
+    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    if (pid === null) return;
     await redis.del(`online:${pid}`);
     await redis.del(`geo:prof:${pid}`);
     await redis.del(`prof_bookings:${pid}`);
-    log('prof:offline', { pid });
+    log('prof:offline', { pid, user: me.userId });
   });
 
   // Heartbeat explícito (Fase 5): el pro lo llama cada ~25s para no expirar TTL 40s.
-  socket.on('prof:heartbeat', async ({ professional_id }) => {
-    if (!isValidId(professional_id)) return;
-    await redis.expire(`online:${String(professional_id)}`, 40);
+  socket.on('prof:heartbeat', async () => {
+    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    if (pid === null) return;
+    await redis.expire(`online:${pid}`, 40);
   });
 
   socket.on('location:update', async ({ professional_id, lat, lng, booking_id }) => {
-    if (!isValidId(professional_id) || !isValidLatLng(lat, lng)) { stats.locInvalid += 1; return; }
+    if (!isValidLatLng(lat, lng)) { stats.locInvalid += 1; return; }
     if (booking_id !== undefined && booking_id !== null && !isValidId(booking_id)) { stats.locInvalid += 1; return; }
+    // El GPS siempre se atribuye al perfil propio: el id declarado se ignora.
+    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    if (pid === null) { forbidden('location:update'); return; }
+    if (professional_id !== undefined && professional_id !== null
+        && String(professional_id) !== String(pid)) {
+      logWarn('pro id mismatch (ignorado)', { claimed: String(professional_id), pid, user: me.userId });
+    }
     const gate = checkRateLimit(socket.id);
     if (!gate.ok) {
       socket.emit('error', { code: gate.reason === 'banned' ? 'BANNED_60S' : 'RATE_LIMITED', message: 'Máximo 1 mensaje GPS cada 5s' });
       return;
     }
     stats.locAccepted += 1;
-    const pid = String(professional_id);
     const now = Date.now();
     const zone = geohash5(lat, lng);
     socket.join(`zone:${zone}`);
     // Redis TTL 30s: si no reporta, se considera offline (Fase 5).
     await redis.set(`geo:prof:${pid}`, JSON.stringify({ lat, lng, ts: now }), 'EX', 30);
     await redis.set(`online:${pid}`, '1', 'EX', 40);
-    const payload = { professional_id: pid, lat, lng, ts: now };
+    const payload = { professional_id: String(pid), lat, lng, ts: now };
     // Fan-out a su zona (clientes del mapa/radar).
     socket.to(`zone:${zone}`).emit('zone:update', [payload]);
     // + a sus bookings activos (tracking 1:1, sin broadcast global).
     try {
       const bids = await redis.smembers(`prof_bookings:${pid}`);
       const targets = new Set<string>(bids);
-      if (booking_id) targets.add(String(booking_id));
+      // Reenvío extra solo si la reserva le pertenece (cliente, pro o admin).
+      if (booking_id !== undefined && booking_id !== null) {
+        const bid = await resolveBookingAccess(pool, me, booking_id);
+        if (bid === null) { stats.locInvalid += 1; } else targets.add(String(bid));
+      }
       for (const bid of targets) {
         io.to(`booking:${bid}`).emit('pro:location', { ...payload, booking_id: bid });
       }
@@ -238,46 +317,84 @@ io.on('connection', (socket) => {
   });
 
   socket.on('booking:join', async ({ booking_id, professional_id }) => {
-    if (!isValidId(booking_id)) return;
-    const bid = String(booking_id);
+    // Entrar a la room exige pertenencia: cliente dueño, pro asignado o admin.
+    const bid = await resolveBookingAccess(pool, me, booking_id);
+    if (bid === null) { forbidden('booking:join'); return; }
     socket.join(`booking:${bid}`);
-    // Si el que hace join es el pro (o lo declara), vincula para tracking 1:1.
-    if (professional_id && isValidId(professional_id)) {
-      await attachBooking(String(professional_id), bid);
+    // Si declara professional_id debe ser el propio para vincular (tracking
+    // 1:1). Si es otro (ej. el cliente reenviando el pro de su reserva), se
+    // ignora en silencio: el join ya es válido y no se filtra nada.
+    if (professional_id !== undefined && professional_id !== null) {
+      if (me.isAdmin) {
+        const pid = await professionalExists(pool, professional_id);
+        if (pid !== null) await attachBooking(String(pid), String(bid));
+      } else {
+        const ownPro = await resolveOwnProfessionalId(pool, me.userId);
+        if (ownPro !== null && String(professional_id) === String(ownPro)) {
+          await attachBooking(String(ownPro), String(bid));
+        }
+      }
     }
   });
 
   // El pro llama esto al aceptar: a partir de aquí su GPS va a booking:{id}.
+  // Solo si la reserva está sin asignar (claim) o asignada a él (o admin).
   socket.on('booking:attach', async ({ booking_id, professional_id }) => {
-    if (!isValidId(booking_id) || !isValidId(professional_id)) return;
-    await attachBooking(String(professional_id), String(booking_id));
-    socket.join(`booking:${String(booking_id)}`);
+    if (!isValidId(booking_id)) return;
+    let pid: number;
+    if (me.isAdmin) {
+      const exists = await professionalExists(pool, professional_id);
+      if (exists === null) { forbidden('booking:attach'); return; }
+      pid = exists;
+    } else {
+      const ownPro = await resolveOwnProfessionalId(pool, me.userId);
+      if (ownPro === null) { forbidden('booking:attach'); return; }
+      pid = ownPro;
+    }
+    const bid = await resolveAttachableBooking(pool, me, booking_id);
+    if (bid === null) { forbidden('booking:attach'); return; }
+    await attachBooking(String(pid), String(bid));
+    socket.join(`booking:${bid}`);
   });
 
-  // La reserva vive en Directus; aquí solo re-emitimos para realtime (Fase 4/5).
-  socket.on('booking:new', ({ booking_id, professional_id, service, client }) => {
-    if (!isValidId(booking_id)) return;
-    const payload: Record<string, unknown> = { booking_id: String(booking_id) };
-    if (professional_id && isValidId(professional_id)) payload.professional_id = String(professional_id);
-    if (service !== undefined) payload.service = service;
-    if (client !== undefined) payload.client = client;
-    // Dirigido al pro (room prof:{id}) + broadcast global para admin/requests.
-    if (payload.professional_id) io.to(`prof:${payload.professional_id}`).emit('booking:new', payload);
-    io.emit('booking:new', payload);
+  // La reserva vive en Directus; aquí solo se anuncia la recién creada por su
+  // propio cliente. Sin broadcast global: va al pro asignado + sala admins
+  // (el admin refresca vía API; ya no se filtran datos a todos los conectados).
+  socket.on('booking:new', async ({ booking_id }) => {
+    const b = await resolveOwnNewBooking(pool, me, booking_id);
+    if (!b) { forbidden('booking:new'); return; }
+    const payload: Record<string, unknown> = { booking_id: String(b.id) };
+    if (b.professional !== null && b.professional !== undefined) {
+      payload.professional_id = String(b.professional);
+      io.to(`prof:${b.professional}`).emit('booking:new', payload);
+    }
+    io.to('admins').emit('booking:new', payload);
   });
 
   // Compat FASE 3 (app/(client)/map): alias simple de join a booking room.
-  socket.on('join:booking', ({ booking_id }) => {
-    if (!isValidId(booking_id)) return;
-    socket.join(`booking:${String(booking_id)}`);
+  socket.on('join:booking', async ({ booking_id }) => {
+    const bid = await resolveBookingAccess(pool, me, booking_id);
+    if (bid === null) { forbidden('join:booking'); return; }
+    socket.join(`booking:${bid}`);
   });
 
   socket.on('leave:booking', ({ booking_id }) => {
     if (booking_id) socket.leave(`booking:${booking_id}`);
   });
 
-  socket.on('join:prof', ({ professional_id }) => {
-    if (professional_id) socket.join(`prof:${professional_id}`);
+  socket.on('join:prof', async ({ professional_id }) => {
+    // Solo el propio profesional (o admin) escucha su room prof:{id}.
+    if (me.isAdmin) {
+      if (!isValidId(professional_id)) return;
+      socket.join(`prof:${professional_id}`);
+      return;
+    }
+    const ownPro = await resolveOwnProfessionalId(pool, me.userId);
+    if (ownPro === null || String(professional_id) !== String(ownPro)) {
+      forbidden('join:prof');
+      return;
+    }
+    socket.join(`prof:${ownPro}`);
   });
 
   socket.on('leave:prof', ({ professional_id }) => {
@@ -289,7 +406,7 @@ io.on('connection', (socket) => {
     if (typeof lat !== 'number' || typeof lng !== 'number') return;
     const zone = geohash5(lat, lng);
     socket.join(`zone:${zone}`);
-    console.log(`Client ${socket.id} joined zone:${zone}`);
+    log('join:zone', { socket: socket.id, zone, user: me.userId });
   });
 
   socket.on('leave:zone', ({ lat, lng }) => {
@@ -337,14 +454,17 @@ io.on('connection', (socket) => {
       
       socket.emit('nearby:response', professionals);
     } catch (e) {
-      console.error('nearby:request error', e);
+      logErr('nearby:request error', { err: String(e) });
       socket.emit('nearby:response', []);
     }
   });
 
-  socket.on('booking:status', ({ booking_id, status }) => {
-    if (!isValidId(booking_id) || typeof status !== 'string' || status.length > 32) return;
-    io.to(`booking:${String(booking_id)}`).emit('booking:status', { booking_id: String(booking_id), status });
+  socket.on('booking:status', async ({ booking_id, status }) => {
+    if (typeof status !== 'string' || status.length > 32) return;
+    // Solo cliente dueño, pro asignado o admin pueden anunciar cambios.
+    const bid = await resolveBookingAccess(pool, me, booking_id);
+    if (bid === null) { forbidden('booking:status'); return; }
+    io.to(`booking:${bid}`).emit('booking:status', { booking_id: String(bid), status });
   });
 
   socket.on('disconnect', () => {

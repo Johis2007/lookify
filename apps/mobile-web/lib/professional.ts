@@ -42,16 +42,17 @@ export async function uploadProfessionalAvatar(
   if (!upload.ok) throw new Error('No se pudo subir la imagen.');
   const { data: file } = await upload.json();
 
-  // Vincula al perfil
+  // Vincula al perfil (si falla, se avisa: antes quedaba "éxito" sin vínculo).
   const prof = await authFetch(
     `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id&limit=1`
   );
+  if (!prof.ok) throw new Error('No se pudo verificar tu perfil profesional.');
   const { data: rows } = await prof.json();
-  if (rows?.length) {
-    await authFetch(`/items/beauty_professionals/${rows[0].id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ avatar: file.id }),
-    });
-  }
+  if (!rows?.length) throw new Error('Activa tu perfil profesional primero.');
+  const link = await authFetch(`/items/beauty_professionals/${rows[0].id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ avatar: file.id }),
+  });
+  if (!link.ok) throw new Error('Imagen subida pero no vinculada (revisa permisos).');
   return `${DIRECTUS_URL}/assets/${file.id}?fit=cover&width=400`;
 }

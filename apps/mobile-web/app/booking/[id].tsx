@@ -6,7 +6,7 @@ import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { ConfirmDialog, useConfirm } from '@/components/ConfirmDialog';
 import { logBookingEvent, patchBooking } from '@/lib/api';
-import { attachBookingToPro, emitBookingStatus, getSocket, isSocketLive, joinBooking } from '@/lib/socket';
+import { attachBookingToPro, emitBookingStatus, getSocket, isSocketLive, joinBooking, leaveBooking } from '@/lib/socket';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -129,6 +129,7 @@ export default function Tracking() {
         s?.off('booking:status', onStatus);
         s?.off('pro:location', onProLoc);
         s?.off('zone:update', onZone);
+        leaveBooking(String(id));
       };
     } catch {
       setConn('polling');

@@ -38,6 +38,14 @@
       ],
       "expo-secure-store",
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Lookify necesita acceso a tus fotos (galería y tarjeta) para tu avatar y portafolio profesional.",
+          "cameraPermission": "Lookify necesita acceso a tu cámara para tomar fotos de tu perfil y portafolio profesional.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-location",
         {
           "locationWhenInUsePermission": "Allow Lookify to use your location while using the app.",

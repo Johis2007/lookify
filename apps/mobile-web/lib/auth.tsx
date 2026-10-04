@@ -4,11 +4,13 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { DIRECTUS_URL_EXPORT as DIRECTUS_URL } from './directus';
+import { disconnectSocket, setAuthExpiredHandler, setSocketToken } from './socket';
 
 export type LookifyUser = {
   id: string;
@@ -111,6 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           try {
             await fetchMe(token);
             setAccessToken(token);
+            setSocketToken(token);
             return;
           } catch {
             // access expirado: intenta refresh
@@ -127,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await save(ACCESS_KEY, data.access_token);
             await save(REFRESH_KEY, data.refresh_token);
             setAccessToken(data.access_token);
+            setSocketToken(data.access_token);
             await fetchMe(data.access_token);
             return;
           }
@@ -153,6 +157,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await save(ACCESS_KEY, data.access_token);
       await save(REFRESH_KEY, data.refresh_token);
       setAccessToken(data.access_token);
+      setSocketToken(data.access_token);
       await fetchMe(data.access_token);
     },
     [fetchMe]
@@ -229,8 +234,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccessToken(null);
       setUser(null);
       setIsProfessional(false);
+      disconnectSocket();
     }
   }, []);
+
+  // Fase 7: si el realtime rechaza el socket por token expirado, refresca la
+  // sesión y reconecta con el token nuevo (sin desloguear al usuario).
+  const refreshingRef = useRef(false);
+  useEffect(() => {
+    setAuthExpiredHandler(() => {
+      if (refreshingRef.current) return;
+      refreshingRef.current = true;
+      void (async () => {
+        try {
+          const refresh = await load(REFRESH_KEY);
+          if (!refresh) {
+            await logout();
+            return;
+          }
+          const res = await api('/auth/refresh', null, {
+            method: 'POST',
+            body: JSON.stringify({ refresh_token: refresh, mode: 'json' }),
+          });
+          if (!res.ok) {
+            await logout();
+            return;
+          }
+          const { data } = await res.json();
+          await save(ACCESS_KEY, data.access_token);
+          await save(REFRESH_KEY, data.refresh_token);
+          setAccessToken(data.access_token);
+          await fetchMe(data.access_token);
+          setSocketToken(data.access_token);
+        } catch {
+          await logout();
+        } finally {
+          refreshingRef.current = false;
+        }
+      })();
+    });
+    return () => setAuthExpiredHandler(null);
+  }, [fetchMe, logout]);
 
   const authFetch = useCallback(
     async (path: string, init?: RequestInit) => {
