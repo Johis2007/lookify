@@ -266,6 +266,82 @@ io.on('connection', (socket) => {
     io.emit('booking:new', payload);
   });
 
+  // Compat FASE 3 (app/(client)/map): alias simple de join a booking room.
+  socket.on('join:booking', ({ booking_id }) => {
+    if (!isValidId(booking_id)) return;
+    socket.join(`booking:${String(booking_id)}`);
+  });
+
+  socket.on('leave:booking', ({ booking_id }) => {
+    if (booking_id) socket.leave(`booking:${booking_id}`);
+  });
+
+  socket.on('join:prof', ({ professional_id }) => {
+    if (professional_id) socket.join(`prof:${professional_id}`);
+  });
+
+  socket.on('leave:prof', ({ professional_id }) => {
+    if (professional_id) socket.leave(`prof:${professional_id}`);
+  });
+
+  // Cliente se une a zona geográfica para recibir updates en tiempo real
+  socket.on('join:zone', ({ lat, lng }) => {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    const zone = geohash5(lat, lng);
+    socket.join(`zone:${zone}`);
+    console.log(`Client ${socket.id} joined zone:${zone}`);
+  });
+
+  socket.on('leave:zone', ({ lat, lng }) => {
+    if (typeof lat !== 'number' || typeof lng !== 'number') return;
+    const zone = geohash5(lat, lng);
+    socket.leave(`zone:${zone}`);
+  });
+
+  // Query cercanos desde cliente (on-demand)
+  socket.on('nearby:request', async ({ lat, lng, radius = 5000, service_id }) => {
+    try {
+      let query = `
+        SELECT p.id, p.display_name, p.bio, p.avatar, p.rating_avg,
+               ST_X(l.geom) as lng, ST_Y(l.geom) as lat,
+               ST_Distance(l.geom::geography, ST_MakePoint($1,$2)::geography) as dist_m
+        FROM beauty_professionals p
+        JOIN professional_locations l ON l.professional_id = p.id
+        WHERE p.is_online = true
+          AND ST_DWithin(l.geom::geography, ST_MakePoint($1,$2)::geography, $3)
+      `;
+      const params: any[] = [lng, lat, radius];
+      
+      if (service_id) {
+        query += ` AND EXISTS (
+          SELECT 1 FROM professional_services ps 
+          WHERE ps.professional_id = p.id AND ps.service_id = $4
+        )`;
+        params.push(service_id);
+      }
+      
+      query += ` ORDER BY dist_m LIMIT 20`;
+      
+      const result = await pool.query(query, params);
+      
+      const professionals = result.rows.map(row => ({
+        id: row.id,
+        display_name: row.display_name,
+        bio: row.bio,
+        avatar: row.avatar,
+        rating_avg: row.rating_avg,
+        lat: row.lat,
+        lng: row.lng,
+        distance_m: Math.round(row.dist_m),
+      }));
+      
+      socket.emit('nearby:response', professionals);
+    } catch (e) {
+      console.error('nearby:request error', e);
+      socket.emit('nearby:response', []);
+    }
+  });
+
   socket.on('booking:status', ({ booking_id, status }) => {
     if (!isValidId(booking_id) || typeof status !== 'string' || status.length > 32) return;
     io.to(`booking:${String(booking_id)}`).emit('booking:status', { booking_id: String(booking_id), status });
@@ -309,6 +385,6 @@ setInterval(async () => {
 }, 10_000);
 
 httpServer.listen(PORT, () => {
-  log('realtime up', { port: PORT, cors: CORS_OPEN ? 'open-dev' : CORS_LIST.join(',') });
+  log('realtime up', { port: PORT, cors: CORS_OPEN ? 'open-dev' : 'restricted' });
   if (CORS_OPEN) logWarn('CORS abierto (*) — solo para DEV; en prod define CORS_ORIGIN');
 });
