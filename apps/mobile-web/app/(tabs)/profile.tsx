@@ -1,17 +1,35 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
+import { useProLiveState } from '@/lib/proLiveState';
 import { confirmNative } from '@/components/ConfirmDialog';
 import { chooseProfessionalPhoto } from '@/lib/permissions';
 import { ensureProfessionalProfile, uploadProfessionalAvatar } from '@/lib/professional';
-import { useProLive } from '@/lib/proLive';
 
 // Lookify PRO - Perfil y Portafolio (diseño Stitch, móvil + web).
 export default function Profile() {
   const { user, isProfessional, logout, authFetch, refreshProfile } = useAuth();
-  const proLive = useProLive(authFetch, user?.id, isProfessional);
+  const proLive = useProLiveState();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Insignia de solicitudes pendientes asignadas al profesional.
+  useEffect(() => {
+    if (!isProfessional || !proLive.professionalId) return;
+    let alive = true;
+    authFetch(
+      `/items/bookings?filter[professional][_eq]=${proLive.professionalId}&filter[status][_eq]=pending&fields=id&limit=50`
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (alive && j && Array.isArray(j.data)) setPendingCount(j.data.length);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [authFetch, isProfessional, proLive.professionalId]);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [avatar, setAvatar] = useState<string | null>(null);
@@ -134,6 +152,31 @@ export default function Profile() {
         </View>
       )}
 
+      {isProfessional && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Herramientas PRO</Text>
+          {(
+            [
+              ['📡 Disponibilidad y radar', '/pro/availability', null],
+              ['🔔 Solicitudes entrantes', '/pro/incoming', pendingCount > 0 ? `${pendingCount}` : null],
+              ['💰 Historial de ingresos', '/pro/earnings', null],
+            ] as const
+          ).map(([label, href, badge]) => (
+            <Pressable key={href} style={styles.adminRow} onPress={() => router.push(href as any)}>
+              <Text style={styles.adminLabel}>{label}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {badge ? (
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeT}>{badge}</Text>
+                  </View>
+                ) : null}
+                <Text>→</Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       {/* Pestañas */}
       <View style={styles.tabs}>
         <Pressable style={[styles.tab, tab === 'portfolio' && styles.tabOn]} onPress={() => setTab('portfolio')}>
@@ -246,6 +289,8 @@ const styles = StyleSheet.create({
   svcBase: { fontSize: 11, color: Stitch.colors.onSurfaceVariant, fontWeight: '400' },
   adminRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, padding: 13, alignSelf: 'stretch' },
   adminLabel: { fontWeight: '700', color: Stitch.colors.onSurface },
+  countBadge: { backgroundColor: Stitch.colors.secondaryContainer, borderRadius: 999, paddingVertical: 2, paddingHorizontal: 9 },
+  countBadgeT: { fontWeight: '900', fontSize: 12, color: Stitch.colors.onSecondaryContainer },
   signOut: { padding: 16, alignItems: 'center' },
   signOutT: { fontWeight: '700', color: Stitch.colors.onSurfaceVariant },
 });

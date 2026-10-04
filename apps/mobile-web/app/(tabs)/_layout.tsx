@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import { Text } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
+import { ProLiveProvider } from '@/lib/proLiveState';
 
 function Icon({ emoji }: { emoji: string }) {
   return <Text style={{ fontSize: 22 }}>{emoji}</Text>;
@@ -8,6 +9,7 @@ function Icon({ emoji }: { emoji: string }) {
 
 export default function TabLayout() {
   return (
+    <ProLiveProvider>
     <Tabs
       screenOptions={{
         headerShown: false,
@@ -23,5 +25,6 @@ export default function TabLayout() {
       <Tabs.Screen name="bookings" options={{ title: 'Reservas', tabBarIcon: () => <Icon emoji="🗓" /> }} />
       <Tabs.Screen name="profile" options={{ title: 'Perfil', tabBarIcon: () => <Icon emoji="👤" /> }} />
     </Tabs>
+    </ProLiveProvider>
   );
 }
