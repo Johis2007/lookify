@@ -1,19 +1,23 @@
 // Modelo SEGURO de permisos Lookify (reemplaza el DEV abierto).
-// LÍMITE DE LA INSTANCIA: solo reglas estáticas (collection+action+fields).
-// Todo lo dinámico ($CURRENT_USER, presets, validation) responde 403
-// "custom_permission_rules_enabled" (requiere licencia). Por eso:
+// LÍMITES DE LA INSTANCIA (licencia Core gratuita):
+// - Solo reglas estáticas (collection+action+fields ['*']). Todo lo dinámico
+//   ($CURRENT_USER, presets, validation, recorte de campos) responde 403.
+// - SEATS = 3: cada usuario con rol admin o App User ocupa uno. Superado el
+//   tope, crear usuarios (registro) falla con LIMIT_EXCEEDED. Solución real:
+//   licencia Directus (también desbloquea reglas granulares).
+// Por eso:
 // - Public (sin login): SOLO crear usuarios para registro. El rol se asigna
-//   vía settings.public_registration_role (sin presets) y status va por
-//   default de DB ('active').
-// - Rol "App User": catálogo + flujos propios con FIELDS mínimos (sin phone,
-//   sin rating interno). El alcance por fila NO se puede forzar aquí:
+//   vía settings.public_registration_role (forzado por Directus, probado en
+//   código fuente: el payload no puede escalar a admin).
+// - Rol "App User": catálogo + flujos propios (lecturas/escrituras que la app
+//   necesita). El alcance por fila NO se puede forzar aquí:
 //   - Lecturas sensibles (address/GPS) las limita el canal realtime (ACL real).
-//   - Escrituras cruzadas entre usuarios autenticados quedan como RIESGO
-//     RESIDUAL documentado (requiere cuenta + API; ya no Internet abierto).
+//   - Escrituras cruzadas entre autenticados quedan como RIESGO RESIDUAL
+//     documentado (requiere cuenta + API; ya no Internet abierto).
 //   - Camino definitivo: licencia con reglas custom o proxy BFF.
 // - Admin (admin_access): omite estas reglas, sin cambios.
-// - Registro público asigna el rol App User y los sin-rol se migran.
-// Uso: ADMIN_TOKEN=xxx node directus/setup-permissions.mjs
+// - Registro público asigna el rol App User y los sin-rol se migran (si seats
+//   lo permite; si no, ver SQL en el paso 6).
 const URL = process.env.DIRECTUS_URL || 'http://localhost:8055';
 const TOKEN = process.env.ADMIN_TOKEN;
 if (!TOKEN) { console.error('Falta ADMIN_TOKEN'); process.exit(1); }

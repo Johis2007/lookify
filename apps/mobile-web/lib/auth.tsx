@@ -178,6 +178,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
+        const raw = JSON.stringify(err ?? '');
+        // Sin licencia Directus solo hay 3 seats: registro lleno = mensaje claro.
+        if (raw.includes('LIMIT_EXCEEDED') || raw.includes('seats limit')) {
+          throw new Error('Cupo de usuarios lleno por el momento. Escríbenos y te avisamos.');
+        }
         throw new Error(
           err?.errors?.[0]?.message ??
             'No se pudo registrar. Habilita registro público en Directus.'
