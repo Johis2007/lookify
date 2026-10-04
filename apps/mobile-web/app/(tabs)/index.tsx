@@ -1,0 +1,189 @@
+import { router } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import LookifyMap from '@/components/LookifyMap';
+import { Stitch } from '@/constants/StitchTheme';
+import { useAuth } from '@/lib/auth';
+import { fetchCategories, fetchOnlinePros, kmBetween, type ProWithMeta } from '@/lib/api';
+import { getCurrentLatLng } from '@/lib/location';
+import { useDebouncedValue } from '@/lib/useDebouncedValue';
+
+const FALLBACK = { latitude: 19.4326, longitude: -99.1332 };
+
+// Lookify Cliente - Inicio y Mapa (diseño Stitch, móvil + web).
+export default function HomeMap() {
+  const { authFetch, user } = useAuth();
+  const [pos, setPos] = useState(FALLBACK);
+  const [q, setQ] = useState('');
+  const dq = useDebouncedValue(q, 300);
+  const [pros, setPros] = useState<ProWithMeta[]>([]);
+  const [cats, setCats] = useState<any[]>([]);
+  const [cat, setCat] = useState<number | undefined>();
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getCurrentLatLng().then((ll) => ll && setPos(ll)).catch(() => {});
+  }, []);
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      try {
+        const [c, p] = await Promise.all([
+          fetchCategories(authFetch),
+          fetchOnlinePros(authFetch, pos.latitude, pos.longitude, 10),
+        ]);
+        setCats(c);
+        setPros(p.length ? p : mockPros(pos));
+      } catch {
+        setPros(mockPros(pos));
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pos.latitude, pos.longitude]);
+
+  const filtered = useMemo(() => {
+    if (!dq) return pros;
+    const needle = dq.toLowerCase();
+    return pros.filter(
+      (p) =>
+        (p.display_name || '').toLowerCase().includes(needle) ||
+        (p.specialties || '').toLowerCase().includes(needle)
+    );
+  }, [pros, dq]);
+
+  const spotlight = filtered[0];
+
+  return (
+    <View style={styles.screen}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
+        {/* Header Stitch: logo + ubicación + avatar */}
+        <View style={styles.header}>
+          <View style={styles.logoCircle}>
+            <Text style={styles.logoL}>L</Text>
+          </View>
+          <Pressable style={styles.locPill}>
+            <Text>📍</Text>
+            <Text style={styles.locT} numberOfLines={1}>Chapinero, Bogotá</Text>
+          </Pressable>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarT}>{(user?.first_name?.[0] || 'L').toUpperCase()}</Text>
+          </View>
+        </View>
+
+        {/* Buscador */}
+        <View style={styles.search}>
+          <Text>🔍</Text>
+          <TextInput value={q} onChangeText={setQ} placeholder="Buscar profesional o servicio..." style={styles.searchInput} placeholderTextColor="#75777e" />
+        </View>
+
+        {/* Categorías */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cats}>
+          <Pressable style={[styles.catPill, !cat && styles.catActive]} onPress={() => setCat(undefined)}>
+            <Text style={[styles.catT, !cat && styles.catTActive]}>✂️ Cabello</Text>
+          </Pressable>
+          {(cats.length
+            ? cats
+            : [{ id: 11, name: 'Uñas' }, { id: 12, name: 'Barbería' }, { id: 13, name: 'Maquillaje' }]
+          ).map((c) => (
+            <Pressable key={c.id} style={[styles.catPill, cat === c.id && styles.catActive]} onPress={() => setCat(cat === c.id ? undefined : c.id)}>
+              <Text style={[styles.catT, cat === c.id && styles.catTActive]}>{c.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+
+        {/* Mapa */}
+        <View style={styles.mapWrap}>
+          <LookifyMap
+            initial={pos}
+            pins={filtered.map((p) => ({
+              id: String(p.id),
+              latitude: p.current_lat ?? pos.latitude + 0.004,
+              longitude: p.current_lng ?? pos.longitude + 0.004,
+              title: p.display_name,
+            }))}
+            onProPress={() => router.push('/(tabs)/services')}
+          />
+          <View style={styles.mapBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.mapBadgeT}>{filtered.length} especialistas activos · 15-25 min</Text>
+          </View>
+        </View>
+
+        {/* Spotlight */}
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 16 }} />
+        ) : spotlight ? (
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>⭐ {filtered.length} profesionales disponibles</Text>
+            <View style={styles.spot}>
+              <View style={styles.spotAvatar}>
+                <Text style={styles.spotAvatarT}>{(spotlight.display_name?.[0] || 'L').toUpperCase()}</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.spotName}>{spotlight.display_name}</Text>
+                <Text style={styles.spotMeta}>
+                  ★ {spotlight.rating_avg || 4.9} · {spotlight.distanceKm != null ? `${spotlight.distanceKm.toFixed(1)} km` : 'cerca'} · {spotlight.specialties || 'Corte & Styling'}
+                </Text>
+              </View>
+            </View>
+            <Pressable style={styles.cta} onPress={() => router.push('/(tabs)/services')}>
+              <Text style={styles.ctaT}>⚡ Solicitar ahora a domicilio →</Text>
+            </Pressable>
+            <View style={styles.ghostRow}>
+              <Pressable style={styles.ghost} onPress={() => router.push('/(tabs)/services')}>
+                <Text style={styles.ghostT}>Explorar catálogo</Text>
+              </Pressable>
+              <Pressable style={styles.ghost} onPress={() => router.push('/(tabs)/radar')}>
+                <Text style={styles.ghostT}>📡 Abrir radar</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+      </ScrollView>
+    </View>
+  );
+}
+
+function mockPros(pos: { latitude: number; longitude: number }): ProWithMeta[] {
+  return [
+    { id: 1, user: 'x', display_name: 'Laura Rodríguez', specialties: 'Corte & Styling', is_online: true, rating_avg: 4.9, current_lat: pos.latitude + 0.006, current_lng: pos.longitude + 0.004, distanceKm: kmBetween(pos.latitude, pos.longitude, pos.latitude + 0.006, pos.longitude + 0.004) },
+    { id: 2, user: 'x', display_name: 'Carlos Mendoza', specialties: 'Barbero Pro', is_online: true, rating_avg: 4.8, current_lat: pos.latitude - 0.004, current_lng: pos.longitude - 0.003, distanceKm: 0.8 },
+    { id: 3, user: 'x', display_name: 'Sofía Valbuena', specialties: 'Manicure Spa', is_online: true, rating_avg: 5.0, current_lat: pos.latitude + 0.01, current_lng: pos.longitude - 0.006, distanceKm: 1.6 },
+  ];
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: Stitch.colors.surface },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
+  logoCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  logoL: { color: Stitch.colors.secondaryContainer, fontWeight: '900', fontSize: 18 },
+  locPill: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14 },
+  locT: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface, flex: 1 },
+  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  avatarT: { color: '#fff', fontWeight: '800' },
+  search: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, marginHorizontal: 16, paddingHorizontal: 14, height: 46 },
+  searchInput: { flex: 1, fontSize: 14, color: Stitch.colors.onSurface },
+  cats: { gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
+  catPill: { backgroundColor: '#fff', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
+  catActive: { backgroundColor: Stitch.colors.primaryContainer, borderColor: Stitch.colors.primaryContainer },
+  catT: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface },
+  catTActive: { color: '#fff' },
+  mapWrap: { height: 280, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
+  mapBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.primaryContainer, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
+  mapBadgeT: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Stitch.colors.secondaryContainer },
+  sheet: { backgroundColor: '#fff', borderRadius: 20, margin: 16, padding: 16, gap: 10, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
+  sheetTitle: { fontSize: 15, fontWeight: '800', color: Stitch.colors.primaryContainer },
+  spot: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 14, padding: 12 },
+  spotAvatar: { width: 48, height: 48, borderRadius: 12, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  spotAvatarT: { color: Stitch.colors.secondaryContainer, fontWeight: '900', fontSize: 20 },
+  spotName: { fontSize: 14, fontWeight: '800', color: Stitch.colors.onSurface },
+  spotMeta: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 2 },
+  cta: { backgroundColor: Stitch.colors.primaryContainer, borderRadius: 12, padding: 15, alignItems: 'center' },
+  ctaT: { color: '#fff', fontWeight: '800', fontSize: 14 },
+  ghostRow: { flexDirection: 'row', gap: 8 },
+  ghost: { flex: 1, backgroundColor: Stitch.colors.surfaceContainer, borderRadius: 12, padding: 12, alignItems: 'center' },
+  ghostT: { fontWeight: '700', fontSize: 12, color: Stitch.colors.primaryContainer },
+});
