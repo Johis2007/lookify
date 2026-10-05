@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { DIRECTUS_URL_EXPORT as DIRECTUS_URL } from './directus';
 import { disconnectSocket, setAuthExpiredHandler, setSocketToken } from './socket';
+import { readJson } from './http';
 
 export type LookifyUser = {
   id: string;
@@ -23,12 +24,17 @@ type AuthContextValue = {
   isProfessional: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (
-    email: string,
-    password: string,
-    displayName: string,
-    role: 'client' | 'professional'
-  ) => Promise<void>;
+  registerClient: (email: string, password: string, displayName: string) => Promise<void>;
+  registerProfessional: (args: {
+    email: string;
+    password: string;
+    displayName: string;
+    specialties: string;
+    yearsExp: number;
+    phone: string;
+    docType: string;
+    doc: { uri: string; name: string; mimeType: string };
+  }) => Promise<{ professionalId: number }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   authFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -80,11 +86,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchMe = useCallback(async (token: string) => {
     const res = await api('/users/me', token);
     if (!res.ok) throw new Error('SESSION_INVALID');
-    const { data } = await res.json();
+    const me = (await readJson<{ data?: any }>(res))?.data;
+    if (!me?.id) throw new Error('SESSION_INVALID');
     const u: LookifyUser = {
-      id: data.id,
-      email: data.email,
-      first_name: data.first_name,
+      id: me.id,
+      email: me.email,
+      first_name: me.first_name,
     };
     setUser(u);
     // Rol profesional = existe fila en beauty_professionals para este user.
@@ -94,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         token
       );
       if (p.ok) {
-        const { data: rows } = await p.json();
+        const rows = (await readJson<{ data?: unknown[] }>(p))?.data;
         setIsProfessional(Array.isArray(rows) && rows.length > 0);
       }
     } catch {
@@ -126,7 +133,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             body: JSON.stringify({ refresh_token: refresh, mode: 'json' }),
           });
           if (res.ok) {
-            const { data } = await res.json();
+            const data = (await readJson<{ data?: any }>(res))?.data;
+            if (!data?.access_token) throw new Error('SESSION_INVALID');
             await save(ACCESS_KEY, data.access_token);
             await save(REFRESH_KEY, data.refresh_token);
             setAccessToken(data.access_token);
@@ -145,15 +153,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const res = await api('/auth/login', null, {
-        method: 'POST',
-        body: JSON.stringify({ email, password, mode: 'json' }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.errors?.[0]?.message ?? 'Credenciales inválidas');
+      let res: Response;
+      try {
+        res = await api('/auth/login', null, {
+          method: 'POST',
+          body: JSON.stringify({ email, password, mode: 'json' }),
+        });
+      } catch {
+        throw new Error('Sin conexión. Revisa tu internet e inténtalo de nuevo.');
       }
-      const { data } = await res.json();
+      if (!res.ok) {
+        const err = await readJson<any>(res);
+        const code = err?.errors?.[0]?.extensions?.code;
+        // Solo cuando la base de datos confirma credenciales inválidas.
+        if (code === 'INVALID_CREDENTIALS') {
+          throw new Error('Correo o contraseña incorrectos. Inténtalo de nuevo.');
+        }
+        if (res.status === 429) throw new Error('Demasiados intentos. Espera unos minutos.');
+        if (res.status === 403) throw new Error('Servicio no disponible por el momento. Intenta más tarde.');
+        if (res.status >= 500) throw new Error('Error del servidor. Intenta más tarde.');
+        throw new Error(err?.errors?.[0]?.message ?? 'No se pudo iniciar sesión.');
+      }
+      const data = (await readJson<{ data?: any }>(res))?.data;
+      if (!data?.access_token) throw new Error('Respuesta de sesión inválida.');
       await save(ACCESS_KEY, data.access_token);
       await save(REFRESH_KEY, data.refresh_token);
       setAccessToken(data.access_token);
@@ -163,21 +185,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [fetchMe]
   );
 
-  const register = useCallback(
-    async (
-      email: string,
-      password: string,
-      displayName: string,
-      role: 'client' | 'professional'
-    ) => {
+  // FLUJO CLIENTE: crea usuario + login + perfil cliente (fija el rol).
+  const registerClient = useCallback(
+    async (email: string, password: string, displayName: string) => {
       // Registro público: SIN token (un token caducado lo convertiría en 401).
       // Directus responde 204 sin body en registro público.
-      const res = await api('/users', null, {
-        method: 'POST',
-        body: JSON.stringify({ email, password, first_name: displayName }),
-      });
+      let res: Response;
+      try {
+        res = await api('/users', null, {
+          method: 'POST',
+          body: JSON.stringify({ email, password, first_name: displayName }),
+        });
+      } catch {
+        throw new Error('Sin conexión. Revisa tu internet e inténtalo de nuevo.');
+      }
       if (!res.ok) {
-        const err = await res.json().catch(() => null);
+        const err = await readJson<any>(res);
         const raw = JSON.stringify(err ?? '');
         // Sin licencia Directus solo hay 3 seats: registro lleno = mensaje claro.
         if (raw.includes('LIMIT_EXCEEDED') || raw.includes('seats limit')) {
@@ -189,25 +212,101 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         );
       }
       await login(email, password);
-      // Si eligió profesional, crea su perfil (best-effort según permisos).
-      if (role === 'professional') {
-        try {
-          const token = await load(ACCESS_KEY);
-          const meRes = await api('/users/me', token);
-          const { data: me } = await meRes.json();
-          await api('/items/beauty_professionals', token, {
+      // Perfil cliente: marca el rol (best-effort; el gate también mira reservas).
+      try {
+        const token = await load(ACCESS_KEY);
+        const meRes = await api('/users/me', token);
+        const me = (await readJson<{ data?: any }>(meRes))?.data;
+        if (me?.id) {
+          await api('/items/client_profiles', token, {
             method: 'POST',
-            body: JSON.stringify({
-              user: me.id,
-              display_name: displayName,
-              is_online: false,
-            }),
-          });
-        } catch {
-          // Se puede activar luego desde Perfil > Activar perfil.
+            body: JSON.stringify({ user: me.id, display_name: displayName }),
+          }).catch(() => null);
         }
-        await refreshProfileSafe();
+      } catch {
+        /* el perfil cliente se crea al primer uso */
       }
+      await refreshProfileSafe();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fetchMe, login]
+  );
+
+  // FLUJO PROFESIONAL: usuario + login + perfil (pending) + documento.
+  // Todo en una cadena: si algo falla se avisa en qué paso quedó.
+  const registerProfessional = useCallback(
+    async (args: {
+      email: string;
+      password: string;
+      displayName: string;
+      specialties: string;
+      yearsExp: number;
+      phone: string;
+      docType: string;
+      doc: { uri: string; name: string; mimeType: string };
+    }) => {
+      let res: Response;
+      try {
+        res = await api('/users', null, {
+          method: 'POST',
+          body: JSON.stringify({ email: args.email, password: args.password, first_name: args.displayName }),
+        });
+      } catch {
+        throw new Error('Sin conexión. Revisa tu internet e inténtalo de nuevo.');
+      }
+      if (!res.ok) {
+        const err = await readJson<any>(res);
+        const raw = JSON.stringify(err ?? '');
+        if (raw.includes('LIMIT_EXCEEDED') || raw.includes('seats limit')) {
+          throw new Error('Cupo de usuarios lleno por el momento. Escríbenos y te avisamos.');
+        }
+        throw new Error(err?.errors?.[0]?.message ?? 'No se pudo crear la cuenta.');
+      }
+      await login(args.email, args.password);
+      const token = await load(ACCESS_KEY);
+      const meRes = await api('/users/me', token);
+      const me = (await readJson<{ data?: any }>(meRes))?.data;
+      if (!me?.id) throw new Error('Sesión inválida tras el registro.');
+      // 1. Perfil profesional en revisión (no recibe solicitudes hasta aprobar).
+      const pr = await api('/items/beauty_professionals', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          user: me.id,
+          display_name: args.displayName,
+          specialties: args.specialties,
+          years_exp: args.yearsExp,
+          phone: args.phone,
+          is_online: false,
+          verification_status: 'pending',
+        }),
+      });
+      if (!pr.ok) throw new Error('Cuenta creada, pero no se pudo crear el perfil profesional.');
+      const created = (await readJson<{ data?: any }>(pr))?.data;
+      const professionalId = Number(created?.id);
+      if (!Number.isInteger(professionalId) || professionalId <= 0) {
+        throw new Error('Cuenta creada, pero no se pudo crear el perfil profesional.');
+      }
+      // 2. Subir certificado.
+      const form = new FormData();
+      // @ts-ignore - React Native FormData acepta {uri, name, type}
+      form.append('file', { uri: args.doc.uri, name: args.doc.name, type: args.doc.mimeType });
+      const up = await api('/files', token, { method: 'POST', body: form as any });
+      if (!up.ok) throw new Error('Cuenta y perfil listos, pero falló subir el documento.');
+      const file = (await readJson<{ data?: any }>(up))?.data;
+      if (!file?.id) throw new Error('Cuenta y perfil listos, pero falló subir el documento.');
+      // 3. Vincular documento como pendiente de revisión.
+      const dc = await api('/items/professional_documents', token, {
+        method: 'POST',
+        body: JSON.stringify({
+          professional: professionalId,
+          file: file.id,
+          doc_type: args.docType,
+          status: 'pending',
+        }),
+      });
+      if (!dc.ok) throw new Error('Documento subido, pero no quedó vinculado. Intenta de nuevo.');
+      await refreshProfileSafe();
+      return { professionalId };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [fetchMe, login]
@@ -265,7 +364,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await logout();
             return;
           }
-          const { data } = await res.json();
+          const data = (await readJson<{ data?: any }>(res))?.data;
+          if (!data?.access_token) {
+            await logout();
+            return;
+          }
           await save(ACCESS_KEY, data.access_token);
           await save(REFRESH_KEY, data.refresh_token);
           setAccessToken(data.access_token);
@@ -295,12 +398,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isProfessional,
       loading,
       login,
-      register,
+      registerClient,
+      registerProfessional,
       logout,
       refreshProfile: refreshProfileSafe,
       authFetch,
     }),
-    [user, isProfessional, loading, login, register, logout, refreshProfileSafe, authFetch]
+    [user, isProfessional, loading, login, registerClient, registerProfessional, logout, refreshProfileSafe, authFetch]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

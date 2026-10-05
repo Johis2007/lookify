@@ -6,6 +6,7 @@ import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { ConfirmDialog, useConfirm } from '@/components/ConfirmDialog';
 import { logBookingEvent, patchBooking } from '@/lib/api';
+import { readJson } from '@/lib/http';
 import { attachBookingToPro, emitBookingStatus, getSocket, isSocketLive, joinBooking, leaveBooking } from '@/lib/socket';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -42,7 +43,8 @@ export default function Tracking() {
     try {
       const r = await authFetch(`/items/bookings/${id}?fields=*,service.*,professional.*`);
       if (r.ok) {
-        const { data } = await r.json();
+        const data = (await readJson<{ data?: any }>(r))?.data;
+        if (!data) return;
         setBooking((prev: any) => {
           if (prev && prev.status === data.status) return prev;
           return data;
@@ -62,8 +64,8 @@ export default function Tracking() {
       }
       const ev = await authFetch(`/items/booking_events?filter[booking][_eq]=${id}&sort=-created_at&limit=10`);
       if (ev.ok) {
-        const { data } = await ev.json();
-        setEvents(data);
+        const data = (await readJson<{ data?: any[] }>(ev))?.data;
+        if (Array.isArray(data)) setEvents(data);
       }
     } catch {
       /* sin red: se reintenta en el siguiente ciclo */

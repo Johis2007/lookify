@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -125,7 +126,7 @@ export default function AdminPayments() {
 
   useEffect(() => {
     setLoading(true);
-    load();
+    load().catch(() => {});
   }, [load]);
 
   const shown = txs.filter((t) => {
@@ -142,7 +143,7 @@ export default function AdminPayments() {
     return { label: s, bg: Stitch.colors.surfaceContainer, fg: Stitch.colors.onSurface };
   };
 
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
   const selTotal = payouts.filter((p) => sel.has(p.proId)).reduce((s, p) => s + p.net, 0);
 
   const toggle = (id: number) => {
@@ -224,7 +225,7 @@ export default function AdminPayments() {
           </ScrollView>
 
           <ScrollView
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
           >
             {shown.map((t) => {
               const pill = statusPill(t.status);

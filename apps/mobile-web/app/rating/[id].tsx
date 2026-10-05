@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { createReview } from '@/lib/api';
+import { readJson } from '@/lib/http';
 
 const COMPLIMENTS = ['Puntual', 'Higiene impecable', 'Técnica experta', 'Muy amable', 'Protocolo seguro'];
 const TIPS = [0, 3000, 5000, 10000];
@@ -19,17 +20,24 @@ export default function Rating() {
   const [tip, setTip] = useState(5000);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
-      const r = await authFetch(`/items/bookings/${id}?fields=*,service.*,professional.*`);
-      if (r.ok) {
-        const { data } = await r.json();
-        setBooking(data);
-        if (data.rating) {
-          setStars(data.rating);
-          setDone(true);
+      try {
+        const r = await authFetch(`/items/bookings/${id}?fields=*,service.*,professional.*`);
+        if (r.ok) {
+          const data = (await readJson<{ data?: any }>(r))?.data;
+          if (data) {
+            setBooking(data);
+            if (data.rating) {
+              setStars(data.rating);
+              setDone(true);
+            }
+          }
         }
+      } catch {
+        /* sin red: queda cargando */
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -41,6 +49,7 @@ export default function Rating() {
   const submit = async () => {
     if (!booking || !user) return;
     setBusy(true);
+    setError(null);
     try {
       const proId = typeof booking.professional === 'object' ? booking.professional?.id : booking.professional;
       await createReview(authFetch, {
@@ -51,6 +60,8 @@ export default function Rating() {
         comment: `${comment}${picks.length ? ` [${picks.join(', ')}]` : ''}${tip ? ` (propina $${tip})` : ''}`,
       });
       setDone(true);
+    } catch (e: any) {
+      setError(e?.message || 'No se pudo enviar. Revisa tu conexión.');
     } finally {
       setBusy(false);
     }
@@ -156,6 +167,7 @@ export default function Rating() {
         ) : (
           <Text style={styles.thanks}>¡Gracias por tu valoración! ✨</Text>
         )}
+        {error && !done ? <Text style={styles.err}>{error}</Text> : null}
         <Pressable style={styles.ghost} onPress={() => router.replace('/(tabs)/bookings')}>
           <Text style={styles.ghostT}>Volver a mis reservas</Text>
         </Pressable>
@@ -207,6 +219,7 @@ const styles = StyleSheet.create({
   submit: { backgroundColor: Stitch.colors.secondaryContainer, borderRadius: 12, padding: 15, alignItems: 'center', marginTop: 8 },
   submitT: { color: Stitch.colors.primaryContainer, fontWeight: '900', fontSize: 15 },
   thanks: { textAlign: 'center', fontSize: 15, fontWeight: '800', color: Stitch.colors.onTertiaryContainer, marginTop: 8 },
+  err: { textAlign: 'center', fontSize: 13, fontWeight: '700', color: Stitch.colors.error, marginTop: 8 },
   ghost: { alignItems: 'center', padding: 10 },
   ghostT: { fontWeight: '700', color: Stitch.colors.onSurfaceVariant },
 });

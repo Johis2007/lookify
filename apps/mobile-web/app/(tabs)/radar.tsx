@@ -4,7 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { createRadarSearch, fetchOnlinePros, fetchServices, type ProWithMeta } from '@/lib/api';
-import { getCurrentLatLng } from '@/lib/location';
+import { getCurrentLatLng, watchThrottled } from '@/lib/location';
 
 // Lookify Cliente - Búsqueda Radar y Match (diseño Stitch navy chamber, móvil + web).
 export default function Radar() {
@@ -15,11 +15,24 @@ export default function Radar() {
   const [scanning, setScanning] = useState(false);
   const [match, setMatch] = useState<ProWithMeta | null>(null);
   const [secs, setSecs] = useState(84);
-  const [pos, setPos] = useState({ latitude: 19.4326, longitude: -99.1332 });
+  const [pos, setPos] = useState({ latitude: 4.6097, longitude: -74.0817 });
+  const [live, setLive] = useState(false);
+  const [scanMsg, setScanMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    // Ubicación en vivo de la persona: pin propio actualizado por GPS.
+    let stop: (() => void) | null = null;
     getCurrentLatLng().then((ll) => ll && setPos(ll)).catch(() => {});
+    watchThrottled((ll) => {
+      setPos(ll);
+      setLive(true);
+    }).then((s) => {
+      stop = s;
+    }).catch(() => {});
     fetchServices(authFetch).then(setServices).catch(() => {});
+    return () => {
+      stop?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -31,6 +44,7 @@ export default function Radar() {
   const scan = async () => {
     setScanning(true);
     setMatch(null);
+    setScanMsg(null);
     try {
       if (user) {
         await createRadarSearch(authFetch, {
@@ -47,11 +61,11 @@ export default function Radar() {
         const best = [...pros].sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0))[0];
         setMatch(best);
       } else {
-        setMatch({
-          id: 99, user: 'x', display_name: 'Laura Rodríguez', specialties: 'Master Stylist',
-          is_online: true, rating_avg: 4.9, distanceKm: 1.2,
-        } as ProWithMeta);
+        setMatch(null);
+        setScanMsg('Sin coincidencias en este radio. Prueba con más km.');
       }
+    } catch (e: any) {
+      setScanMsg(e?.message || 'No se pudo escanear. Revisa tu conexión.');
     } finally {
       setScanning(false);
     }
@@ -116,6 +130,10 @@ export default function Radar() {
       </View>
 
       {scanning && <Text style={styles.hint}>Escaneando {radius} km a tu alrededor…</Text>}
+      {!scanning && scanMsg ? <Text style={styles.hint}>{scanMsg}</Text> : null}
+      {!scanning && !scanMsg ? (
+        <Text style={styles.hint}>{live ? '📍 Tu ubicación en vivo' : '📍 Ubicación aproximada'}</Text>
+      ) : null}
 
       {match && !scanning && (
         <View style={styles.card}>

@@ -1,5 +1,6 @@
-import { createDirectus, rest, authentication } from '@directus/sdk';
-
+// NOTA: sin cliente @directus/sdk a propósito — la app usa fetch directo
+// (authFetch) para control total de tokens/refresh. Este módulo solo expone
+// tipos, URL base y constructor de URLs de assets.
 const DIRECTUS_URL =
   process.env.EXPO_PUBLIC_DIRECTUS_URL || 'http://localhost:8055';
 
@@ -57,25 +58,6 @@ export type Review = { id: number; booking: number; client: string; professional
 export type RadarSearch = { id: number; client: string; lat?: number; lng?: number; radius_m: number; service?: number; status: string; matched_professional?: number };
 export type BookingEvent = { id: number; booking: number; status: string; lat?: number; lng?: number; note?: string; created_at?: string };
 export type ProfessionalDocument = { id: number; professional: number; file: string; doc_type: string; status: string; note?: string };
-
-type Schema = {
-  beauty_professionals: BeautyProfessional;
-  beauty_services: BeautyService;
-  service_categories: ServiceCategory;
-  client_profiles: ClientProfile;
-  bookings: Booking;
-  reviews: Review;
-  radar_searches: RadarSearch;
-  booking_events: BookingEvent;
-  professional_documents: ProfessionalDocument;
-  professional_services: { id: number; professional_id: number; service_id: number; price_override?: number };
-  professional_locations: { professional_id: number; updated_at?: string };
-  availability_slots: { id: number; professional_id: number; weekday: number; start: string; end: string };
-};
-
-export const directus = createDirectus<Schema>(DIRECTUS_URL)
-  .with(authentication('json'))
-  .with(rest());
 
 export const DIRECTUS_URL_EXPORT = DIRECTUS_URL;
 export const assetUrl = (fileId?: string | null, w = 400) =>

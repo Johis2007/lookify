@@ -4,15 +4,41 @@ import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { useProLiveState } from '@/lib/proLiveState';
+import { readJson } from '@/lib/http';
 import { confirmNative } from '@/components/ConfirmDialog';
 import { chooseProfessionalPhoto } from '@/lib/permissions';
-import { ensureProfessionalProfile, uploadProfessionalAvatar } from '@/lib/professional';
+import { createClientProfile, ensureProfessionalProfile, uploadProfessionalAvatar } from '@/lib/professional';
 
 // Lookify PRO - Perfil y Portafolio (diseño Stitch, móvil + web).
 export default function Profile() {
   const { user, isProfessional, logout, authFetch, refreshProfile } = useAuth();
   const proLive = useProLiveState();
   const [pendingCount, setPendingCount] = useState(0);
+  const [isClient, setIsClient] = useState<boolean | null>(null);
+
+  // Rol exclusivo: si ya es cliente (perfil o reservas), no ofrece ser pro.
+  useEffect(() => {
+    if (!user || isProfessional) return;
+    let alive = true;
+    (async () => {
+      try {
+        const cp = await authFetch(`/items/client_profiles?filter[user][_eq]=${user.id}&fields=id&limit=1`);
+        const cj = cp.ok ? await readJson<{ data?: unknown[] }>(cp) : null;
+        if (alive && Array.isArray(cj?.data) && cj.data.length > 0) {
+          setIsClient(true);
+          return;
+        }
+        const bk = await authFetch(`/items/bookings?filter[client][_eq]=${user.id}&fields=id&limit=1`);
+        const bj = bk.ok ? await readJson<{ data?: unknown[] }>(bk) : null;
+        if (alive) setIsClient(Array.isArray(bj?.data) && bj.data.length > 0);
+      } catch {
+        if (alive) setIsClient(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [authFetch, user, isProfessional]);
 
   // Insignia de solicitudes pendientes asignadas al profesional.
   useEffect(() => {
@@ -21,7 +47,7 @@ export default function Profile() {
     authFetch(
       `/items/bookings?filter[professional][_eq]=${proLive.professionalId}&filter[status][_eq]=pending&fields=id&limit=50`
     )
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => (r.ok ? readJson(r) : null))
       .then((j) => {
         if (alive && j && Array.isArray(j.data)) setPendingCount(j.data.length);
       })
@@ -35,14 +61,22 @@ export default function Profile() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [tab, setTab] = useState<'portfolio' | 'services'>('portfolio');
 
-  const activatePro = async () => {
+  // Cuentas legado sin rol definido: completar el registro UNA vez (no es
+  // conversión: solo aparece si no hay marcas de cliente ni de profesional).
+  const completeAs = async (which: 'client' | 'pro') => {
     if (!user) return;
     setBusy(true);
     setMsg(null);
     try {
-      const r = await ensureProfessionalProfile(authFetch, user.id, user.first_name || user.email);
-      await refreshProfile();
-      setMsg(r.message);
+      if (which === 'client') {
+        await createClientProfile(authFetch, user.id, user.first_name || user.email);
+        setIsClient(true);
+        setMsg('Registro completado como cliente.');
+      } else {
+        const r = await ensureProfessionalProfile(authFetch, user.id, user.first_name || user.email);
+        await refreshProfile();
+        setMsg(r.message);
+      }
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -126,9 +160,25 @@ export default function Profile() {
       </View>
 
       {!isProfessional ? (
-        <Pressable style={styles.primaryBtn} onPress={activatePro} disabled={busy}>
-          <Text style={styles.primaryT}>Activar perfil profesional →</Text>
-        </Pressable>
+        isClient ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>💅 Cuenta cliente</Text>
+            <Text style={styles.sub}>Esta cuenta reserva servicios. Para ofrecer servicios crea una cuenta profesional aparte.</Text>
+          </View>
+        ) : isClient === false ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>🏁 Completa tu registro</Text>
+            <Text style={styles.sub}>Tu cuenta es anterior a los roles. Elige uno (solo esta vez):</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <Pressable style={[styles.primaryBtn, { flex: 1 }]} onPress={() => completeAs('client')} disabled={busy}>
+                <Text style={styles.primaryT}>Soy cliente</Text>
+              </Pressable>
+              <Pressable style={[styles.ghostBtn, { flex: 1 }]} onPress={() => completeAs('pro')} disabled={busy}>
+                <Text style={styles.ghostT}>Soy profesional</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null
       ) : (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{proLive.isOnline ? '🟢 Estás online' : '⚪ Estás offline'}</Text>

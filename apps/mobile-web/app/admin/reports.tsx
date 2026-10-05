@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 import { confirmNative } from '@/components/ConfirmDialog';
 
@@ -103,7 +104,7 @@ export default function AdminReports() {
 
   useEffect(() => {
     setLoading(true);
-    load();
+    load().catch(() => {});
   }, [load]);
 
   const loadEvents = useCallback(async (bookingId: number) => {
@@ -173,7 +174,7 @@ export default function AdminReports() {
     }
   };
 
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
   const liveReviews = reviews.filter((r) => !dismissed.has(r.id));
 
   const TABS: { key: Tab; label: string }[] = [
@@ -197,7 +198,7 @@ export default function AdminReports() {
         <ActivityIndicator style={{ marginTop: 30 }} />
       ) : tab === 'reviews' ? (
         <ScrollView
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
         >
           {liveReviews.map((r) => (
             <View key={r.id} style={styles.card}>
@@ -220,7 +221,7 @@ export default function AdminReports() {
         </ScrollView>
       ) : tab === 'resolved' ? (
         <ScrollView
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
         >
           {resolved.map((b: any) => {
             const svc = typeof b.service === 'object' ? b.service?.name : `Servicio #${b.service}`;
@@ -240,7 +241,7 @@ export default function AdminReports() {
         <View style={wide ? { flexDirection: 'row', gap: 12, alignItems: 'flex-start' } : { gap: 12 }}>
           <View style={{ flex: wide ? 2 : undefined, gap: 10 }}>
             <ScrollView
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
             >
               {incidents.map((i) => {
                 const on = selected?.id === i.id;

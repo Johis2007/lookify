@@ -59,7 +59,7 @@ export default function AdminServices() {
     }
   };
   useEffect(() => {
-    load();
+    load().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -81,7 +81,7 @@ export default function AdminServices() {
       `• ${s.name}: ${s.is_active ? 'desactivado' : 'activado'} — ${new Date().toLocaleTimeString()}`,
       ...a,
     ].slice(0, 5));
-    load();
+    load().catch(() => {});
   };
 
   const create = async () => {
@@ -99,7 +99,7 @@ export default function AdminServices() {
     setAudit((a) => [`• Nuevo: ${form.name} $${form.price_base} COP`, ...a].slice(0, 5));
     setModal(false);
     setForm({ name: '', price_base: '35000', duration_min: '45' });
-    load();
+    load().catch(() => {});
   };
 
   return (

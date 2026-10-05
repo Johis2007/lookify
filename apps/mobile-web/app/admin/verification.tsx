@@ -2,11 +2,12 @@
 // Réplica RN: cola de verificación (izq) + dossier del candidato (der).
 // Responsive: dos columnas en web, apilado en móvil. Datos desde Directus.
 import { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Image } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions, Image } from 'react-native';
 import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { assetUrl } from '@/lib/directus';
+import { readJson } from '@/lib/http';
 
 const FILTERS = ['pending', 'verified', 'rejected'] as const;
 
@@ -18,6 +19,7 @@ export default function AdminVerification() {
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('pending');
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
+  const [docs, setDocs] = useState<any[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -26,8 +28,8 @@ export default function AdminVerification() {
         `/items/beauty_professionals?filter[verification_status][_eq]=${filter}&limit=30&fields=*,avatar&sort=-id`
       );
       if (r.ok) {
-        const { data } = await r.json();
-        setItems(data || []);
+        const data = (await readJson<{ data?: any[] }>(r))?.data ?? [];
+        setItems(data);
         setSelectedId((prev) => prev ?? (data?.[0]?.id ?? null));
       }
     } finally { setLoading(false); }
@@ -35,7 +37,7 @@ export default function AdminVerification() {
 
   // Carga inicial + refetch al cambiar de filtro (fetch a Directus = sistema externo).
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch(() => {}); }, [load]);
 
   const decide = async (id: number, status: 'verified' | 'rejected') => {
     await authFetch(`/items/beauty_professionals/${id}`, {
@@ -46,10 +48,38 @@ export default function AdminVerification() {
       }),
     });
     setSelectedId(null);
-    load();
+    load().catch(() => {});
   };
 
   const selected = items.find((p) => p.id === selectedId) || items[0];
+
+  // Documentos reales subidos en el registro (professional_documents + file).
+  useEffect(() => {
+    let alive = true;
+    if (!selected) return;
+    (async () => {
+      try {
+        const r = await authFetch(
+          `/items/professional_documents?filter[professional][_eq]=${selected.id}&fields=*,file&limit=10&sort=-created_at`
+        );
+        if (r.ok) {
+          const data = (await readJson<{ data?: any[] }>(r))?.data;
+          if (alive && Array.isArray(data)) setDocs(data);
+        }
+      } catch {
+        /* sin documentos */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
+
+  const openDoc = (fileId?: string | null) => {
+    const url = fileId ? assetUrl(fileId) : null;
+    if (url) Linking.openURL(url).catch(() => {});
+  };
 
   return (
     <AdminShell active="verification" title="Verificación de Profesionales" subtitle="Revisión documental, antecedentes y calibración tarifaria ±20%">
@@ -103,18 +133,35 @@ export default function AdminVerification() {
                 </View>
               </View>
 
-              {/* Documentos */}
-              <Text style={styles.secT}>📁 Documentos obligatorios</Text>
-              {docRows(selected).map((d) => (
-                <View key={d.label} style={styles.docRow}>
-                  <Text style={styles.docName}>{d.icon} {d.label}</Text>
-                  <View style={[styles.docState, { backgroundColor: d.ok ? 'rgba(78,222,163,0.18)' : Stitch.colors.surfaceContainer }]}>
-                    <Text style={[styles.docStateT, { color: d.ok ? Stitch.colors.onTertiaryContainer : Stitch.colors.onSurfaceVariant }]}>
-                      {d.ok ? 'Verificado' : 'Pendiente'}
-                    </Text>
-                  </View>
-                </View>
-              ))}
+              {/* Documentos reales del registro */}
+              <Text style={styles.secT}>📁 Documentos aportados</Text>
+              {docs.length === 0 ? (
+                <Text style={styles.empty}>Sin documentos cargados por el profesional.</Text>
+              ) : (
+                docs.map((d: any) => {
+                  const st = String(d.status || 'pending');
+                  const okDoc = st === 'verified';
+                  return (
+                    <View key={d.id} style={styles.docRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.docName}>📎 {d.doc_type || 'Documento'}</Text>
+                        <Text style={styles.empty}>
+                          {d.created_at ? new Date(d.created_at).toLocaleDateString('es-CO') : ''}
+                          {d.note ? ` · ${d.note}` : ''}
+                        </Text>
+                      </View>
+                      <View style={[styles.docState, { backgroundColor: okDoc ? 'rgba(78,222,163,0.18)' : Stitch.colors.surfaceContainer }]}>
+                        <Text style={[styles.docStateT, { color: okDoc ? Stitch.colors.onTertiaryContainer : Stitch.colors.onSurfaceVariant }]}>
+                          {st === 'verified' ? 'Verificado' : st === 'rejected' ? 'Rechazado' : 'En revisión'}
+                        </Text>
+                      </View>
+                      <Pressable onPress={() => openDoc(typeof d.file === 'object' ? d.file?.id : d.file)}>
+                        <Text style={[styles.docStateT, { color: Stitch.colors.secondary }]}>Ver →</Text>
+                      </Pressable>
+                    </View>
+                  );
+                })
+              )}
 
               {/* Banda tarifaria */}
               <View style={styles.band}>
@@ -146,15 +193,6 @@ export default function AdminVerification() {
       )}
     </AdminShell>
   );
-}
-
-function docRows(p: any) {
-  return [
-    { label: 'Cédula de ciudadanía', icon: '🪪', ok: !!p.phone },
-    { label: 'Certificado profesional', icon: '🎓', ok: !!(p.specialties || p.bio) },
-    { label: 'Antecedentes judiciales', icon: '🛡', ok: p.verification_status === 'verified' },
-    { label: 'Cuenta bancaria', icon: '🏦', ok: !!p.display_name },
-  ];
 }
 
 function AvatarBlock({ uri, name, big }: { uri?: string | null; name?: string; big?: boolean }) {

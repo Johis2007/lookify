@@ -4,11 +4,11 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, 
 import LookifyMap from '@/components/LookifyMap';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
-import { fetchCategories, fetchOnlinePros, kmBetween, type ProWithMeta } from '@/lib/api';
-import { getCurrentLatLng } from '@/lib/location';
+import { fetchCategories, fetchOnlinePros, type ProWithMeta } from '@/lib/api';
+import { getCurrentLatLng, watchThrottled } from '@/lib/location';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
 
-const FALLBACK = { latitude: 19.4326, longitude: -99.1332 };
+const FALLBACK = { latitude: 4.6097, longitude: -74.0817 }; // Chapinero, Bogotá
 
 // Lookify Cliente - Inicio y Mapa (diseño Stitch, móvil + web).
 export default function HomeMap() {
@@ -22,7 +22,15 @@ export default function HomeMap() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Ubicación en vivo de la persona: el pin propio sigue al GPS.
+    let stop: (() => void) | null = null;
     getCurrentLatLng().then((ll) => ll && setPos(ll)).catch(() => {});
+    watchThrottled((ll) => setPos(ll)).then((s) => {
+      stop = s;
+    }).catch(() => {});
+    return () => {
+      stop?.();
+    };
   }, []);
   useEffect(() => {
     (async () => {
@@ -33,9 +41,9 @@ export default function HomeMap() {
           fetchOnlinePros(authFetch, pos.latitude, pos.longitude, 10),
         ]);
         setCats(c);
-        setPros(p.length ? p : mockPros(pos));
+        setPros(p);
       } catch {
-        setPros(mockPros(pos));
+        setPros([]);
       } finally {
         setLoading(false);
       }
@@ -111,12 +119,12 @@ export default function HomeMap() {
           </View>
         </View>
 
-        {/* Spotlight */}
-        {loading ? (
-          <ActivityIndicator style={{ marginTop: 16 }} />
-        ) : spotlight ? (
-          <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>⭐ {filtered.length} profesionales disponibles</Text>
+      {/* Spotlight */}
+      {loading ? (
+        <ActivityIndicator style={{ marginTop: 16 }} />
+      ) : spotlight ? (
+        <View style={styles.sheet}>
+          <Text style={styles.sheetTitle}>⭐ {filtered.length} profesionales disponibles</Text>
             <View style={styles.spot}>
               <View style={styles.spotAvatar}>
                 <Text style={styles.spotAvatarT}>{(spotlight.display_name?.[0] || 'L').toUpperCase()}</Text>
@@ -140,18 +148,18 @@ export default function HomeMap() {
               </Pressable>
             </View>
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>📡 Sin profesionales en línea por aquí</Text>
+            <Text style={styles.spotMeta}>Amplía el radio en el radar o intenta en unos minutos.</Text>
+            <Pressable style={styles.cta} onPress={() => router.push('/(tabs)/radar')}>
+              <Text style={styles.ctaT}>Abrir radar →</Text>
+            </Pressable>
+          </View>
+        )}
       </ScrollView>
     </View>
   );
-}
-
-function mockPros(pos: { latitude: number; longitude: number }): ProWithMeta[] {
-  return [
-    { id: 1, user: 'x', display_name: 'Laura Rodríguez', specialties: 'Corte & Styling', is_online: true, rating_avg: 4.9, current_lat: pos.latitude + 0.006, current_lng: pos.longitude + 0.004, distanceKm: kmBetween(pos.latitude, pos.longitude, pos.latitude + 0.006, pos.longitude + 0.004) },
-    { id: 2, user: 'x', display_name: 'Carlos Mendoza', specialties: 'Barbero Pro', is_online: true, rating_avg: 4.8, current_lat: pos.latitude - 0.004, current_lng: pos.longitude - 0.003, distanceKm: 0.8 },
-    { id: 3, user: 'x', display_name: 'Sofía Valbuena', specialties: 'Manicure Spa', is_online: true, rating_avg: 5.0, current_lat: pos.latitude + 0.01, current_lng: pos.longitude - 0.006, distanceKm: 1.6 },
-  ];
 }
 
 const styles = StyleSheet.create({

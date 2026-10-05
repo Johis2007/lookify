@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { watchThrottled, type LatLng } from './location';
 import { ensureLocationPermission } from './permissions';
+import { readJson } from './http';
 import {
   emitHeartbeat,
   emitLocation,
@@ -21,6 +22,7 @@ export function useProLive(
   enabled: boolean
 ) {
   const [professionalId, setProfessionalId] = useState<number | null>(null);
+  const [verification, setVerification] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [lastFix, setLastFix] = useState<LatLng | null>(null);
@@ -36,13 +38,14 @@ export function useProLive(
     (async () => {
       try {
         const r = await authFetch(
-          `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id,is_online&limit=1`
+          `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id,is_online,verification_status&limit=1`
         );
         if (!r.ok) return;
-        const { data } = await r.json();
+        const data = (await readJson<{ data?: any[] }>(r))?.data;
         if (alive && Array.isArray(data) && data.length) {
           setProfessionalId(Number(data[0].id));
           setIsOnline(Boolean(data[0].is_online));
+          setVerification(typeof data[0].verification_status === 'string' ? data[0].verification_status : null);
         }
       } catch {
         /* sin permiso: se queda en null */
@@ -118,6 +121,11 @@ export function useProLive(
         setError('Aún no tienes perfil profesional.');
         return;
       }
+      // Solo profesionales verificados reciben solicitudes (rol fijo en registro).
+      if (on && verification !== null && verification !== 'verified') {
+        setError('Tu cuenta está en revisión. Podrás recibir solicitudes cuando el administrador la apruebe.');
+        return;
+      }
       setError(null);
       try {
         await authFetch(`/items/beauty_professionals/${professionalId}`, {
@@ -166,8 +174,8 @@ export function useProLive(
         }
       }
     },
-    [authFetch, professionalId, publishFix, stopPublishing]
+    [authFetch, professionalId, verification, publishFix, stopPublishing]
   );
 
-  return { professionalId, isOnline, publishing, lastFix, error, setOnline };
+  return { professionalId, verification, isOnline, publishing, lastFix, error, setOnline };
 }

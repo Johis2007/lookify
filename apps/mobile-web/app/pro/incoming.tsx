@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 import { useProLiveState } from '@/lib/proLiveState';
 import { kmBetween, logBookingEvent, patchBooking } from '@/lib/api';
@@ -92,24 +93,25 @@ export default function Incoming() {
   }, [load]);
 
   // Countdown por solicitud: al agotarse pasa a la siguiente sin tocar estado.
+  // Sin efectos dentro de updaters (StrictMode los invoca dos veces).
   useEffect(() => {
     if (queue.length === 0) return;
     if (timer.current) clearInterval(timer.current);
     timer.current = setInterval(() => {
-      setSecs((s) => {
-        if (s <= 1) {
-          setIdx((i) => (i + 1 < queue.length ? i + 1 : i));
-          if (idx + 1 >= queue.length) load().catch(() => {});
-          return TIMEOUT_S;
-        }
-        return s - 1;
-      });
+      setSecs((s) => (s <= 1 ? TIMEOUT_S : s - 1));
     }, 1000);
     return () => {
       if (timer.current) clearInterval(timer.current);
     };
+  }, [queue.length]);
+
+  // Al expirar el tiempo: avanzar en la cola o recargar.
+  useEffect(() => {
+    if (queue.length === 0 || secs > 0) return;
+    if (idx + 1 < queue.length) setIdx(idx + 1);
+    else load().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queue.length, idx]);
+  }, [secs]);
 
   const current = queue[idx];
   const distKm =
@@ -159,7 +161,7 @@ export default function Incoming() {
     }
   };
 
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
   const mmss = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
 
   return (
@@ -169,6 +171,12 @@ export default function Incoming() {
       </Pressable>
       <Text style={styles.h1}>Solicitud entrante</Text>
       <Text style={styles.sub}>Responde antes de que el turno pase al siguiente profesional.</Text>
+      {isProfessional && !!pid && proLive.verification !== 'verified' ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>⏳ Cuenta en revisión</Text>
+          <Text style={styles.sub}>No recibirás solicitudes hasta la aprobación del administrador.</Text>
+        </View>
+      ) : null}
 
       {!isProfessional || !pid ? (
         <View style={styles.card}>

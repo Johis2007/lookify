@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions, Alert } from 'react-native';
 import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -82,7 +83,7 @@ export default function AdminUsers() {
 
   useEffect(() => {
     setLoading(true);
-    load();
+    load().catch(() => {});
   }, [load]);
   useEffect(() => {
     setPage(0);
@@ -159,7 +160,7 @@ export default function AdminUsers() {
   const fullName = (u: DirUser) => `${u.first_name || ''}`.trim() || u.email || 'Usuario';
   const initials = (u: DirUser) =>
     ((u.first_name?.[0] || '') + '').toUpperCase() || (u.email?.[0] || '?').toUpperCase();
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
   const pages = Math.max(1, Math.ceil(total / LIMIT));
 
   const TABS: { key: Tab; label: string }[] = [
@@ -194,7 +195,7 @@ export default function AdminUsers() {
         <View style={wide ? { flexDirection: 'row', gap: 12, alignItems: 'flex-start' } : { gap: 12 }}>
           <View style={{ flex: wide ? 3 : undefined, gap: 10 }}>
             <ScrollView
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
             >
               {visible.map((u) => {
                 const on = selected?.id === u.id;

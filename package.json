@@ -8,6 +8,7 @@
   "scripts": {
     "dev:infra": "docker compose up -d postgres redis directus",
     "dev:realtime": "npm --workspace apps/realtime-server run dev",
-    "dev:app": "npm --workspace apps/mobile-web run start"
+    "dev:app": "npm --workspace apps/mobile-web run start",
+    "lint": "expo lint"
   }
 }

@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -101,7 +102,7 @@ export default function Availability() {
     if (user) kvSetJson(user.id, 'dispatch_off', next).catch(() => {});
   };
 
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 30 }}>
@@ -110,6 +111,12 @@ export default function Availability() {
       </Pressable>
       <Text style={styles.h1}>Disponibilidad y radar</Text>
       <Text style={styles.sub}>Controla tu presencia, cobertura y servicios para despacho.</Text>
+      {isProfessional && !!pid && proLive.verification !== 'verified' ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>⏳ Cuenta en revisión</Text>
+          <Text style={styles.sub}>No puedes recibir solicitudes hasta que el administrador apruebe tu documento.</Text>
+        </View>
+      ) : null}
 
       {!isProfessional || !pid ? (
         <View style={styles.card}>

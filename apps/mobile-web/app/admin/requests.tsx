@@ -45,12 +45,12 @@ export default function AdminRequests() {
   }, [authFetch, filter]);
 
   // Carga inicial + refetch al cambiar de filtro.
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load().catch(() => {}); }, [load]);
 
   useEffect(() => {
     try {
       const s = getSocket();
-      const onNew = () => load();
+      const onNew = () => load().catch(() => {});
       s.on('booking:new', onNew);
       return () => { s.off('booking:new', onNew); };
     } catch { return undefined; }
@@ -64,7 +64,7 @@ export default function AdminRequests() {
       if (status === 'accepted' && pid) attachBookingToPro(id, pid);
       emitBookingStatus(id, status);
     } catch { /* noop */ }
-    load();
+    load().catch(() => {});
   };
 
   return (
@@ -82,7 +82,7 @@ export default function AdminRequests() {
       {loading ? <ActivityIndicator style={{ marginTop: 30 }} /> : (
         <ScrollView
           contentContainerStyle={{ gap: 10, paddingBottom: 20 }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load().catch(() => {}); }} />}
         >
           <View style={wide ? { flexDirection: 'row', flexWrap: 'wrap', gap: 10 } : { gap: 10 }}>
             {items.map((b) => {

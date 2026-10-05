@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
+import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -92,7 +93,7 @@ export default function Earnings() {
   const visible = rows.filter((r) => within(r.date));
   const total = visible.reduce((s, r) => s + r.total, 0);
   const avg = visible.length ? total / visible.length : 0;
-  const cop = (n: number) => `$${Math.round(n).toLocaleString('es-CO')}`;
+
   const fmtDate = (iso?: string) => {
     if (!iso) return '—';
     const d = new Date(iso);

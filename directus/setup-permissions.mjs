@@ -124,6 +124,12 @@ const MATRIX = [
   ['reviews', 'create'],
   // Radar + eventos.
   ['radar_searches', 'create'],
+  ['radar_searches', 'read'],
+  // Perfiles cliente (marca de rol) y documentos de verificación pro.
+  ['client_profiles', 'create'],
+  ['client_profiles', 'read'],
+  ['professional_documents', 'create'],
+  ['professional_documents', 'read'],
   ['booking_events', 'create'],
   ['booking_events', 'read'],
   // Servicios del profesional (precios visibles; vínculo propio).
