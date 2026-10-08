@@ -1,7 +1,11 @@
 import { io, Socket } from 'socket.io-client';
+import { markSocketBroken, resolveSocketUrl, socketCandidates } from './endpoints';
 
 export const SOCKET_URL =
   process.env.EXPO_PUBLIC_SOCKET_URL || 'http://localhost:4001';
+
+// URL base efectiva (puede cambiar tras el health-check multi-IP).
+let baseUrl: string = SOCKET_URL;
 
 let socket: Socket | null = null;
 // Último access token de Directus (lo fija el AuthProvider).
@@ -30,7 +34,7 @@ export function disconnectSocket() {
 
 export function getSocket(): Socket {
   if (!socket) {
-    const s = io(SOCKET_URL, {
+    const s = io(baseUrl, {
       // Fase 5: reconexión automática (Expo Go pierde red con facilidad).
       transports: ['websocket', 'polling'],
       reconnection: true,
@@ -53,6 +57,48 @@ export function getSocket(): Socket {
     socket = s;
   }
   return socket;
+}
+
+/**
+ * Resuelve la URL del realtime que responde (multi-IP: casa/universidad) y
+ * recrea el socket si cambió. Llamar al arrancar la app y al cambiar de red.
+ * No lanza: ante fallo total conserva la URL actual.
+ */
+export async function ensureSocketEndpoint(): Promise<string> {
+  let working: string;
+  try {
+    working = await resolveSocketUrl();
+  } catch {
+    working = socketCandidates()[0] || baseUrl;
+  }
+  if (working !== baseUrl) {
+    try {
+      socket?.disconnect();
+    } catch {
+      /* noop */
+    }
+    socket = null;
+    baseUrl = working;
+    if (currentToken) getSocket().connect();
+  }
+  return baseUrl;
+}
+
+/** URL base efectiva del socket (para mostrar "Conectado a …" en UI). */
+export function getSocketBaseUrl(): string {
+  return baseUrl;
+}
+
+/** Fuerza re-resolución (ej. el usuario cambió de Wi-Fi). */
+export function markSocketEndpointBroken() {
+  markSocketBroken(baseUrl);
+  baseUrl = socketCandidates()[0] || baseUrl;
+  try {
+    socket?.disconnect();
+  } catch {
+    /* noop */
+  }
+  socket = null;
 }
 
 export function isSocketLive(): boolean {

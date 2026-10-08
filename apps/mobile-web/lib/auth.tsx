@@ -9,8 +9,8 @@ import React, {
 } from 'react';
 import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
-import { DIRECTUS_URL_EXPORT as DIRECTUS_URL } from './directus';
-import { disconnectSocket, setAuthExpiredHandler, setSocketToken } from './socket';
+import { directusFetch } from './endpoints';
+import { disconnectSocket, ensureSocketEndpoint, setAuthExpiredHandler, setSocketToken } from './socket';
 import { readJson } from './http';
 
 export type LookifyUser = {
@@ -22,8 +22,12 @@ export type LookifyUser = {
 type AuthContextValue = {
   user: LookifyUser | null;
   isProfessional: boolean;
+  /** Rol administrador de Directus (único con acceso a /admin). */
+  isAdmin: boolean;
+  /** Cuenta con marcas de cliente y profesional: opera solo como profesional. */
+  roleConflict: boolean;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{ isProfessional: boolean; isAdmin: boolean }>;
   registerClient: (email: string, password: string, displayName: string) => Promise<void>;
   registerProfessional: (args: {
     email: string;
@@ -74,16 +78,26 @@ async function api(path: string, token: string | null, init?: RequestInit) {
   // No fijar Content-Type en multipart: fetch genera el boundary.
   if (!isForm) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
-  return fetch(`${DIRECTUS_URL}${path}`, { ...init, headers });
+  // directusFetch prueba la URL primaria y hace fallback a la otra red
+  // (casa/universidad) ante fallo de conexión, sin romper la sesión.
+  return directusFetch(path, { ...init, headers });
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<LookifyUser | null>(null);
   const [isProfessional, setIsProfessional] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  // Cuenta con marcas de AMBOS roles (cliente y profesional). Las actividades
+  // no se mezclan: estas cuentas operan como profesional y se les avisa que
+  // usen una cuenta cliente aparte para reservar.
+  const [roleConflict, setRoleConflict] = useState(false);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchMe = useCallback(async (token: string) => {
+    // /users/me PLANO: pedir expansiones (role.*) exige permiso de lectura
+    // sobre directus_roles, que el rol "App User" no tiene -> 403 y sesión
+    // invalidada. El admin se detecta con sonda aparte (ver abajo).
     const res = await api('/users/me', token);
     if (!res.ok) throw new Error('SESSION_INVALID');
     const me = (await readJson<{ data?: any }>(res))?.data;
@@ -94,26 +108,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       first_name: me.first_name,
     };
     setUser(u);
-    // Rol profesional = existe fila en beauty_professionals para este user.
-    try {
-      const p = await api(
-        `/items/beauty_professionals?filter[user][_eq]=${u.id}&fields=id&limit=1`,
-        token
-      );
-      if (p.ok) {
-        const rows = (await readJson<{ data?: unknown[] }>(p))?.data;
-        setIsProfessional(Array.isArray(rows) && rows.length > 0);
-      }
-    } catch {
-      // Sin permiso de lectura: se asume cliente hasta activar perfil.
-      setIsProfessional(false);
-    }
-    return u;
+    // Sondas de rol en paralelo (best-effort: ninguna rompe la sesión).
+    const [proRows, adminOk, clientMarked] = await Promise.all([
+      // Rol profesional = existe fila en beauty_professionals para este user.
+      api(`/items/beauty_professionals?filter[user][_eq]=${u.id}&fields=id&limit=1`, token)
+        .then(async (p) => (p.ok ? ((await readJson<{ data?: unknown[] }>(p))?.data ?? []) : []))
+        .catch(() => [] as unknown[]),
+      // Admin = puede leer /permissions (solo admin_access; App User -> 403).
+      api('/permissions?limit=1&fields=id', token)
+        .then((r) => r.ok)
+        .catch(() => false),
+      // Marcas de cliente = perfil cliente o al menos una reserva como cliente.
+      (async () => {
+        try {
+          const cp = await api(`/items/client_profiles?filter[user][_eq]=${u.id}&fields=id&limit=1`, token);
+          const cj = cp.ok ? (await readJson<{ data?: unknown[] }>(cp))?.data : null;
+          if (Array.isArray(cj) && cj.length > 0) return true;
+          const bk = await api(`/items/bookings?filter[client][_eq]=${u.id}&fields=id&limit=1`, token);
+          const bj = bk.ok ? (await readJson<{ data?: unknown[] }>(bk))?.data : null;
+          return Array.isArray(bj) && bj.length > 0;
+        } catch {
+          return false;
+        }
+      })(),
+    ]);
+    const pro = Array.isArray(proRows) && proRows.length > 0;
+    setIsProfessional(pro);
+    setIsAdmin(adminOk);
+    // Exclusividad real: una cuenta no opera en ambos roles a la vez.
+    setRoleConflict(pro && clientMarked);
+    // Se devuelve el rol detectado para que el login valide la entrada por rol.
+    return { user: u, isProfessional: pro, isAdmin: adminOk, roleConflict: pro && clientMarked };
   }, []);
 
-  // Boot: restaura sesión o refresca token.
+  // Boot: resuelve la red que responde (casa/universidad), restaura sesión o refresca token.
   useEffect(() => {
     (async () => {
+      // Warmup multi-IP en paralelo: no bloquea el login si falla.
+      ensureSocketEndpoint().catch(() => {});
       try {
         let token = await load(ACCESS_KEY);
         if (token) {
@@ -180,7 +212,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await save(REFRESH_KEY, data.refresh_token);
       setAccessToken(data.access_token);
       setSocketToken(data.access_token);
-      await fetchMe(data.access_token);
+      const me = await fetchMe(data.access_token);
+      return { isProfessional: me.isProfessional, isAdmin: me.isAdmin };
     },
     [fetchMe]
   );
@@ -245,6 +278,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       docType: string;
       doc: { uri: string; name: string; mimeType: string };
     }) => {
+      // Documento OBLIGATORIO: sin archivo no se crea la cuenta profesional.
+      if (!args.doc?.uri || !args.doc?.name) {
+        throw new Error('El documento es obligatorio: sube tu certificado, licencia o diploma.');
+      }
       let res: Response;
       try {
         res = await api('/users', null, {
@@ -338,6 +375,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setAccessToken(null);
       setUser(null);
       setIsProfessional(false);
+      setIsAdmin(false);
+      setRoleConflict(false);
       disconnectSocket();
     }
   }, []);
@@ -396,6 +435,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       user,
       isProfessional,
+      isAdmin,
+      roleConflict,
       loading,
       login,
       registerClient,
@@ -404,7 +445,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile: refreshProfileSafe,
       authFetch,
     }),
-    [user, isProfessional, loading, login, registerClient, registerProfessional, logout, refreshProfileSafe, authFetch]
+    [user, isProfessional, isAdmin, roleConflict, loading, login, registerClient, registerProfessional, logout, refreshProfileSafe, authFetch]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

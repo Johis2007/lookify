@@ -5,9 +5,9 @@ import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { fetchMyBookings } from '@/lib/api';
 
-// Lookify Cliente - Mis reservas (estilo feed Stitch PRO, móvil + web).
+// Lookify Cliente - Mis reservas (solo cuentas cliente: sin métricas ni admin).
 export default function Bookings() {
-  const { authFetch, user, isProfessional } = useAuth();
+  const { authFetch, user } = useAuth();
   const [items, setItems] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'active' | 'done'>('all');
   const [loading, setLoading] = useState(true);
@@ -111,11 +111,6 @@ export default function Bookings() {
           {!visible.length && (
             <Text style={styles.empty}>Aún no tienes reservas aquí. Ve al mapa o al radar para crear la primera. ✨</Text>
           )}
-          {isProfessional && (
-            <Pressable style={styles.adminLink} onPress={() => router.push('/admin/requests' as any)}>
-              <Text style={styles.adminT}>Soy profesional → ver solicitudes en vivo</Text>
-            </Pressable>
-          )}
         </ScrollView>
       )}
     </View>
@@ -153,6 +148,4 @@ const styles = StyleSheet.create({
   doneNote: { fontSize: 12, color: Stitch.colors.onTertiaryContainer, fontWeight: '700' },
   wait: { fontSize: 12, color: Stitch.colors.onSurfaceVariant },
   empty: { textAlign: 'center', color: Stitch.colors.onSurfaceVariant, marginTop: 30, lineHeight: 20 },
-  adminLink: { backgroundColor: '#fff', borderWidth: 1, borderColor: Stitch.colors.surfaceHigh, borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 8 },
-  adminT: { fontWeight: '800', color: Stitch.colors.secondary },
 });

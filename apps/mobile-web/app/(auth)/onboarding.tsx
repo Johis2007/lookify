@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth';
 import { ensureLocationPermission } from '@/lib/permissions';
 
 const SLIDES = [
-  { emoji: '📍', title: 'Encuentra belleza cerca', sub: 'Profesionales online a menos de 10 km en el mapa de Chapinero.' },
+  { emoji: '📍', title: 'Encuentra belleza cerca', sub: 'Profesionales online a menos de 10 km en el mapa de Soacha.' },
   { emoji: '📡', title: 'Radar Lookify', sub: 'Elige radio 3 / 5 / 10 km y recibe match instantáneo.' },
   { emoji: '✨', title: 'Reserva y sigue en vivo', sub: 'Confirma en 1 toque, sigue la llegada y califica al finalizar.' },
 ];

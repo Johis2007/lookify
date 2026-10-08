@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import LookifyMap from '@/components/LookifyMap';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
@@ -19,16 +19,37 @@ export default function Tracking() {
   const { authFetch } = useAuth();
   const confirm = useConfirm();
   const [booking, setBooking] = useState<any>(null);
-  const [proPos, setProPos] = useState({ latitude: 19.435, longitude: -99.13 });
+  const [proPos, setProPos] = useState({ latitude: 4.5792, longitude: -74.2168 });
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [conn, setConn] = useState<ConnState>('connecting');
   const [lastUpdate, setLastUpdate] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  // Recorrido del profesional: últimas 40 posiciones para la línea de ruta.
+  const [trail, setTrail] = useState<{ latitude: number; longitude: number }[]>([]);
+  // Pulso que "late" en cada actualización GPS (aspecto reactivo).
+  const [pulse] = useState(() => new Animated.Value(0));
+  const bumpPulse = () => {
+    pulse.setValue(0);
+    Animated.spring(pulse, { toValue: 1, useNativeDriver: true, damping: 9, stiffness: 160 }).start();
+  };
+  // Flash del stepper al cambiar de estado.
+  const [stepFlash] = useState(() => new Animated.Value(1));
   const bookingRef = useRef<any>(null);
   useEffect(() => {
     bookingRef.current = booking;
   }, [booking]);
+  // Al cambiar el estado del servicio, el stepper hace flash animado.
+  const lastStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const s = booking?.status ?? null;
+    if (s && s !== lastStatus.current) {
+      lastStatus.current = s;
+      stepFlash.setValue(0);
+      Animated.timing(stepFlash, { toValue: 1, duration: 450, useNativeDriver: true }).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [booking?.status]);
   const agoLabel = lastUpdate ? ` · act. hace ${Math.max(0, Math.round((nowTick - lastUpdate) / 1000))}s` : '';
 
   const proIdOf = (b: any): string | null => {
@@ -37,6 +58,19 @@ export default function Tracking() {
     if (typeof p === 'object' && p?.id) return String(p.id);
     if (typeof p === 'number' || typeof p === 'string') return String(p);
     return null;
+  };
+
+  // Join a la room con el pro cuando se conoce: el servidor vincula el GPS
+  // 1:1 si quien mira es el propio pro o admin (al cliente no le filtra nada
+  // extra). Deduplicado para no re-emitir en cada polling de 15s; en
+  // reconexión se fuerza de nuevo (rooms nuevas por conexión).
+  const joinedRef = useRef<string | null>(null);
+  const joinWithPro = (bid: string, pid: string | null) => {
+    const key = pid ? `${bid}:${pid}` : bid;
+    if (joinedRef.current === key) return;
+    joinedRef.current = key;
+    if (pid) joinBooking(bid, pid);
+    else joinBooking(bid);
   };
 
   const refreshFromDirectus = async () => {
@@ -50,6 +84,7 @@ export default function Tracking() {
           return data;
         });
         const pid = proIdOf(data);
+        if (pid) joinWithPro(String(data.id ?? id), pid);
         if (pid) {
           const pr = data.professional;
           const lat = typeof pr === 'object' ? pr?.current_lat : undefined;
@@ -57,7 +92,13 @@ export default function Tracking() {
           if (typeof lat === 'number' && typeof lng === 'number') {
             setProPos((prev) => {
               if (lastUpdate && Date.now() - lastUpdate < 20_000) return prev;
-              return { latitude: lat, longitude: lng };
+              const fix = { latitude: lat, longitude: lng };
+              setTrail((t) =>
+                t.length && Math.abs(t[t.length - 1].latitude - lat) < 1e-6 && Math.abs(t[t.length - 1].longitude - lng) < 1e-6
+                  ? t
+                  : [...t.slice(-39), fix]
+              );
+              return fix;
             });
           }
         }
@@ -83,12 +124,13 @@ export default function Tracking() {
     try {
       s = getSocket();
       const bid = String(id);
-      joinBooking(bid);
+      joinWithPro(bid, proIdOf(bookingRef.current));
       setConn(s.connected ? 'live' : 'connecting');
 
       const onConnect = () => {
         setConn('live');
-        joinBooking(bid, proIdOf(bookingRef.current) || undefined);
+        joinedRef.current = null;
+        joinWithPro(bid, proIdOf(bookingRef.current));
       };
       const onDisconnect = () => setConn('polling');
       const onStatus = (p: any) => {
@@ -101,7 +143,10 @@ export default function Tracking() {
         const pid = proIdOf(bookingRef.current);
         if (pid && p?.professional_id && String(p.professional_id) !== pid) return;
         if (typeof p?.lat === 'number' && typeof p?.lng === 'number') {
-          setProPos({ latitude: p.lat, longitude: p.lng });
+          const fix = { latitude: p.lat, longitude: p.lng };
+          setProPos(fix);
+          setTrail((t) => [...t.slice(-39), fix]);
+          bumpPulse();
           setLastUpdate(Date.now());
           setConn('live');
         }
@@ -111,7 +156,10 @@ export default function Tracking() {
         if (!pid || !Array.isArray(arr)) return;
         const mine = arr.find((x: any) => String(x?.professional_id) === pid);
         if (mine && typeof mine.lat === 'number') {
-          setProPos({ latitude: mine.lat, longitude: mine.lng });
+          const fix = { latitude: mine.lat, longitude: mine.lng };
+          setProPos(fix);
+          setTrail((t) => [...t.slice(-39), fix]);
+          bumpPulse();
           setLastUpdate(Date.now());
           setConn('live');
         }
@@ -200,23 +248,38 @@ export default function Tracking() {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={{ paddingBottom: 30 }}>
-        {/* Pill EN VIVO */}
+        {/* Pill EN VIVO (late con cada update GPS) */}
         <View style={styles.liveWrap}>
-          <View style={styles.livePill}>
+          <Animated.View
+            style={[
+              styles.livePill,
+              {
+                transform: [
+                  { scale: pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.06] }) },
+                ],
+              },
+            ]}
+          >
             <View style={[styles.dot, conn === 'live' ? styles.dotLive : conn === 'polling' ? styles.dotPoll : styles.dotWait]} />
             <Text style={styles.liveT}>
               {conn === 'live' ? 'EN VIVO' : conn === 'polling' ? 'POLLING 15s' : 'CONECTANDO'}
             </Text>
-          </View>
+          </Animated.View>
           <Text style={styles.liveSub} numberOfLines={1}>
             {booking.professional?.display_name || 'Tu profesional'} en camino{agoLabel}
           </Text>
+          <Text style={styles.coords} numberOfLines={1}>
+            🛰️ {proPos.latitude.toFixed(5)}, {proPos.longitude.toFixed(5)}
+            {trail.length > 1 ? ` · recorrido ${trail.length} pts` : ''}
+          </Text>
         </View>
 
-        {/* Mapa */}
+        {/* Mapa con recorrido y cámara que sigue al profesional */}
         <View style={styles.mapWrap}>
           <LookifyMap
             initial={proPos}
+            follow={proPos}
+            trail={trail}
             pins={[{ id: 'pro', latitude: proPos.latitude, longitude: proPos.longitude, title: 'Tu profesional en camino' }]}
           />
           <View style={styles.eta}>
@@ -244,8 +307,8 @@ export default function Tracking() {
           </View>
         </View>
 
-        {/* Stepper */}
-        <View style={styles.card}>
+        {/* Stepper (flash animado al cambiar de estado) */}
+        <Animated.View style={[styles.card, { opacity: stepFlash }]}>
           <View style={styles.cardTop}>
             <Text style={styles.cardTitle}>Estado del servicio</Text>
             <Text style={styles.liveTag}>En tiempo real</Text>
@@ -283,7 +346,7 @@ export default function Tracking() {
               </Pressable>
             )}
           </View>
-        </View>
+        </Animated.View>
 
         {/* Tarifa */}
         <View style={styles.card}>
@@ -334,6 +397,7 @@ const styles = StyleSheet.create({
   dotWait: { backgroundColor: '#9CA3AF' },
   liveT: { color: '#fff', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   liveSub: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 6, fontWeight: '600' },
+  coords: { fontSize: 11, color: Stitch.colors.onSurfaceVariant, marginTop: 2, fontVariant: ['tabular-nums'] },
   mapWrap: { height: 260, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
   eta: { position: 'absolute', bottom: 10, left: 10, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
   etaT: { color: Stitch.colors.onSurface, fontSize: 12, fontWeight: '800' },

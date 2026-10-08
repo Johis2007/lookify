@@ -2,11 +2,21 @@ import { DIRECTUS_URL_EXPORT as DIRECTUS_URL } from './directus';
 import { readJson } from './http';
 
 // Crea el perfil cliente (solo para cuentas legado sin rol definido).
+// Exclusividad: si la cuenta ya es profesional, no puede ser cliente al tiempo.
 export async function createClientProfile(
   authFetch: (path: string, init?: RequestInit) => Promise<Response>,
   userId: string,
   displayName: string
 ): Promise<void> {
+  const check = await authFetch(
+    `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id&limit=1`
+  );
+  if (check.ok) {
+    const rows = (await readJson<{ data?: unknown[] }>(check))?.data;
+    if (Array.isArray(rows) && rows.length > 0) {
+      throw new Error('Esta cuenta es de profesional. Crea una cuenta cliente aparte para reservar.');
+    }
+  }
   const res = await authFetch('/items/client_profiles', {
     method: 'POST',
     body: JSON.stringify({ user: userId, display_name: displayName }),

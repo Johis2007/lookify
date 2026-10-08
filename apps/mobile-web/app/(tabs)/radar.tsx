@@ -1,38 +1,30 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { createRadarSearch, fetchOnlinePros, fetchServices, type ProWithMeta } from '@/lib/api';
-import { getCurrentLatLng, watchThrottled } from '@/lib/location';
+import { useClientLocation } from '@/lib/useClientLocation';
+import { LocationGate } from '@/components/LocationGate';
+import { RadarScan } from '@/components/RadarScan';
 
 // Lookify Cliente - Búsqueda Radar y Match (diseño Stitch navy chamber, móvil + web).
+// - Radar animado (ondas + barrido) mientras escanea.
+// - Ubicación real del cliente (GPS con confirmación, manual o aproximada).
 export default function Radar() {
   const { authFetch, user } = useAuth();
+  const loc = useClientLocation();
   const [radius, setRadius] = useState(2);
   const [serviceId, setServiceId] = useState<number | undefined>();
   const [services, setServices] = useState<any[]>([]);
   const [scanning, setScanning] = useState(false);
   const [match, setMatch] = useState<ProWithMeta | null>(null);
   const [secs, setSecs] = useState(84);
-  const [pos, setPos] = useState({ latitude: 4.6097, longitude: -74.0817 });
-  const [live, setLive] = useState(false);
   const [scanMsg, setScanMsg] = useState<string | null>(null);
+  const [matchAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    // Ubicación en vivo de la persona: pin propio actualizado por GPS.
-    let stop: (() => void) | null = null;
-    getCurrentLatLng().then((ll) => ll && setPos(ll)).catch(() => {});
-    watchThrottled((ll) => {
-      setPos(ll);
-      setLive(true);
-    }).then((s) => {
-      stop = s;
-    }).catch(() => {});
     fetchServices(authFetch).then(setServices).catch(() => {});
-    return () => {
-      stop?.();
-    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -40,6 +32,15 @@ export default function Radar() {
     const t = setInterval(() => setSecs((s) => (s > 0 ? s - 1 : 84)), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Entrada animada de la tarjeta de match (fade + deslizamiento).
+  useEffect(() => {
+    if (match) {
+      matchAnim.setValue(0);
+      Animated.spring(matchAnim, { toValue: 1, useNativeDriver: true, damping: 16, stiffness: 120 }).start();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [match?.id]);
 
   const scan = async () => {
     setScanning(true);
@@ -49,14 +50,14 @@ export default function Radar() {
       if (user) {
         await createRadarSearch(authFetch, {
           client: user.id,
-          lat: pos.latitude,
-          lng: pos.longitude,
+          lat: loc.coords.latitude,
+          lng: loc.coords.longitude,
           radius_m: radius * 1000,
           service: serviceId,
         });
       }
-      const pros = await fetchOnlinePros(authFetch, pos.latitude, pos.longitude, radius);
-      await new Promise((r) => setTimeout(r, 1200));
+      const pros = await fetchOnlinePros(authFetch, loc.coords.latitude, loc.coords.longitude, radius);
+      await new Promise((r) => setTimeout(r, 1600));
       if (pros.length) {
         const best = [...pros].sort((a, b) => (b.rating_avg || 0) - (a.rating_avg || 0))[0];
         setMatch(best);
@@ -72,38 +73,52 @@ export default function Radar() {
   };
 
   const mm = `${String(Math.floor(secs / 60)).padStart(2, '0')}:${String(secs % 60).padStart(2, '0')}`;
+  const step = scanning ? 1 : match ? 2 : 0;
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 24 }}>
       <View style={styles.topBar}>
         <Text style={styles.cancel}>✕ Cancelar solicitud</Text>
         <View style={styles.livePill}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveT}>Radar Activo</Text>
+          <View style={[styles.liveDot, (scanning || loc.live) && styles.liveDotOn]} />
+          <Text style={styles.liveT}>{scanning ? 'Escaneando…' : 'Radar Activo'}</Text>
         </View>
       </View>
 
-      {/* Cámara radar navy */}
+      {/* Cámara radar navy con animación */}
       <View style={styles.chamber}>
         <Text style={styles.chamberTitle}>Buscando el mejor profesional</Text>
-        <Text style={styles.chamberSub}>Corte de cabello cerca de ti · Chapinero</Text>
-        <View style={styles.rings}>
-          <View style={styles.ringOuter}>
-            <View style={styles.ringMid}>
-              <View style={styles.core}>
-                <Text style={{ fontSize: 26 }}>✂️</Text>
-              </View>
-            </View>
-          </View>
+        <Text style={styles.chamberSub}>
+          {loc.coords.label ?? 'Corte de cabello cerca de ti'} · {loc.coords.latitude.toFixed(4)},{' '}
+          {loc.coords.longitude.toFixed(4)}
+        </Text>
+        <View style={{ marginVertical: 6 }}>
+          <RadarScan
+            scanning={scanning}
+            statusText={
+              scanning
+                ? `Buscando profesionales cercanos en ${radius} km`
+                : undefined
+            }
+          />
         </View>
         <View style={styles.timerBadge}>
           <Text style={styles.timerT}>⏳ Tiempo estimado: {mm} min</Text>
         </View>
         <View style={styles.steps}>
-          <Text style={styles.stepDone}>✓ Solicitud enviada</Text>
-          <Text style={styles.stepActive}>📡 Buscando en radio de {radius} km · 3 evaluando</Text>
-          <Text style={styles.stepTodo}>→ Confirmación y ruta en camino</Text>
+          <Text style={[styles.stepTodo, step >= 0 && styles.stepDone]}>✓ Solicitud enviada</Text>
+          <Text style={[styles.stepTodo, step === 1 ? styles.stepActive : step > 1 && styles.stepDone]}>
+            📡 {scanning ? `Buscando en radio de ${radius} km…` : `Radio de ${radius} km · listo para escanear`}
+          </Text>
+          <Text style={[styles.stepTodo, step >= 2 && styles.stepDone]}>
+            {match ? '✓ Profesional encontrado' : '→ Confirmación y ruta en camino'}
+          </Text>
         </View>
+      </View>
+
+      {/* Ubicación real: GPS / manual / en vivo */}
+      <View style={{ marginHorizontal: 16, marginTop: 12 }}>
+        <LocationGate loc={loc} compact />
       </View>
 
       {/* Controles */}
@@ -124,19 +139,43 @@ export default function Radar() {
             </Pressable>
           ))}
         </View>
-        <Pressable style={styles.scan} onPress={scan} disabled={scanning}>
-          {scanning ? <ActivityIndicator color="#fff" /> : <Text style={styles.scanT}>📡 Buscar match ahora</Text>}
+        <Pressable style={[styles.scan, scanning && { opacity: 0.8 }]} onPress={scan} disabled={scanning}>
+          <Text style={styles.scanT}>{scanning ? '📡 Escaneando…' : '📡 Buscar match ahora'}</Text>
         </Pressable>
       </View>
 
-      {scanning && <Text style={styles.hint}>Escaneando {radius} km a tu alrededor…</Text>}
+      {scanning && (
+        <Text style={styles.hint}>
+          Escaneando {radius} km a tu alrededor…{loc.live ? ' (tu pin se mueve en vivo)' : ''}
+        </Text>
+      )}
       {!scanning && scanMsg ? <Text style={styles.hint}>{scanMsg}</Text> : null}
       {!scanning && !scanMsg ? (
-        <Text style={styles.hint}>{live ? '📍 Tu ubicación en vivo' : '📍 Ubicación aproximada'}</Text>
+        <Text style={styles.hint}>
+          {loc.source === 'live'
+            ? '📍 Tu ubicación en vivo'
+            : loc.source === 'gps'
+              ? '📍 Ubicación GPS actual'
+              : loc.source === 'manual'
+                ? '✏️ Ubicación manual'
+                : '📍 Ubicación aproximada — activa el GPS para mayor precisión'}
+        </Text>
       ) : null}
 
       {match && !scanning && (
-        <View style={styles.card}>
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              opacity: matchAnim,
+              transform: [
+                {
+                  translateY: matchAnim.interpolate({ inputRange: [0, 1], outputRange: [24, 0] }),
+                },
+              ],
+            },
+          ]}
+        >
           <View style={styles.offerRow}>
             <Text style={styles.offerTag}>⭐ OFERTA DISPONIBLE</Text>
             <Text style={styles.offerExp}>Expira en 00:45s</Text>
@@ -163,7 +202,7 @@ export default function Radar() {
           <Pressable onPress={() => setMatch(null)}>
             <Text style={styles.decline}>↻ Buscar otro profesional</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       )}
     </ScrollView>
   );
@@ -174,15 +213,12 @@ const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16 },
   cancel: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12 },
   livePill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.surfaceContainer, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
-  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Stitch.colors.secondaryContainer },
+  liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Stitch.colors.outline },
+  liveDotOn: { backgroundColor: '#22c55e' },
   liveT: { fontSize: 11, fontWeight: '800', color: Stitch.colors.onSurface },
   chamber: { backgroundColor: Stitch.colors.primaryContainer, borderRadius: 20, marginHorizontal: 16, padding: 20, alignItems: 'center', gap: 6 },
   chamberTitle: { fontSize: 18, fontWeight: '800', color: '#fff', textAlign: 'center' },
   chamberSub: { fontSize: 12, color: '#b8c7e6', textAlign: 'center' },
-  rings: { alignItems: 'center', marginVertical: 10 },
-  ringOuter: { width: 160, height: 160, borderRadius: 80, borderWidth: 1, borderColor: 'rgba(254,174,44,0.3)', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(254,174,44,0.08)' },
-  ringMid: { width: 112, height: 112, borderRadius: 56, borderWidth: 1, borderColor: 'rgba(254,174,44,0.4)', alignItems: 'center', justifyContent: 'center' },
-  core: { width: 56, height: 56, borderRadius: 28, backgroundColor: Stitch.colors.secondaryContainer, alignItems: 'center', justifyContent: 'center' },
   timerBadge: { backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 999, paddingVertical: 7, paddingHorizontal: 14 },
   timerT: { color: Stitch.colors.secondaryContainer, fontSize: 11, fontWeight: '800' },
   steps: { gap: 4, marginTop: 10, alignSelf: 'stretch', backgroundColor: 'rgba(0,0,0,0.25)', borderRadius: 12, padding: 12 },

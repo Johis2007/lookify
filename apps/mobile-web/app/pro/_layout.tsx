@@ -1,10 +1,18 @@
-import { Redirect, Stack } from 'expo-router';
-import { useAuth } from '@/lib/auth';
+import { Stack } from 'expo-router';
+import { PendingGate } from '@/components/ProWaitingRoom';
+import { RoleGate } from '@/lib/roleGuard';
 
+// Zona PROFESIONAL: dashboard operativo exclusivo (solicitudes, disponibilidad,
+// ingresos, perfil profesional). Solo cuentas profesionales; los clientes son
+// redirigidos a sus vistas y nunca ven métricas ni herramientas PRO.
+// PendingGate: sin verificación aprobada no hay dashboard: la cuenta queda en
+// la sala de espera (lista de espera para revisión documental).
 export default function ProLayout() {
-  const { user, loading } = useAuth();
-  // Defensa en profundidad: el guard raíz ya pide login.
-  // Cada pantalla muestra estado vacío si aún no hay perfil profesional.
-  if (!loading && !user) return <Redirect href="/(auth)/login" />;
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <RoleGate allow="pro">
+      <PendingGate>
+        <Stack screenOptions={{ headerShown: false }} />
+      </PendingGate>
+    </RoleGate>
+  );
 }

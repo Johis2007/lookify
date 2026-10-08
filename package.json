@@ -9,6 +9,11 @@
     "dev:infra": "docker compose up -d postgres redis directus",
     "dev:realtime": "npm --workspace apps/realtime-server run dev",
     "dev:app": "npm --workspace apps/mobile-web run start",
-    "lint": "expo lint"
+    "env:lan": "node scripts/sync-lan-env.mjs",
+    "lint": "npm --workspace apps/mobile-web run lint",
+    "typecheck": "npx tsc --noEmit -p apps/mobile-web && npx tsc --noEmit -p apps/realtime-server"
+  },
+  "dependencies": {
+    "express": "^5.2.1"
   }
 }

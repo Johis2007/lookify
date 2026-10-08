@@ -4,6 +4,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
 import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
+import { readItems, readJson } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -61,7 +62,7 @@ export default function AdminUsers() {
         authFetch('/users?filter[status][_eq]=suspended&limit=1&meta=total_count&fields=id'),
       ]);
       if (u.ok) {
-        const j = await u.json();
+        const j = (await readJson<any>(u)) ?? {};
         setUsers(Array.isArray(j.data) ? j.data : []);
         setTotal(Number(j.meta?.total_count ?? 0));
         if (!autoPicked.current && Array.isArray(j.data) && j.data.length) {
@@ -70,10 +71,10 @@ export default function AdminUsers() {
         }
       }
       if (p.ok) {
-        const j = await p.json();
+        const j = (await readJson<any>(p)) ?? {};
         setProIds(new Set((Array.isArray(j.data) ? j.data : []).map((r: any) => String(r.user))));
       }
-      const meta = async (r: Response) => (r.ok ? Number((await r.json()).meta?.total_count ?? 0) : 0);
+      const meta = async (r: Response) => (r.ok ? Number((await readJson<any>(r))?.meta?.total_count ?? 0) : 0);
       setCounts({ total: await meta(cAll), pros: await meta(cPros), suspended: await meta(cSusp) });
     } finally {
       setLoading(false);
@@ -104,9 +105,9 @@ export default function AdminUsers() {
         authFetch(`/items/reviews?filter[client][_eq]=${u.id}&fields=rating&limit=100`),
         authFetch(`/items/client_profiles?filter[user][_eq]=${u.id}&fields=phone,address_text,display_name&limit=1`),
       ]);
-      const rows = bk.ok ? ((await bk.json()).data ?? []) : [];
-      const ratings = rv.ok ? ((await rv.json()).data ?? []) : [];
-      const prof = cp.ok ? ((await cp.json()).data ?? []) : [];
+      const rows = bk.ok ? await readItems<any>(bk) : [];
+      const ratings = rv.ok ? await readItems<any>(rv) : [];
+      const prof = cp.ok ? await readItems<any>(cp) : [];
       const completed = rows.filter((b: any) => b.status === 'completed');
       setDossier({
         bookings: rows.length,
@@ -123,8 +124,8 @@ export default function AdminUsers() {
         `/items/bookings?filter[client][_eq]=${u.id}&sort=-created_at&limit=5&fields=id,price_snapshot,status,created_at,service.*,professional.*`
       );
       if (hist.ok) {
-        const { data } = await hist.json();
-        setDossier((d) => (d ? { ...d, recent: Array.isArray(data) ? data : [] } : d));
+        const data = await readItems<any>(hist);
+        setDossier((d) => (d ? { ...d, recent: data } : d));
       }
     } catch {
       /* dossier parcial */

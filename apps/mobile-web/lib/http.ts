@@ -10,3 +10,12 @@ export async function readJson<T = any>(res: Response): Promise<T | null> {
     return null;
   }
 }
+
+// Atajo para listas Directus `{data: [...]}`: nunca lanza, nunca devuelve
+// null (arreglo vacío si no hay cuerpo, no es ok o no es arreglo). Reemplaza
+// los `await res.json()` crudos, que revientan con 204/ok sin cuerpo.
+export async function readItems<T = any>(res: Response): Promise<T[]> {
+  if (!res.ok) return [];
+  const data = (await readJson<{ data?: unknown }>(res))?.data;
+  return Array.isArray(data) ? (data as T[]) : [];
+}

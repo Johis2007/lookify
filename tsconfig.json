@@ -1,4 +1,18 @@
 {
+  // Config de la RAIZ del monorepo: no compila codigo directamente.
+  // Cada workspace tiene su propio tsconfig con sus alias
+  // (ej. @/* en apps/mobile-web). Verificar con `npm run typecheck`.
+  // Se excluye .kilo porque contiene worktrees de git con copias
+  // duplicadas del repo que rompen tsc y eslint si se escanean.
+  "extends": "expo/tsconfig.base",
   "compilerOptions": {},
-  "extends": "expo/tsconfig.base"
+  "exclude": [
+    "node_modules",
+    "apps",
+    "directus",
+    "dist",
+    ".expo",
+    ".kilo",
+    ".vscode"
+  ]
 }

@@ -4,6 +4,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Switch, Text, Vie
 import { Stitch } from '@/constants/StitchTheme';
 import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
+import { readItems, readJson } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useProLiveState } from '@/lib/proLiveState';
@@ -55,9 +56,9 @@ export default function Availability() {
         ),
       ]);
       if (ps.ok) {
-        const { data } = await ps.json();
+        const data = await readItems<any>(ps);
         setServices(
-          (Array.isArray(data) ? data : []).map((r: any) => ({
+          data.map((r: any) => ({
             id: Number(r.id),
             serviceName: r.service_id?.name ?? `Servicio #${r.service_id}`,
             base: Number(r.service_id?.price_base ?? 0),
@@ -66,12 +67,12 @@ export default function Availability() {
         );
       }
       if (prof.ok) {
-        const { data } = await prof.json();
+        const data = (await readJson<any>(prof))?.data;
         setRating(typeof data?.rating_avg === 'number' ? data.rating_avg : null);
       }
       if (done.ok) {
-        const { data } = await done.json();
-        const rows = Array.isArray(data) ? data : [];
+        const data = await readItems<any>(done);
+        const rows = data;
         setToday({
           count: rows.length,
           total: rows.reduce((s: number, b: any) => s + (Number(b.price_snapshot) || 0), 0),
@@ -106,8 +107,8 @@ export default function Availability() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 30 }}>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backT}>← Perfil</Text>
+      <Pressable onPress={() => router.push('/pro/profile')} style={styles.back}>
+        <Text style={styles.backT}>← Mi perfil PRO</Text>
       </Pressable>
       <Text style={styles.h1}>Disponibilidad y radar</Text>
       <Text style={styles.sub}>Controla tu presencia, cobertura y servicios para despacho.</Text>
@@ -122,8 +123,8 @@ export default function Availability() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Aún no eres profesional</Text>
           <Text style={styles.sub}>Activa tu perfil para recibir solicitudes.</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace('/(tabs)/profile')}>
-            <Text style={styles.primaryT}>Ir a mi perfil →</Text>
+          <Pressable style={styles.primaryBtn} onPress={() => router.push('/pro/profile')}>
+            <Text style={styles.primaryT}>Ir a mi perfil PRO →</Text>
           </Pressable>
         </View>
       ) : loading ? (

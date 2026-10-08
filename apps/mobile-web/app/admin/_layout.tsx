@@ -1,10 +1,12 @@
-import { Redirect, Stack } from 'expo-router';
-import { useAuth } from '@/lib/auth';
+import { Stack } from 'expo-router';
+import { RoleGate } from '@/lib/roleGuard';
 
+// Zona ADMIN: métricas y paneles de control. Solo rol administrador de
+// Directus. Clientes y profesionales nunca acceden (ni por URL directa).
 export default function AdminLayout() {
-  const { user, loading } = useAuth();
-  // Defensa en profundidad: el guard raíz ya pide login.
-  // El control fino de permisos vive en Directus (roles client/professional/admin).
-  if (!loading && !user) return <Redirect href="/(auth)/login" />;
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <RoleGate allow="admin">
+      <Stack screenOptions={{ headerShown: false }} />
+    </RoleGate>
+  );
 }

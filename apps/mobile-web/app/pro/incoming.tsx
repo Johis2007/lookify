@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { useProLiveState } from '@/lib/proLiveState';
 import { kmBetween, logBookingEvent, patchBooking } from '@/lib/api';
 import { attachBookingToPro, emitBookingStatus, getSocket } from '@/lib/socket';
+import { readItems } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -49,8 +50,7 @@ export default function Incoming() {
         `/items/bookings?filter[professional][_eq]=${pid}&filter[status][_eq]=pending&sort=-created_at&limit=5&fields=*,service.*,client.*`
       );
       if (!r.ok) return;
-      const { data } = await r.json();
-      const rows = Array.isArray(data) ? data : [];
+      const rows = await readItems<any>(r);
       setQueue(
         rows.map((b: any) => {
           const total = Number(b.price_snapshot ?? b.service?.price_base ?? 0);
@@ -166,8 +166,8 @@ export default function Incoming() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 30 }}>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backT}>← Perfil</Text>
+      <Pressable onPress={() => router.push('/pro/profile')} style={styles.back}>
+        <Text style={styles.backT}>← Mi perfil PRO</Text>
       </Pressable>
       <Text style={styles.h1}>Solicitud entrante</Text>
       <Text style={styles.sub}>Responde antes de que el turno pase al siguiente profesional.</Text>
@@ -181,8 +181,8 @@ export default function Incoming() {
       {!isProfessional || !pid ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Aún no eres profesional</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace('/(tabs)/profile')}>
-            <Text style={styles.primaryT}>Ir a mi perfil →</Text>
+          <Pressable style={styles.primaryBtn} onPress={() => router.push('/pro/profile')}>
+            <Text style={styles.primaryT}>Ir a mi perfil PRO →</Text>
           </Pressable>
         </View>
       ) : loading ? (

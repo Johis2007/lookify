@@ -48,8 +48,8 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Lookify to use your location while using the app.",
-          "locationAlwaysAndWhenInUsePermission": "Allow Lookify to use your location for on-demand beauty services."
+          "locationWhenInUsePermission": "Lookify usa tu ubicación para mostrarte profesionales cercanos y seguir tu servicio en el mapa.",
+          "locationAlwaysAndWhenInUsePermission": "Lookify usa tu ubicación para servicios de belleza a domicilio y seguimiento en vivo."
         }
       ],
       [

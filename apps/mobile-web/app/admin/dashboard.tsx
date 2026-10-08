@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
+import { readJson } from '@/lib/http';
 import { useAuth } from '@/lib/auth';
 
 export default function AdminDashboard() {
@@ -19,28 +20,29 @@ export default function AdminDashboard() {
   useEffect(() => {
     (async () => {
       try {
+        // readJson nunca lanza con 204/ok sin cuerpo (Directus sin permiso de lectura).
         const [b, p, s, r, v, feed] = await Promise.all([
-          authFetch('/items/bookings?limit=100&fields=id,status,price_snapshot').then((x) => x.json()).catch(() => ({ data: [] })),
-          authFetch('/items/beauty_professionals?limit=100&fields=id,is_online').then((x) => x.json()).catch(() => ({ data: [] })),
-          authFetch('/items/beauty_services?limit=100&fields=id').then((x) => x.json()).catch(() => ({ data: [] })),
-          authFetch('/items/reviews?limit=100&fields=id,rating').then((x) => x.json()).catch(() => ({ data: [] })),
+          authFetch('/items/bookings?limit=100&fields=id,status,price_snapshot').then((x) => readJson<any>(x)).catch(() => null),
+          authFetch('/items/beauty_professionals?limit=100&fields=id,is_online').then((x) => readJson<any>(x)).catch(() => null),
+          authFetch('/items/beauty_services?limit=100&fields=id').then((x) => readJson<any>(x)).catch(() => null),
+          authFetch('/items/reviews?limit=100&fields=id,rating').then((x) => readJson<any>(x)).catch(() => null),
           authFetch('/items/beauty_professionals?filter[verification_status][_eq]=pending&limit=1&fields=id&meta=filter_count')
-            .then((x) => x.json()).catch(() => ({ meta: {} })),
+            .then((x) => readJson<any>(x)).catch(() => null),
           authFetch('/items/bookings?sort=-created_at&limit=4&fields=id,created_at,status,price_snapshot,service.name')
-            .then((x) => x.json()).catch(() => ({ data: [] })),
+            .then((x) => readJson<any>(x)).catch(() => null),
         ]);
-        const bookings = b.data || [];
+        const bookings = b?.data || [];
         setStats({
           bookings: bookings.length,
           pending: bookings.filter((x: any) => x.status === 'pending').length,
           revenue: bookings.filter((x: any) => x.status === 'completed')
             .reduce((a: number, x: any) => a + Number(x.price_snapshot || 0), 0),
-          pros: (p.data || []).length,
-          services: (s.data || []).length,
-          reviews: (r.data || []).length,
+          pros: (p?.data || []).length,
+          services: (s?.data || []).length,
+          reviews: (r?.data || []).length,
           verifyPending: Number(v?.meta?.filter_count ?? 0),
         });
-        setRecent(feed.data || []);
+        setRecent(feed?.data || []);
       } finally { setLoading(false); }
     })();
   }, [authFetch]);
@@ -53,21 +55,21 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <AdminShell active="dashboard" title="Dashboard General de Operaciones" subtitle="Bogotá D.C. · Datos sincronizados en tiempo real desde Directus">
+    <AdminShell active="dashboard" title="Dashboard General de Operaciones" subtitle="Soacha · Datos sincronizados en tiempo real desde Directus">
       {loading ? <ActivityIndicator style={{ marginTop: 30 }} /> : (
         <View style={{ gap: 12 }}>
-          {/* KPIs */}
-          <View style={[styles.kpiGrid, wide && { flexDirection: 'row' }]}>
+          {/* KPIs: 2 columnas compactas en celular, fila en web */}
+          <View style={styles.kpiGrid}>
             {kpis.map((k) => (
-              <View key={k.label} style={[styles.kpi, k.dark && styles.kpiDark, wide && { flex: 1 }]}>
+              <View key={k.label} style={[styles.kpi, k.dark && styles.kpiDark, wide && styles.kpiWide]}>
                 <View style={styles.kpiTop}>
-                  <Text style={[styles.kpiLabel, k.dark && { color: '#B8C7E6' }]}>{k.label}</Text>
+                  <Text style={[styles.kpiLabel, k.dark && { color: '#B8C7E6' }]} numberOfLines={1}>{k.label}</Text>
                   {!!k.delta && (
                     <View style={styles.delta}><Text style={styles.deltaT}>{k.delta}</Text></View>
                   )}
                 </View>
-                <Text style={[styles.kpiValue, k.dark && { color: '#fff' }]}>{k.value}</Text>
-                <Text style={[styles.kpiSub, k.dark && { color: '#B8C7E6' }]}>{k.sub}</Text>
+                <Text style={[styles.kpiValue, k.dark && { color: '#fff' }]} numberOfLines={1} adjustsFontSizeToFit>{k.value}</Text>
+                <Text style={[styles.kpiSub, k.dark && { color: '#B8C7E6' }]} numberOfLines={2}>{k.sub}</Text>
               </View>
             ))}
           </View>
@@ -113,8 +115,8 @@ export default function AdminDashboard() {
             </View>
           </View>
 
-          {/* Banner atención */}
-          <View style={styles.alert}>
+          {/* Banner atención (en columna en celular para que nada se corte) */}
+          <View style={[styles.alert, !wide && styles.alertMobile]}>
             <Text style={styles.alertIcon}>⚠</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.alertT}>Requiere tu atención</Text>
@@ -122,7 +124,7 @@ export default function AdminDashboard() {
                 {stats.pending} solicitudes pendientes y {stats.verifyPending} profesionales por verificar documentos.
               </Text>
             </View>
-            <Pressable style={styles.alertBtn} onPress={() => router.push('/admin/verification' as any)}>
+            <Pressable style={[styles.alertBtn, !wide && styles.alertBtnMobile]} onPress={() => router.push('/admin/verification' as any)}>
               <Text style={styles.alertBtnT}>Revisar ({stats.verifyPending})</Text>
             </Pressable>
           </View>
@@ -145,12 +147,13 @@ function demandRows(stats: { bookings: number; pending: number }) {
 }
 
 const styles = StyleSheet.create({
-  kpiGrid: { flexDirection: 'column', gap: 12 },
-  kpi: { backgroundColor: '#fff', borderRadius: Stitch.radius.lg, padding: 16, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
+  kpiGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  kpi: { flexBasis: '47%', flexGrow: 1, backgroundColor: '#fff', borderRadius: Stitch.radius.lg, padding: 14, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
+  kpiWide: { flexBasis: 0 },
   kpiDark: { backgroundColor: Stitch.colors.primaryContainer, borderColor: Stitch.colors.primaryContainer },
-  kpiTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  kpiLabel: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant, fontFamily: Stitch.font },
-  kpiValue: { fontSize: 32, fontWeight: '800', color: Stitch.colors.onSurface, marginTop: 8, fontFamily: Stitch.font },
+  kpiTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 6 },
+  kpiLabel: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant, fontFamily: Stitch.font, flex: 1 },
+  kpiValue: { fontSize: 26, fontWeight: '800', color: Stitch.colors.onSurface, marginTop: 8, fontFamily: Stitch.font, fontVariant: ['tabular-nums'] },
   kpiSub: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 2 },
   delta: { backgroundColor: 'rgba(78,222,163,0.2)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   deltaT: { color: Stitch.colors.tertiaryFixedDim, fontSize: 11, fontWeight: '800' },
@@ -159,9 +162,9 @@ const styles = StyleSheet.create({
   cardSub: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 2 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   link: { color: Stitch.colors.secondary, fontWeight: '800', fontSize: 13 },
-  barTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  barLabel: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface },
-  barVal: { fontSize: 11, color: Stitch.colors.onSurfaceVariant },
+  barTop: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4, gap: 8 },
+  barLabel: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface, flex: 1 },
+  barVal: { fontSize: 11, color: Stitch.colors.onSurfaceVariant, fontVariant: ['tabular-nums'] },
   track: { height: 8, borderRadius: 4, backgroundColor: Stitch.colors.surfaceContainer },
   fill: { height: 8, borderRadius: 4 },
   feedRow: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, padding: 10, marginTop: 8 },
@@ -169,12 +172,14 @@ const styles = StyleSheet.create({
   feedAvatarT: { color: Stitch.colors.secondaryContainer, fontWeight: '800', fontSize: 12 },
   feedT: { fontWeight: '800', color: Stitch.colors.onSurface, fontSize: 13 },
   feedS: { fontSize: 11, color: Stitch.colors.onSurfaceVariant },
-  feedTime: { fontSize: 11, color: Stitch.colors.outline },
+  feedTime: { fontSize: 11, color: Stitch.colors.outline, fontVariant: ['tabular-nums'] },
   alert: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#FFF4E0', borderRadius: Stitch.radius.lg, padding: 16, borderWidth: 1, borderColor: '#F5D9A8' },
+  alertMobile: { flexDirection: 'column', alignItems: 'stretch' },
   alertIcon: { fontSize: 22 },
   alertT: { fontWeight: '800', color: Stitch.colors.onSurface },
   alertS: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 2 },
   alertBtn: { backgroundColor: Stitch.colors.primaryContainer, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14 },
+  alertBtnMobile: { alignItems: 'center' },
   alertBtnT: { color: '#fff', fontWeight: '800', fontSize: 12 },
   hint: { textAlign: 'center', fontSize: 11, color: Stitch.colors.outline },
 });

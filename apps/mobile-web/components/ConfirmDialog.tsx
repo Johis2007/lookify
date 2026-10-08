@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -101,13 +102,17 @@ export function useConfirm() {
 }
 
 // Alerta nativa: iOS UIAlertController / Android AlertDialog.
-// Úsala para confirmaciones rápidas sin diseño custom.
+// En web Alert.alert no siempre resuelve (el botón parecía no funcionar),
+// así que se usa window.confirm y el logout siempre vuelve al login.
 export function confirmNative(
   title: string,
   message: string,
   confirmLabel = 'Confirmar',
   opts?: { destructive?: boolean; cancelLabel?: string }
 ): Promise<boolean> {
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
   return new Promise((resolve) => {
     Alert.alert(
       title,

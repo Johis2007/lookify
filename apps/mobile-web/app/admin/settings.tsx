@@ -7,7 +7,8 @@ import { kvGetJson, kvSetJson } from '@/lib/kv';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
-const ZONES = ['Usaquén', 'Chapinero', 'Suba', 'Engativá', 'Teusaquillo', 'Kennedy', 'Barrios Unidos', 'Fontibón', 'Santa Fe'];
+// Comunas y zonas operativas de Soacha (ciudad foco del servicio).
+const ZONES = ['Compartir', 'Centro', 'La Despensa', 'Cazucá', 'San Mateo', 'San Humberto', 'Ciudad Verde', 'Hogares'];
 
 type OpsConfig = {
   autoAssign: boolean;
@@ -129,7 +130,7 @@ export default function AdminSettings() {
             <Text style={styles.cardTitle}>💰 Tarifas y comisión</Text>
             {num('Tarifa base domicilio (hasta 3 km)', 'baseFee', 'COP')}
             {num('Por km adicional (> 3 km)', 'extraKmFee', 'COP/km')}
-            {num('Tope máximo en Bogotá', 'maxFee', 'COP')}
+            {num('Tope máximo en Soacha', 'maxFee', 'COP')}
             {num('Comisión Lookify', 'commissionPct', '%')}
             {num('Margen flexible del pro', 'bandPct', '% s/base')}
             {num('Recargo nocturno (desde 8pm)', 'nightPct', '%')}

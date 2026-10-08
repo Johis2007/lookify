@@ -4,6 +4,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { Stitch } from '@/constants/StitchTheme';
 import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
+import { readItems } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -43,8 +44,8 @@ export default function AdminPayments() {
         authFetch('/items/bookings?sort=-created_at&limit=30&fields=*,service.*,professional.*,client.*'),
       ]);
       if (done.ok) {
-        const { data } = await done.json();
-        const rows = Array.isArray(data) ? data : [];
+        const data = await readItems<any>(done);
+        const rows = data;
         const gross = rows.reduce((s: number, b: any) => s + (Number(b.price_snapshot) || 0), 0);
         const byMethod = new Map<string, { total: number; count: number }>();
         const byPro = new Map<number, { name: string; services: number; net: number }>();
@@ -68,8 +69,8 @@ export default function AdminPayments() {
         if (ids.length) {
           const pr = await authFetch(`/items/beauty_professionals?filter[id][_in]=${ids.join(',')}&fields=id,display_name&limit=${ids.length}`);
           if (pr.ok) {
-            const { data: pros } = await pr.json();
-            for (const x of pros ?? []) {
+            const pros = await readItems<any>(pr);
+            for (const x of pros) {
               const e = byPro.get(Number(x.id));
               if (e) e.name = x.display_name || e.name;
             }
@@ -90,8 +91,7 @@ export default function AdminPayments() {
         }));
       }
       if (canc.ok) {
-        const { data } = await canc.json();
-        const rows = Array.isArray(data) ? data : [];
+        const rows = await readItems<any>(canc);
         setKpis((k) => ({
           ...k,
           refunds: Math.round(rows.reduce((s: number, b: any) => s + (Number(b.price_snapshot) || 0), 0)),
@@ -99,9 +99,9 @@ export default function AdminPayments() {
         }));
       }
       if (recent.ok) {
-        const { data } = await recent.json();
+        const data = await readItems<any>(recent);
         setTxs(
-          (Array.isArray(data) ? data : []).map((b: any) => ({
+          data.map((b: any) => ({
             id: Number(b.id),
             clientName:
               typeof b.client === 'object'

@@ -1,6 +1,8 @@
-import { Alert, Linking } from 'react-native';
+import { Alert, Linking, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+
+const IS_WEB = Platform.OS === 'web';
 
 // Permisos centralizados de Lookify (ES): ubicación, cámara y galería/tarjeta.
 // - Ubicación: radar de clientes + modo online del profesional (GPS).
@@ -9,6 +11,12 @@ import * as Location from 'expo-location';
 // Si el usuario niega dos veces (canAskAgain=false), se le lleva a Ajustes.
 
 function openSettingsAlert(title: string, message: string) {
+  // En web Alert.alert no siempre resuelve y Linking.openSettings no existe:
+  // aviso simple y el usuario concede el GPS en el prompt del navegador.
+  if (IS_WEB && typeof window !== 'undefined') {
+    window.alert(`${title}\n\n${message}`);
+    return;
+  }
   Alert.alert(title, message, [
     { text: 'Ahora no', style: 'cancel' },
     { text: 'Abrir ajustes', onPress: () => void Linking.openSettings() },
@@ -83,6 +91,14 @@ export async function pickProfessionalImage(): Promise<string | null> {
 
 // Selector cámara o galería para el profesional (avatar/portafolio).
 export function chooseProfessionalPhoto(onPick: (uri: string) => void): void {
+  // En web no hay diálogo nativo ni cámara directa: va directo a galería.
+  if (IS_WEB) {
+    void (async () => {
+      const uri = await pickProfessionalImage();
+      if (uri) onPick(uri);
+    })();
+    return;
+  }
   Alert.alert('Foto de perfil', 'Elige de dónde tomar la foto', [
     { text: 'Cancelar', style: 'cancel' },
     {

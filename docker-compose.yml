@@ -50,7 +50,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Lookify123!}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
       # CORS: sin esto el navegador (Expo web) bloquea fetch -> "Failed to fetch".
-      # DEV abierto; en prod restringir CORS_ORIGIN a tu dominio.
+      # DEV abierto (*) para aceptar ambas redes (casa/universidad) sin fricción.
+      # En prod: CORS_ORIGIN=http://192.168.1.8:8081,http://10.157.39.169:8081,<dominio>
       CORS_ENABLED: "true"
       CORS_ORIGIN: "*"
       CORS_METHODS: "GET,POST,PATCH,PUT,DELETE,OPTIONS"

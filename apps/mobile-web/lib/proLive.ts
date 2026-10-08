@@ -3,6 +3,7 @@ import { watchThrottled, type LatLng } from './location';
 import { ensureLocationPermission } from './permissions';
 import { readJson } from './http';
 import {
+  attachBookingToPro,
   emitHeartbeat,
   emitLocation,
   emitProOffline,
@@ -31,30 +32,29 @@ export function useProLive(
   const heartbeat = useRef<ReturnType<typeof setInterval> | null>(null);
   const mirrorAt = useRef(0);
 
-  // Resuelve el id profesional del usuario actual.
-  useEffect(() => {
+  // Resuelve el id profesional del usuario actual (+ estado de verificación).
+  // Expuesto como reload() para re-consultar tras la revisión del admin.
+  const reload = useCallback(async () => {
     if (!enabled || !userId) return;
-    let alive = true;
-    (async () => {
-      try {
-        const r = await authFetch(
-          `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id,is_online,verification_status&limit=1`
-        );
-        if (!r.ok) return;
-        const data = (await readJson<{ data?: any[] }>(r))?.data;
-        if (alive && Array.isArray(data) && data.length) {
-          setProfessionalId(Number(data[0].id));
-          setIsOnline(Boolean(data[0].is_online));
-          setVerification(typeof data[0].verification_status === 'string' ? data[0].verification_status : null);
-        }
-      } catch {
-        /* sin permiso: se queda en null */
+    try {
+      const r = await authFetch(
+        `/items/beauty_professionals?filter[user][_eq]=${userId}&fields=id,is_online,verification_status&limit=1`
+      );
+      if (!r.ok) return;
+      const data = (await readJson<{ data?: any[] }>(r))?.data;
+      if (Array.isArray(data) && data.length) {
+        setProfessionalId(Number(data[0].id));
+        setIsOnline(Boolean(data[0].is_online));
+        setVerification(typeof data[0].verification_status === 'string' ? data[0].verification_status : null);
       }
-    })();
-    return () => {
-      alive = false;
-    };
+    } catch {
+      /* sin permiso: se queda en null */
+    }
   }, [authFetch, userId, enabled]);
+
+  useEffect(() => {
+    reload().catch(() => {});
+  }, [reload]);
 
   const stopPublishing = useCallback(() => {
     stopWatch.current?.();
@@ -89,6 +89,27 @@ export function useProLive(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopPublishing]);
+
+  // Al ponerse online, vincular las reservas activas (accepted/in_progress)
+  // a este GPS: si la aceptación se hizo en otro dispositivo (ej. panel
+  // admin), el tracking del cliente igual recibe pro:location en vivo.
+  // Best-effort: si falla, el attach del incoming/tracking lo compensa.
+  const attachActiveBookings = useCallback(async (pid: number) => {
+    try {
+      const r = await fetchRef.current(
+        `/items/bookings?filter[professional][_eq]=${pid}&filter[status][_in]=accepted,in_progress&fields=id&limit=10`
+      );
+      if (!r.ok) return;
+      const rows = (await readJson<{ data?: any[] }>(r))?.data;
+      if (Array.isArray(rows)) {
+        for (const b of rows) {
+          if (b?.id != null) attachBookingToPro(b.id, pid);
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, []);
 
   const publishFix = useCallback(
     async (ll: LatLng) => {
@@ -146,6 +167,7 @@ export function useProLive(
         emitProOnline(professionalId);
         setIsOnline(true);
         setPublishing(true);
+        void attachActiveBookings(professionalId);
         try {
           stopWatch.current = await watchThrottled((ll) => {
             publishFix(ll).catch(() => {});
@@ -174,8 +196,8 @@ export function useProLive(
         }
       }
     },
-    [authFetch, professionalId, verification, publishFix, stopPublishing]
+    [authFetch, professionalId, verification, publishFix, stopPublishing, attachActiveBookings]
   );
 
-  return { professionalId, verification, isOnline, publishing, lastFix, error, setOnline };
+  return { professionalId, verification, isOnline, publishing, lastFix, error, setOnline, reload };
 }

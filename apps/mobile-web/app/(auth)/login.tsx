@@ -3,10 +3,21 @@ import { useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
+import { homeForRole } from '@/lib/roleGuard';
 
-// Lookify Cliente - Login (diseño Stitch: navy + ámbar, móvil + web).
+type RoleTab = 'client' | 'pro' | 'admin';
+
+const ROLE_MISMATCH: Record<RoleTab, string> = {
+  client: 'Esta cuenta no es de cliente. Entra por su rol o crea una cuenta cliente aparte.',
+  pro: 'Esta cuenta no es profesional. Entra por su rol o regístrate como profesional.',
+  admin: 'Esta cuenta no es administradora. El acceso al panel es solo para administradores.',
+};
+
+// Lookify - Login con entrada por rol (diseño Stitch: navy + ámbar, móvil + web).
+// Cada cuenta entra únicamente por su rol: cliente, profesional o administrador.
 export default function LoginScreen() {
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
+  const [role, setRole] = useState<RoleTab>('client');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
@@ -17,8 +28,20 @@ export default function LoginScreen() {
     setError(null);
     setBusy(true);
     try {
-      await login(email.trim(), password);
-      router.replace('/(tabs)');
+      const detected = await login(email.trim(), password);
+      // La cuenta debe coincidir con la entrada elegida (una cuenta, un rol).
+      const match =
+        role === 'admin'
+          ? detected.isAdmin
+          : role === 'pro'
+            ? detected.isProfessional && !detected.isAdmin
+            : !detected.isProfessional && !detected.isAdmin;
+      if (!match) {
+        await logout();
+        setError(ROLE_MISMATCH[role]);
+        return;
+      }
+      router.replace(homeForRole(detected.isProfessional, detected.isAdmin) as any);
     } catch (e: any) {
       setError(e.message ?? 'Error al iniciar sesión');
     } finally {
@@ -42,7 +65,30 @@ export default function LoginScreen() {
 
       <View style={styles.card}>
         <Text style={styles.h2}>Bienvenido de nuevo</Text>
-        <Text style={styles.cardSub}>Entra para reservar o recibir solicitudes</Text>
+        <Text style={styles.cardSub}>Entra por el rol de tu cuenta</Text>
+
+        <View style={styles.roleRow}>
+          {(
+            [
+              ['client', '💅 Cliente'],
+              ['pro', '✂️ Profesional'],
+              ['admin', '🛡️ Admin'],
+            ] as const
+          ).map(([key, label]) => (
+            <Pressable
+              key={key}
+              onPress={() => setRole(key)}
+              style={[styles.roleTab, role === key && styles.roleTabOn]}
+            >
+              <Text style={[styles.roleT, role === key && styles.roleTOn]}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+        {role === 'admin' && (
+          <Text style={styles.adminHint}>
+            Acceso restringido: usa la cuenta administradora creada en Directus (ADMIN_EMAIL).
+          </Text>
+        )}
 
         <Text style={styles.label}>Correo electrónico</Text>
         <View style={styles.field}>
@@ -106,6 +152,12 @@ const styles = StyleSheet.create({
   card: { backgroundColor: '#fff', borderRadius: 20, padding: 20, gap: 8, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
   h2: { fontSize: 20, fontWeight: '800', color: Stitch.colors.onSurface },
   cardSub: { fontSize: 13, color: Stitch.colors.onSurfaceVariant, marginBottom: 4 },
+  roleRow: { flexDirection: 'row', gap: 8, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 14, padding: 4 },
+  roleTab: { flex: 1, borderRadius: 10, padding: 11, alignItems: 'center' },
+  roleTabOn: { backgroundColor: Stitch.colors.primaryContainer },
+  roleT: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant },
+  roleTOn: { color: '#fff' },
+  adminHint: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 10, padding: 10, lineHeight: 17 },
   label: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant, marginTop: 6 },
   field: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, paddingHorizontal: 12, height: 50 },
   fieldIcon: { fontSize: 16 },

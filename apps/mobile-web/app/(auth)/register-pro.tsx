@@ -10,6 +10,10 @@ import { ensureMediaLibraryPermission } from '@/lib/permissions';
 
 const DOC_TYPES = ['Certificado técnico', 'Licencia', 'Diploma', 'Registro sanitario', 'Otro'];
 
+// Documento obligatorio: sin archivo válido no se puede enviar la solicitud.
+// Límite 10 MB (Directus Files rechaza archivos gigantes y rompe el registro).
+const MAX_DOC_BYTES = 10 * 1024 * 1024;
+
 type Doc = { uri: string; name: string; mimeType: string; kind: 'image' | 'pdf'; size?: number };
 
 // FLUJO PROFESIONAL (4 pasos): 1 cuenta · 2 perfil (especialidad, años,
@@ -47,6 +51,10 @@ export default function RegisterPro() {
     const res = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.8 });
     if (res.canceled || !res.assets?.[0]) return;
     const a = res.assets[0];
+    if (a.fileSize != null && a.fileSize > MAX_DOC_BYTES) {
+      setError('La imagen supera 10 MB. Elige una más liviana o un PDF.');
+      return;
+    }
     setDoc({
       uri: a.uri,
       name: a.fileName || `documento-${Date.now()}.jpg`,
@@ -65,6 +73,10 @@ export default function RegisterPro() {
       });
       if (res.canceled || !res.assets?.[0]) return;
       const a = res.assets[0];
+      if (a.size != null && a.size > MAX_DOC_BYTES) {
+        setError('El PDF supera 10 MB. Comprímelo e inténtalo de nuevo.');
+        return;
+      }
       setDoc({ uri: a.uri, name: a.name || `documento-${Date.now()}.pdf`, mimeType: a.mimeType || 'application/pdf', kind: 'pdf', size: a.size });
     } catch {
       setError('No se pudo leer el PDF.');
@@ -158,7 +170,10 @@ export default function RegisterPro() {
       {step === 3 && (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>🛡 Verificación de requisitos</Text>
-          <Text style={styles.sub}>Sube un documento que acredite tu idoneidad (certificado, licencia, diploma o registro sanitario).</Text>
+          <Text style={styles.sub}>
+            El documento es <Text style={{ fontWeight: '800' }}>obligatorio</Text>: acredita tu idoneidad
+            (certificado, licencia, diploma o registro sanitario, máx. 10 MB). Sin él no se crea la cuenta.
+          </Text>
           <Text style={styles.label}>Tipo de documento</Text>
           <View style={styles.chips}>
             {DOC_TYPES.map((t) => (
@@ -191,7 +206,7 @@ export default function RegisterPro() {
               </Pressable>
             </View>
           ) : (
-            <Text style={styles.hint}>Sin documento: elige foto o PDF para continuar.</Text>
+            <Text style={styles.hint}>⚠️ Documento obligatorio: elige foto o PDF para continuar.</Text>
           )}
           <Pressable style={styles.check} onPress={() => setAcceptPending(!acceptPending)}>
             <View style={[styles.box, acceptPending && styles.boxOn]}>
@@ -218,10 +233,11 @@ export default function RegisterPro() {
           <Text style={styles.done}>⏳</Text>
           <Text style={styles.cardTitle}>¡Solicitud recibida!</Text>
           <Text style={styles.sub}>
-            Tu cuenta quedó en estado pendiente. No podrás recibir solicitudes hasta que un administrador revise tu documento desde el panel de verificación. Te avisaremos al aprobarla.
+            Tu cuenta quedó en estado pendiente y entraste a la lista de espera. No podrás recibir solicitudes
+            hasta que un administrador revise tu documento desde el panel de verificación. Te avisaremos al aprobarla.
           </Text>
-          <Pressable style={styles.btn} onPress={() => router.replace('/(tabs)')}>
-            <Text style={styles.btnT}>Entrar a la app →</Text>
+          <Pressable style={styles.btn} onPress={() => router.replace('/pro/incoming')}>
+            <Text style={styles.btnT}>Ver mi puesto en la cola →</Text>
           </Pressable>
         </View>
       )}

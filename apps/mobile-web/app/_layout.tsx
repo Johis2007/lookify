@@ -13,6 +13,8 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/lib/auth';
+import { ProLiveProvider } from '@/lib/proLiveState';
+import { homeForRole } from '@/lib/roleGuard';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -48,21 +50,41 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <ProLiveProvider>
+        <RootLayoutNav />
+      </ProLiveProvider>
     </AuthProvider>
   );
 }
 
-// Redirige según sesión: sin usuario -> (auth)/login, con usuario fuera de tabs -> (tabs).
+// Separación estricta por rol (tarea 3):
+// - Sin sesión fuera de (auth) -> login.
+// - Con sesión en (auth) -> home de su rol (cliente: tabs, pro: /pro, admin: /admin).
+// - Profesional o admin dentro de (tabs) -> su dashboard (las vistas cliente
+//   son exclusivas de cuentas cliente).
+// - Cliente o admin dentro de /pro, cliente o pro dentro de /admin -> su home.
+// - /booking y /rating son seguimiento compartido de la reserva (ambos roles).
 function useAuthGuard() {
-  const { user, loading } = useAuth();
+  const { user, isProfessional, isAdmin, loading } = useAuth();
   const segments = useSegments();
   useEffect(() => {
     if (loading) return;
-    const inAuth = segments[0] === '(auth)';
-    if (!user && !inAuth) router.replace('/(auth)/login');
-    else if (user && inAuth) router.replace('/(tabs)');
-  }, [user, loading, segments]);
+    const root = segments[0];
+    const inAuth = root === '(auth)';
+    if (!user && !inAuth) {
+      router.replace('/(auth)/login');
+      return;
+    }
+    if (!user) return;
+    const home = homeForRole(isProfessional, isAdmin);
+    if (inAuth) {
+      router.replace(home as any);
+      return;
+    }
+    if (root === '(tabs)' && (isProfessional || isAdmin)) router.replace(home as any);
+    else if (root === 'pro' && (!isProfessional || isAdmin)) router.replace(home as any);
+    else if (root === 'admin' && !isAdmin) router.replace(home as any);
+  }, [user, isProfessional, isAdmin, loading, segments]);
 }
 
 function RootLayoutNav() {

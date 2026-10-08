@@ -6,6 +6,7 @@ import { Stitch } from '@/constants/StitchTheme';
 import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 import { confirmNative } from '@/components/ConfirmDialog';
+import { readItems } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 
@@ -61,8 +62,8 @@ export default function AdminReports() {
         authFetch('/items/bookings?filter[status][_eq]=completed&sort=-completed_at&limit=20&fields=id,price_snapshot,completed_at,service.*,client.*,professional.*'),
       ]);
       if (canc.ok) {
-        const { data } = await canc.json();
-        const rows = (Array.isArray(data) ? data : []).map((b: any) => ({
+        const data = await readItems<any>(canc);
+        const rows = data.map((b: any) => ({
           id: Number(b.id),
           reason: b.cancel_reason || 'Sin motivo registrado',
           serviceName: b.service?.name ?? `Servicio #${b.service}`,
@@ -79,9 +80,9 @@ export default function AdminReports() {
         }
       }
       if (rev.ok) {
-        const { data } = await rev.json();
+        const data = await readItems<any>(rev);
         setReviews(
-          (Array.isArray(data) ? data : []).map((r: any) => ({
+          data.map((r: any) => ({
             id: Number(r.id),
             rating: Number(r.rating) || 0,
             comment: r.comment,
@@ -93,8 +94,7 @@ export default function AdminReports() {
         );
       }
       if (done.ok) {
-        const { data } = await done.json();
-        setResolved(Array.isArray(data) ? data : []);
+        setResolved(await readItems<any>(done));
       }
     } finally {
       setLoading(false);
@@ -114,8 +114,7 @@ export default function AdminReports() {
         `/items/booking_events?filter[booking][_eq]=${bookingId}&sort=-created_at&limit=20&fields=status,note,created_at`
       );
       if (r.ok) {
-        const { data } = await r.json();
-        setEvents(Array.isArray(data) ? data : []);
+        setEvents(await readItems<any>(r));
       }
     } catch {
       /* sin eventos */

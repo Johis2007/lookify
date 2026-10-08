@@ -4,6 +4,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { Stitch } from '@/constants/StitchTheme';
 import { cop } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
+import { readItems, readJson } from '@/lib/http';
 
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useProLiveState } from '@/lib/proLiveState';
@@ -50,9 +51,9 @@ export default function Earnings() {
         authFetch(`/items/beauty_professionals/${pid}?fields=rating_avg`),
       ]);
       if (bk.ok) {
-        const { data } = await bk.json();
+        const data = await readItems<any>(bk);
         setRows(
-          (Array.isArray(data) ? data : []).map((b: any) => ({
+          data.map((b: any) => ({
             id: Number(b.id),
             serviceName: b.service?.name ?? `Servicio #${b.service}`,
             clientName: b.client?.first_name ?? 'Cliente',
@@ -64,7 +65,7 @@ export default function Earnings() {
         );
       }
       if (prof.ok) {
-        const { data } = await prof.json();
+        const data = (await readJson<any>(prof))?.data;
         setRating(typeof data?.rating_avg === 'number' ? data.rating_avg : null);
       }
     } finally {
@@ -112,8 +113,8 @@ export default function Earnings() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 30 }}>
-      <Pressable onPress={() => router.back()} style={styles.back}>
-        <Text style={styles.backT}>← Perfil</Text>
+      <Pressable onPress={() => router.push('/pro/profile')} style={styles.back}>
+        <Text style={styles.backT}>← Mi perfil PRO</Text>
       </Pressable>
       <Text style={styles.h1}>Mis ganancias</Text>
       <Text style={styles.sub}>Resumen financiero de tus servicios completados.</Text>
@@ -121,8 +122,8 @@ export default function Earnings() {
       {!isProfessional || !pid ? (
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Aún no eres profesional</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace('/(tabs)/profile')}>
-            <Text style={styles.primaryT}>Ir a mi perfil →</Text>
+          <Pressable style={styles.primaryBtn} onPress={() => router.push('/pro/profile')}>
+            <Text style={styles.primaryT}>Ir a mi perfil PRO →</Text>
           </Pressable>
         </View>
       ) : loading ? (

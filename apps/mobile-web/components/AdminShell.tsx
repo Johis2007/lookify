@@ -2,8 +2,11 @@
 // Web ancho (>=1024): sidebar navy fijo + header. Móvil: topbar navy + nav horizontal.
 // Tokens: StitchTheme (primaryContainer #0f1e36, secondaryContainer #feae2c, surface #f9f9ff).
 import { router } from 'expo-router';
+import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
+import { useAuth } from '@/lib/auth';
+import { confirmNative } from '@/components/ConfirmDialog';
 
 export type AdminSection =
   | 'dashboard'
@@ -39,6 +42,24 @@ export function AdminShell({
 }) {
   const { width } = useWindowDimensions();
   const wide = width >= 1024;
+  const { user, logout } = useAuth();
+  const [exiting, setExiting] = useState(false);
+
+  const exitToLogin = async () => {
+    if (exiting) return;
+    const ok = await confirmNative('Cerrar sesión', '¿Seguro que quieres salir de Lookify?', 'Salir');
+    if (!ok) return;
+    setExiting(true);
+    try {
+      await logout();
+    } catch {
+      // Aunque falle el /auth/logout en red, los tokens locales ya se
+      // borraron: igual se vuelve al login compartido (Cliente/Pro/Admin).
+    } finally {
+      setExiting(false);
+      router.replace('/(auth)/login' as any);
+    }
+  };
 
   if (!wide) {
     return (
@@ -48,10 +69,13 @@ export function AdminShell({
             <Text style={styles.mobileBackT}>←</Text>
           </Pressable>
           <View style={{ flex: 1 }}>
-            <Text style={styles.mobileTitle}>{title}</Text>
-            {!!subtitle && <Text style={styles.mobileSub} numberOfLines={1}>{subtitle}</Text>}
+            <Text style={styles.mobileTitle} numberOfLines={1}>{title}</Text>
+            {!!subtitle && <Text style={styles.mobileSub} numberOfLines={2}>{subtitle}</Text>}
           </View>
           <View style={styles.liveDot} />
+          <Pressable onPress={exitToLogin} disabled={exiting} style={styles.mobileExit}>
+            <Text style={styles.mobileExitT}>{exiting ? '…' : 'Salir'}</Text>
+          </Pressable>
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mobileNav}>
           {NAV.map((n) => (
@@ -60,13 +84,27 @@ export function AdminShell({
               onPress={() => router.push(n.href as any)}
               style={[styles.mobilePill, active === n.key && styles.mobilePillOn]}
             >
-              <Text style={[styles.mobilePillT, active === n.key && styles.mobilePillTOn]}>
-                {n.icon} {n.label}
+              <Text style={styles.mobilePillIcon}>{n.icon}</Text>
+              <Text
+                style={[styles.mobilePillT, active === n.key && styles.mobilePillTOn]}
+                numberOfLines={1}
+              >
+                {n.label}
               </Text>
             </Pressable>
           ))}
         </ScrollView>
         <ScrollView contentContainerStyle={styles.mobileBody}>{children}</ScrollView>
+        <View style={styles.mobileFoot}>
+          {!!user?.email && (
+            <Text style={styles.mobileFootMail} numberOfLines={1}>
+              {user.email}
+            </Text>
+          )}
+          <Pressable onPress={exitToLogin} disabled={exiting} style={styles.mobileExitFull}>
+            <Text style={styles.mobileExitFullT}>{exiting ? 'Cerrando sesión…' : 'Cerrar sesión'}</Text>
+          </Pressable>
+        </View>
       </View>
     );
   }
@@ -86,7 +124,7 @@ export function AdminShell({
           </View>
         </View>
         <View style={styles.superRow}>
-          <Text style={styles.superT}>● Super Administrador · Bogotá</Text>
+          <Text style={styles.superT}>● Super Administrador · Soacha</Text>
         </View>
         <View style={{ gap: 4 }}>
           {NAV.map((n) => {
@@ -111,7 +149,15 @@ export function AdminShell({
         <View style={{ flex: 1 }} />
         <View style={styles.sideFoot}>
           <Text style={styles.sideFootT}>● Directus · Online</Text>
-          <Text style={styles.sideFootSub}>Nodo Bogotá Norte</Text>
+          <Text style={styles.sideFootSub}>Nodo Soacha Centro</Text>
+          {!!user?.email && (
+            <Text style={styles.sideFootMail} numberOfLines={1}>
+              {user.email}
+            </Text>
+          )}
+          <Pressable onPress={exitToLogin} disabled={exiting} style={styles.sideExit}>
+            <Text style={styles.sideExitT}>{exiting ? 'Cerrando sesión…' : '⏻ Cerrar sesión'}</Text>
+          </Pressable>
         </View>
       </View>
 
@@ -122,7 +168,7 @@ export function AdminShell({
             <Text style={styles.searchFakeT}>⌕ Buscar solicitud, usuario o profesional…</Text>
           </View>
           <View style={styles.locPill}>
-            <Text style={styles.locPillT}>📍 Bogotá D.C. · Todas las zonas</Text>
+            <Text style={styles.locPillT}>📍 Soacha · Todas las zonas</Text>
           </View>
           <Pressable style={styles.cta} onPress={() => router.push('/admin/requests' as any)}>
             <Text style={styles.ctaT}>+ Nueva solicitud</Text>
@@ -152,11 +198,22 @@ const styles = StyleSheet.create({
   mobileSub: { color: Stitch.colors.surfaceHighest, fontSize: 12 },
   liveDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Stitch.colors.secondaryContainer },
   mobileNav: { gap: 8, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: Stitch.colors.primaryContainer },
-  mobilePill: { borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.12)' },
+  mobilePill: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14, minHeight: 40,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+  },
   mobilePillOn: { backgroundColor: Stitch.colors.secondaryContainer },
-  mobilePillT: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  mobilePillIcon: { fontSize: 15, lineHeight: 18 },
+  mobilePillT: { color: '#fff', fontSize: 12, fontWeight: '700', flexShrink: 1 },
   mobilePillTOn: { color: Stitch.colors.primaryContainer },
   mobileBody: { padding: 16, gap: 12, paddingBottom: 40 },
+  mobileExit: { borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14, backgroundColor: 'rgba(255,255,255,0.12)' },
+  mobileExitT: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  mobileFoot: { padding: 16, paddingBottom: 32, gap: 8, backgroundColor: Stitch.colors.surface },
+  mobileFootMail: { textAlign: 'center', fontSize: 12, color: Stitch.colors.onSurfaceVariant },
+  mobileExitFull: { borderRadius: 12, padding: 15, alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
+  mobileExitFullT: { fontWeight: '800', color: Stitch.colors.onSurface, fontSize: 13 },
   // Web
   sidebar: { width: 272, backgroundColor: Stitch.colors.primaryContainer, padding: 16, gap: 12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -175,9 +232,12 @@ const styles = StyleSheet.create({
   navLabelOn: { color: '#fff' },
   livePill: { backgroundColor: 'rgba(78,222,163,0.2)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 8 },
   livePillT: { color: Stitch.colors.tertiaryFixedDim, fontSize: 10, fontWeight: '800' },
-  sideFoot: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 12 },
+  sideFoot: { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 12, padding: 12, gap: 4 },
   sideFootT: { color: Stitch.colors.tertiaryFixedDim, fontSize: 11, fontWeight: '800' },
   sideFootSub: { color: '#8fa0bf', fontSize: 11 },
+  sideFootMail: { color: '#B8C7E6', fontSize: 11, marginTop: 4 },
+  sideExit: { marginTop: 8, borderRadius: 10, paddingVertical: 11, alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.12)' },
+  sideExitT: { color: '#fff', fontSize: 12, fontWeight: '800' },
   topbar: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, backgroundColor: '#fff', borderBottomWidth: 1, borderColor: Stitch.colors.surfaceHigh },
   searchFake: { flex: 1, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14 },
   searchFakeT: { color: Stitch.colors.outline, fontSize: 13 },

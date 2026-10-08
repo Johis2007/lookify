@@ -5,15 +5,20 @@ import LookifyMap from '@/components/LookifyMap';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { fetchCategories, fetchOnlinePros, type ProWithMeta } from '@/lib/api';
-import { getCurrentLatLng, watchThrottled } from '@/lib/location';
+import { useClientLocation } from '@/lib/useClientLocation';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
 
-const FALLBACK = { latitude: 4.6097, longitude: -74.0817 }; // Chapinero, Bogotá
-
 // Lookify Cliente - Inicio y Mapa (diseño Stitch, móvil + web).
+// Ubicación real del cliente (GPS/manual/en vivo) con pin propio que sigue al GPS.
 export default function HomeMap() {
   const { authFetch, user } = useAuth();
-  const [pos, setPos] = useState(FALLBACK);
+  const loc = useClientLocation();
+  const pos = loc.coords;
+  // Cuadrícula de ~110m para la consulta: el jitter del GPS en vivo no
+  // refetchea la lista de profesionales con cada micro-movimiento. Los pines
+  // siguen usando la posición exacta.
+  const qLat = Math.round(pos.latitude * 1000) / 1000;
+  const qLng = Math.round(pos.longitude * 1000) / 1000;
   const [q, setQ] = useState('');
   const dq = useDebouncedValue(q, 300);
   const [pros, setPros] = useState<ProWithMeta[]>([]);
@@ -21,24 +26,15 @@ export default function HomeMap() {
   const [cat, setCat] = useState<number | undefined>();
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Ubicación en vivo de la persona: el pin propio sigue al GPS.
-    let stop: (() => void) | null = null;
-    getCurrentLatLng().then((ll) => ll && setPos(ll)).catch(() => {});
-    watchThrottled((ll) => setPos(ll)).then((s) => {
-      stop = s;
-    }).catch(() => {});
-    return () => {
-      stop?.();
-    };
-  }, []);
+  // El seguimiento en vivo se activa desde el radar (LocationGate): aquí el
+  // mapa centra al usuario y muestra su fuente de ubicación real.
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const [c, p] = await Promise.all([
           fetchCategories(authFetch),
-          fetchOnlinePros(authFetch, pos.latitude, pos.longitude, 10),
+          fetchOnlinePros(authFetch, qLat, qLng, 10),
         ]);
         setCats(c);
         setPros(p);
@@ -49,7 +45,7 @@ export default function HomeMap() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pos.latitude, pos.longitude]);
+  }, [qLat, qLng]);
 
   const filtered = useMemo(() => {
     if (!dq) return pros;
@@ -71,9 +67,11 @@ export default function HomeMap() {
           <View style={styles.logoCircle}>
             <Text style={styles.logoL}>L</Text>
           </View>
-          <Pressable style={styles.locPill}>
+          <Pressable style={styles.locPill} onPress={() => router.push('/(tabs)/radar')}>
             <Text>📍</Text>
-            <Text style={styles.locT} numberOfLines={1}>Chapinero, Bogotá</Text>
+            <Text style={styles.locT} numberOfLines={1}>
+              {loc.coords.label ?? 'Soacha centro'} · {loc.coords.latitude.toFixed(3)},{loc.coords.longitude.toFixed(3)}
+            </Text>
           </Pressable>
           <View style={styles.avatar}>
             <Text style={styles.avatarT}>{(user?.first_name?.[0] || 'L').toUpperCase()}</Text>
@@ -101,10 +99,11 @@ export default function HomeMap() {
           ))}
         </ScrollView>
 
-        {/* Mapa */}
+        {/* Mapa (sigue tu ubicación real) */}
         <View style={styles.mapWrap}>
           <LookifyMap
             initial={pos}
+            follow={loc.hasRealFix ? pos : null}
             pins={filtered.map((p) => ({
               id: String(p.id),
               latitude: p.current_lat ?? pos.latitude + 0.004,
@@ -114,8 +113,10 @@ export default function HomeMap() {
             onProPress={() => router.push('/(tabs)/services')}
           />
           <View style={styles.mapBadge}>
-            <View style={styles.liveDot} />
-            <Text style={styles.mapBadgeT}>{filtered.length} especialistas activos · 15-25 min</Text>
+            <View style={[styles.liveDot, loc.live && styles.liveDotOn]} />
+            <Text style={styles.mapBadgeT}>
+              {filtered.length} especialistas activos · {loc.live ? 'tu GPS en vivo' : loc.hasRealFix ? 'tu ubicación GPS' : '15-25 min'}
+            </Text>
           </View>
         </View>
 
@@ -182,6 +183,7 @@ const styles = StyleSheet.create({
   mapBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.primaryContainer, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
   mapBadgeT: { color: '#fff', fontSize: 11, fontWeight: '700' },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Stitch.colors.secondaryContainer },
+  liveDotOn: { backgroundColor: '#4edea3' },
   sheet: { backgroundColor: '#fff', borderRadius: 20, margin: 16, padding: 16, gap: 10, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
   sheetTitle: { fontSize: 15, fontWeight: '800', color: Stitch.colors.primaryContainer },
   spot: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 14, padding: 12 },

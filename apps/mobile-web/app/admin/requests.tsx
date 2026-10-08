@@ -9,6 +9,7 @@ import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { attachBookingToPro, emitBookingStatus, getSocket } from '@/lib/socket';
 import { patchBooking } from '@/lib/api';
+import { readItems } from '@/lib/http';
 
 const FILTERS = ['pending', 'accepted', 'in_progress', 'completed'] as const;
 
@@ -35,8 +36,7 @@ export default function AdminRequests() {
         `/items/bookings?filter[status][_eq]=${filter}&sort=-created_at&limit=30&fields=*,service.name,professional.display_name`
       );
       if (r.ok) {
-        const { data } = await r.json();
-        setItems(data || []);
+        setItems(await readItems<any>(r));
       }
     } finally {
       setLoading(false);
@@ -56,7 +56,7 @@ export default function AdminRequests() {
     } catch { return undefined; }
   }, [load]);
 
-  const act = async (id: number, status: string) => {
+  const act = useCallback(async (id: number, status: string) => {
     await patchBooking(authFetch, id, { status: status as any });
     try {
       const current = items.find((x) => x.id === id);
@@ -65,10 +65,10 @@ export default function AdminRequests() {
       emitBookingStatus(id, status);
     } catch { /* noop */ }
     load().catch(() => {});
-  };
+  }, [authFetch, items, load]);
 
   return (
-    <AdminShell active="requests" title="Solicitudes en vivo" subtitle="Radar logístico activo · Bogotá D.C. · auto-actualización por socket">
+    <AdminShell active="requests" title="Solicitudes en vivo" subtitle="Radar logístico activo · Soacha · auto-actualización por socket">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
         {FILTERS.map((f) => (
           <Pressable key={f} onPress={() => { setFilter(f); setLoading(true); }} style={[styles.pill, filter === f && styles.pillOn]}>
