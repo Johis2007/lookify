@@ -7,13 +7,10 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
   Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import DateTimePicker, {
-  DateTimePickerChangeEvent,
-} from '@react-native-community/datetimepicker';
+import DateField from '../components/DateField';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
@@ -54,15 +51,6 @@ type FieldKey =
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterProfessional'>;
 
-function formatFecha(date: Date | null): string {
-  if (!date) return 'Selecciona tu fecha de nacimiento';
-  return date.toLocaleDateString('es-CO', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  });
-}
-
 export default function RegisterProfessionalScreen({ navigation }: Props) {
   const [form, setForm] = useState({
     nombre: '',
@@ -75,7 +63,6 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
   });
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumentoId>('CC');
   const [fechaNacimiento, setFechaNacimiento] = useState<Date | null>(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [fechaTouched, setFechaTouched] = useState(false);
   const [aceptaLegal, setAceptaLegal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -104,16 +91,8 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
     }
   };
 
-  const onDateChange = (_event: DateTimePickerChangeEvent, selected: Date) => {
-    if (Platform.OS === 'android') {
-      setShowDatePicker(false);
-    }
-    setFechaNacimiento(selected);
-    setFechaTouched(true);
-  };
-
-  const closeDatePicker = () => {
-    setShowDatePicker(false);
+  const handleFechaChange = (date: Date | null) => {
+    setFechaNacimiento(date);
     setFechaTouched(true);
   };
 
@@ -280,31 +259,14 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
             error={showError('nacionalidad', errors.nacionalidad)}
           />
 
-          <Text style={styles.fieldLabel}>Fecha de nacimiento</Text>
-          <TouchableOpacity
-            style={[styles.dateButton, fechaError ? styles.dateButtonError : null]}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Text style={[styles.dateButtonText, !fechaNacimiento && styles.datePlaceholder]}>
-              {formatFecha(fechaNacimiento)}
-            </Text>
-          </TouchableOpacity>
-          {fechaError ? <Text style={styles.fieldError}>{fechaError}</Text> : null}
-          {showDatePicker && (
-            <DateTimePicker
-              value={fechaNacimiento ?? new Date(2000, 0, 1)}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              maximumDate={new Date()}
-              onValueChange={onDateChange}
-              onDismiss={closeDatePicker}
-            />
-          )}
-          {Platform.OS === 'ios' && showDatePicker && (
-            <TouchableOpacity style={styles.dateDone} onPress={closeDatePicker}>
-              <Text style={styles.dateDoneText}>Listo</Text>
-            </TouchableOpacity>
-          )}
+          {/* Fecha: nativo abre calendario DateTimePicker, web usa input
+              type="date" (calendario + escritura). Ver DateField. */}
+          <DateField
+            value={fechaNacimiento}
+            onChange={handleFechaChange}
+            error={fechaError}
+            maximumDate={new Date()}
+          />
 
           <TextField
             label="Teléfono"
@@ -437,12 +399,6 @@ const styles = StyleSheet.create({
     ...typography.caption,
     marginBottom: spacing.sm,
   },
-  fieldError: {
-    fontSize: 12,
-    color: colors.error,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.md,
-  },
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -467,36 +423,6 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.white,
     fontWeight: '600',
-  },
-  dateButton: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 12,
-    marginBottom: spacing.md,
-    backgroundColor: colors.white,
-  },
-  dateButtonError: {
-    borderColor: colors.error,
-    marginBottom: spacing.xs,
-  },
-  dateButtonText: {
-    fontSize: 14,
-    color: colors.textPrimary,
-  },
-  datePlaceholder: {
-    color: colors.textMuted,
-  },
-  dateDone: {
-    alignSelf: 'flex-end',
-    marginBottom: spacing.md,
-    paddingVertical: spacing.xs,
-  },
-  dateDoneText: {
-    color: colors.honey,
-    fontWeight: '600',
-    fontSize: 14,
   },
   termsRow: {
     flexDirection: 'row',
