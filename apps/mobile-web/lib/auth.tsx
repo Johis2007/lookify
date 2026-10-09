@@ -28,7 +28,7 @@ type AuthContextValue = {
   roleConflict: boolean;
   loading: boolean;
   login: (email: string, password: string) => Promise<{ isProfessional: boolean; isAdmin: boolean }>;
-  registerClient: (email: string, password: string, displayName: string) => Promise<void>;
+  registerClient: (email: string, password: string, displayName: string, phone?: string) => Promise<void>;
   registerProfessional: (args: {
     email: string;
     password: string;
@@ -220,7 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // FLUJO CLIENTE: crea usuario + login + perfil cliente (fija el rol).
   const registerClient = useCallback(
-    async (email: string, password: string, displayName: string) => {
+    async (email: string, password: string, displayName: string, phone?: string) => {
       // Registro público: SIN token (un token caducado lo convertiría en 401).
       // Directus responde 204 sin body en registro público.
       let res: Response;
@@ -253,7 +253,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (me?.id) {
           await api('/items/client_profiles', token, {
             method: 'POST',
-            body: JSON.stringify({ user: me.id, display_name: displayName }),
+            body: JSON.stringify({
+              user: me.id,
+              display_name: displayName,
+              ...(phone?.trim() ? { phone: phone.trim() } : {}),
+            }),
           }).catch(() => null);
         }
       } catch {

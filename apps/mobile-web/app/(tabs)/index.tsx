@@ -8,7 +8,8 @@ import { fetchCategories, fetchOnlinePros, type ProWithMeta } from '@/lib/api';
 import { useClientLocation } from '@/lib/useClientLocation';
 import { useDebouncedValue } from '@/lib/useDebouncedValue';
 
-// Lookify Cliente - Inicio y Mapa (diseño Stitch, móvil + web).
+// Lookify Cliente - Inicio y Mapa (rediseño mock: header navy + chips beige +
+// mapa redondeado + footer con conteo; datos reales Directus intactos).
 // Ubicación real del cliente (GPS/manual/en vivo) con pin propio que sigue al GPS.
 export default function HomeMap() {
   const { authFetch, user } = useAuth();
@@ -58,49 +59,60 @@ export default function HomeMap() {
   }, [pros, dq]);
 
   const spotlight = filtered[0];
+  const catList = cats.length
+    ? cats
+    : [{ id: 11, name: 'Uñas' }, { id: 12, name: 'Barbería' }, { id: 13, name: 'Maquillaje' }];
 
   return (
-    <View style={styles.screen}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
-        {/* Header Stitch: logo + ubicación + avatar */}
-        <View style={styles.header}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoL}>L</Text>
-          </View>
-          <Pressable style={styles.locPill} onPress={() => router.push('/(tabs)/radar')}>
-            <Text>📍</Text>
-            <Text style={styles.locT} numberOfLines={1}>
-              {loc.coords.label ?? 'Soacha centro'} · {loc.coords.latitude.toFixed(3)},{loc.coords.longitude.toFixed(3)}
-            </Text>
+    <View style={styles.container}>
+      {/* Header navy con ubicación + notificaciones (estilo mock) */}
+      <View style={styles.header}>
+        <Pressable style={styles.locBlock} onPress={() => router.push('/(tabs)/radar')}>
+          <Text style={styles.headerLabel}>Ubicación actual</Text>
+          <Text style={styles.headerLocation} numberOfLines={1}>
+            {loc.coords.label ?? 'Soacha centro'}
+          </Text>
+        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable style={styles.notifButton} onPress={() => router.push('/(tabs)/bookings')}>
+            <Text style={styles.notifIcon}>🔔</Text>
           </Pressable>
           <View style={styles.avatar}>
             <Text style={styles.avatarT}>{(user?.first_name?.[0] || 'L').toUpperCase()}</Text>
           </View>
         </View>
+      </View>
 
+      <ScrollView contentContainerStyle={{ paddingBottom: 24 }} showsVerticalScrollIndicator={false}>
         {/* Buscador */}
         <View style={styles.search}>
           <Text>🔍</Text>
           <TextInput value={q} onChangeText={setQ} placeholder="Buscar profesional o servicio..." style={styles.searchInput} placeholderTextColor="#75777e" />
         </View>
 
-        {/* Categorías */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.cats}>
-          <Pressable style={[styles.catPill, !cat && styles.catActive]} onPress={() => setCat(undefined)}>
-            <Text style={[styles.catT, !cat && styles.catTActive]}>✂️ Cabello</Text>
+        {/* Selector de categorías (chips beige/navy, estilo mock) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriesRow}>
+          <Pressable style={[styles.categoryChip, !cat && styles.categoryChipActive]} onPress={() => setCat(undefined)}>
+            <Text style={styles.categoryIcon}>✂️</Text>
+            <Text style={[styles.categoryText, !cat && styles.categoryTextActive]}>Cabello</Text>
           </Pressable>
-          {(cats.length
-            ? cats
-            : [{ id: 11, name: 'Uñas' }, { id: 12, name: 'Barbería' }, { id: 13, name: 'Maquillaje' }]
-          ).map((c) => (
-            <Pressable key={c.id} style={[styles.catPill, cat === c.id && styles.catActive]} onPress={() => setCat(cat === c.id ? undefined : c.id)}>
-              <Text style={[styles.catT, cat === c.id && styles.catTActive]}>{c.name}</Text>
-            </Pressable>
-          ))}
+          {catList.map((c) => {
+            const active = cat === c.id;
+            return (
+              <Pressable
+                key={c.id}
+                style={[styles.categoryChip, active && styles.categoryChipActive]}
+                onPress={() => setCat(active ? undefined : c.id)}
+              >
+                <Text style={styles.categoryIcon}>{catIcon(c.name)}</Text>
+                <Text style={[styles.categoryText, active && styles.categoryTextActive]}>{c.name}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
 
-        {/* Mapa (sigue tu ubicación real) */}
-        <View style={styles.mapWrap}>
+        {/* Mapa redondeado */}
+        <View style={styles.mapContainer}>
           <LookifyMap
             initial={pos}
             follow={loc.hasRealFix ? pos : null}
@@ -120,12 +132,14 @@ export default function HomeMap() {
           </View>
         </View>
 
-      {/* Spotlight */}
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 16 }} />
-      ) : spotlight ? (
-        <View style={styles.sheet}>
-          <Text style={styles.sheetTitle}>⭐ {filtered.length} profesionales disponibles</Text>
+        {/* Resumen + acción principal (estilo mock) */}
+        {loading ? (
+          <ActivityIndicator style={{ marginTop: 16 }} />
+        ) : spotlight ? (
+          <View style={styles.sheet}>
+            <Text style={styles.footerCount}>
+              {filtered.length} {filtered.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
+            </Text>
             <View style={styles.spot}>
               <View style={styles.spotAvatar}>
                 <Text style={styles.spotAvatarT}>{(spotlight.display_name?.[0] || 'L').toUpperCase()}</Text>
@@ -138,7 +152,7 @@ export default function HomeMap() {
               </View>
             </View>
             <Pressable style={styles.cta} onPress={() => router.push('/(tabs)/services')}>
-              <Text style={styles.ctaT}>⚡ Solicitar ahora a domicilio →</Text>
+              <Text style={styles.ctaT}>Solicitar ahora</Text>
             </Pressable>
             <View style={styles.ghostRow}>
               <Pressable style={styles.ghost} onPress={() => router.push('/(tabs)/services')}>
@@ -151,7 +165,7 @@ export default function HomeMap() {
           </View>
         ) : (
           <View style={styles.sheet}>
-            <Text style={styles.sheetTitle}>📡 Sin profesionales en línea por aquí</Text>
+            <Text style={styles.footerCount}>Sin profesionales en línea por aquí</Text>
             <Text style={styles.spotMeta}>Amplía el radio en el radar o intenta en unos minutos.</Text>
             <Pressable style={styles.cta} onPress={() => router.push('/(tabs)/radar')}>
               <Text style={styles.ctaT}>Abrir radar →</Text>
@@ -163,31 +177,121 @@ export default function HomeMap() {
   );
 }
 
+function catIcon(name: string): string {
+  const n = (name || '').toLowerCase();
+  if (n.includes('uña')) return '💅';
+  if (n.includes('barb')) return '🪒';
+  if (n.includes('maquill')) return '💄';
+  if (n.includes('cabello') || n.includes('pelo') || n.includes('corte')) return '✂️';
+  if (n.includes('piel') || n.includes('skin') || n.includes('facial')) return '✨';
+  if (n.includes('masaje')) return '💆';
+  return '✨';
+}
+
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Stitch.colors.surface },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 16 },
-  logoCircle: { width: 36, height: 36, borderRadius: 18, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
-  logoL: { color: Stitch.colors.secondaryContainer, fontWeight: '900', fontSize: 18 },
-  locPill: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 999, paddingVertical: 9, paddingHorizontal: 14 },
-  locT: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface, flex: 1 },
-  avatar: { width: 36, height: 36, borderRadius: 18, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  container: { flex: 1, backgroundColor: '#fff' },
+  header: {
+    backgroundColor: Stitch.colors.primaryContainer,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  locBlock: { flex: 1, paddingRight: 12 },
+  headerLabel: { fontSize: 11, color: '#FFE9C2', opacity: 0.7 },
+  headerLocation: { fontSize: 15, fontWeight: '600', color: '#fff', marginTop: 2 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  notifButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Stitch.colors.secondaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notifIcon: { fontSize: 16 },
+  avatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#ffffff22',
+    borderWidth: 1,
+    borderColor: '#ffffff44',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatarT: { color: '#fff', fontWeight: '800' },
-  search: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 12, marginHorizontal: 16, paddingHorizontal: 14, height: 46 },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Stitch.colors.surfaceLow,
+    borderRadius: 12,
+    marginHorizontal: 16,
+    marginTop: 12,
+    paddingHorizontal: 14,
+    height: 46,
+  },
   searchInput: { flex: 1, fontSize: 14, color: Stitch.colors.onSurface },
-  cats: { gap: 8, paddingHorizontal: 16, paddingVertical: 12 },
-  catPill: { backgroundColor: '#fff', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
-  catActive: { backgroundColor: Stitch.colors.primaryContainer, borderColor: Stitch.colors.primaryContainer },
-  catT: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurface },
-  catTActive: { color: '#fff' },
-  mapWrap: { height: 280, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
-  mapBadge: { position: 'absolute', top: 10, left: 10, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Stitch.colors.primaryContainer, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
+  categoriesRow: { alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
+  categoryChip: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    minWidth: 88,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    backgroundColor: '#FAF1E6',
+  },
+  categoryChipActive: { backgroundColor: Stitch.colors.primaryContainer },
+  categoryIcon: { fontSize: 20 },
+  categoryText: { fontSize: 13, color: Stitch.colors.onSurfaceVariant, fontWeight: '500' },
+  categoryTextActive: { color: '#fff' },
+  mapContainer: { height: 280, marginHorizontal: 16, borderRadius: 16, overflow: 'hidden' },
+  mapBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: Stitch.colors.primaryContainer,
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingHorizontal: 12,
+  },
   mapBadgeT: { color: '#fff', fontSize: 11, fontWeight: '700' },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: Stitch.colors.secondaryContainer },
   liveDotOn: { backgroundColor: '#4edea3' },
-  sheet: { backgroundColor: '#fff', borderRadius: 20, margin: 16, padding: 16, gap: 10, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
-  sheetTitle: { fontSize: 15, fontWeight: '800', color: Stitch.colors.primaryContainer },
-  spot: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Stitch.colors.surfaceLow, borderRadius: 14, padding: 12 },
-  spotAvatar: { width: 48, height: 48, borderRadius: 12, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
+  sheet: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    margin: 16,
+    padding: 16,
+    gap: 10,
+    borderWidth: 1,
+    borderColor: Stitch.colors.surfaceHigh,
+  },
+  footerCount: { fontSize: 17, fontWeight: '800', color: Stitch.colors.onSurface, marginBottom: 4 },
+  spot: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: Stitch.colors.surfaceLow,
+    borderRadius: 14,
+    padding: 12,
+  },
+  spotAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: Stitch.colors.primaryContainer,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   spotAvatarT: { color: Stitch.colors.secondaryContainer, fontWeight: '900', fontSize: 20 },
   spotName: { fontSize: 14, fontWeight: '800', color: Stitch.colors.onSurface },
   spotMeta: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, marginTop: 2 },

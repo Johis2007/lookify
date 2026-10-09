@@ -222,6 +222,7 @@ export default function Tracking() {
         if (pid) attachBookingToPro(id as string, pid);
       }
     } catch {}
+    if (status === 'in_progress') router.push(`/service-progress/${id}` as any);
     if (status === 'completed') router.push(`/rating/${id}`);
   };
 
@@ -331,8 +332,8 @@ export default function Tracking() {
               </Pressable>
             )}
             {booking.status === 'in_progress' && (
-              <Pressable style={styles.primary} onPress={() => advance('completed')}>
-                <Text style={styles.primaryT}>Marcar completada</Text>
+              <Pressable style={styles.primary} onPress={() => router.push(`/service-progress/${id}` as any)}>
+                <Text style={styles.primaryT}>Abrir progreso del servicio →</Text>
               </Pressable>
             )}
             {booking.status === 'pending' && (
