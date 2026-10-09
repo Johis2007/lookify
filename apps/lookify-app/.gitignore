@@ -1,0 +1,27 @@
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Dependencias
+node_modules/
+
+# Xcode / Android nativo (si haces eject o prebuild)
+ios/
+android/
+
+# Variables de entorno (nunca subas tus llaves/API keys)
+.env
+.env.local
+
+# macOS
+.DS_Store
+
+# Logs
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# TypeScript
+*.tsbuildinfo
