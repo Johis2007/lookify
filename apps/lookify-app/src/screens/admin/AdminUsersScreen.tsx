@@ -19,6 +19,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing } from '../../theme/colors';
 import BackHeader from '../../components/BackHeader';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
+import { resetAdminToLogin } from '../../navigation/AdminStackNavigator';
 import { loadAdminSession } from '../../lib/backend/adminAuth';
 import {
   fetchProUserIds,
@@ -55,7 +56,7 @@ export default function AdminUsersScreen({ navigation }: Props) {
   const load = useCallback(async () => {
     const session = await loadAdminSession();
     if (!session) {
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
       return;
     }
     try {
@@ -70,7 +71,7 @@ export default function AdminUsersScreen({ navigation }: Props) {
       setCounts(cnt);
       setSelected((prev) => prev ?? pg.users[0] ?? null);
     } catch {
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
     } finally {
       setLoading(false);
       setRefreshing(false);

@@ -20,6 +20,7 @@ import { colors, radius, spacing } from '../../theme/colors';
 import BackHeader from '../../components/BackHeader';
 import { confirmNative } from '../../components/ConfirmDialog';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
+import { resetAdminToLogin } from '../../navigation/AdminStackNavigator';
 import { clearAdminSession, loadAdminSession } from '../../lib/backend/adminAuth';
 import { fetchAdminStats, type AdminBooking, type AdminStats } from '../../lib/backend/admin';
 import { formatCOP } from '../../utils/pricing';
@@ -37,7 +38,7 @@ export default function AdminDashboardScreen({ navigation }: Props) {
   const load = useCallback(async () => {
     const session = await loadAdminSession();
     if (!session) {
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
       return;
     }
     try {
@@ -47,7 +48,7 @@ export default function AdminDashboardScreen({ navigation }: Props) {
     } catch {
       // Sin permiso: la sesión ya no es admin.
       await clearAdminSession();
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -62,7 +63,7 @@ export default function AdminDashboardScreen({ navigation }: Props) {
     const ok = await confirmNative('Cerrar sesión', '¿Salir del panel administrador?', 'Salir');
     if (!ok) return;
     await clearAdminSession();
-    navigation.reset({ index: 0, routes: [{ name: 'AdminLogin' }] });
+    resetAdminToLogin(navigation);
   };
 
   const kpis = stats

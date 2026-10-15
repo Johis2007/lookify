@@ -20,6 +20,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing } from '../../theme/colors';
 import BackHeader from '../../components/BackHeader';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
+import { resetAdminToLogin } from '../../navigation/AdminStackNavigator';
 import { loadAdminSession } from '../../lib/backend/adminAuth';
 import {
   assetUrl,
@@ -54,7 +55,7 @@ export default function AdminVerificationScreen({ navigation }: Props) {
   const load = useCallback(async () => {
     const session = await loadAdminSession();
     if (!session) {
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
       return;
     }
     setLoading(true);
@@ -63,7 +64,7 @@ export default function AdminVerificationScreen({ navigation }: Props) {
       setItems(rows);
       setSelectedId((prev) => prev ?? rows[0]?.id ?? null);
     } catch {
-      navigation.replace('AdminLogin');
+      resetAdminToLogin(navigation);
     } finally {
       setLoading(false);
     }
