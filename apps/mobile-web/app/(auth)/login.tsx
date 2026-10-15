@@ -1,6 +1,6 @@
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { homeForRole } from '@/lib/roleGuard';
@@ -65,9 +65,12 @@ export default function LoginScreen() {
       >
         {/* Header navy centrado (estilo mock) */}
         <View style={styles.header}>
-          <View style={styles.logoCircle}>
-            <Text style={styles.logoL}>L</Text>
-          </View>
+          <Image
+            source={require('@/assets/images/logo-lookify.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel="Lookify"
+          />
           <Text style={styles.brand}>Lookify</Text>
           <Text style={styles.tagline}>Belleza a un toque de distancia</Text>
         </View>
@@ -188,16 +191,7 @@ const styles = StyleSheet.create({
     paddingTop: 48,
     paddingBottom: 24,
   },
-  logoCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: Stitch.colors.secondaryContainer,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  logoL: { color: Stitch.colors.primaryContainer, fontSize: 44, fontWeight: '900' },
+  logo: { width: 96, height: 96, borderRadius: 24, marginBottom: 12 },
   brand: { fontSize: 22, fontWeight: '600', color: '#FFE9C2' },
   tagline: {
     fontSize: 14,

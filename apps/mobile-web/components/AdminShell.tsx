@@ -65,7 +65,15 @@ export function AdminShell({
     return (
       <View style={styles.screen}>
         <View style={styles.mobileTop}>
-          <Pressable onPress={() => router.back()} style={styles.mobileBack}>
+          <Pressable
+            onPress={() => {
+              // Entrada directa (deep link) sin historial: GO_BACK no lo maneja
+              // ningún navigator. Fallback al dashboard admin.
+              if (router.canGoBack()) router.back();
+              else router.replace('/admin/dashboard' as any);
+            }}
+            style={styles.mobileBack}
+          >
             <Text style={styles.mobileBackT}>←</Text>
           </Pressable>
           <View style={{ flex: 1 }}>

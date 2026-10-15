@@ -1,6 +1,6 @@
 import { Link, router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { TermsAccordion } from '@/components/TermsAccordion';
@@ -141,12 +141,27 @@ export default function RegisterClient() {
       {/* Header navy centrado (estilo mock) */}
       <View style={styles.header}>
         <Pressable
-          onPress={() => (step === 1 ? router.back() : setStep(step - 1))}
+          onPress={() => {
+            // Sin historial (deep link / recarga) no hay a dónde volver:
+            // GO_BACK sin navigator registrado revienta en dev. Fallback a elegir rol.
+            if (step === 1) {
+              if (router.canGoBack()) router.back();
+              else router.replace('/(auth)/register' as any);
+            } else {
+              setStep(step - 1);
+            }
+          }}
           style={styles.backRow}
         >
           <Text style={styles.back}>← {step === 1 ? 'Elegir rol' : 'Atrás'}</Text>
           <Text style={styles.steps}>Paso {step} de 3</Text>
         </Pressable>
+        <Image
+          source={require('@/assets/images/logo-lookify.png')}
+          style={styles.headerLogo}
+          resizeMode="contain"
+          accessibilityLabel="Lookify"
+        />
         <Text style={styles.title}>Crear cuenta de cliente</Text>
         <Text style={styles.subtitle}>Completa tus datos para continuar</Text>
         <View style={styles.dots}>
@@ -286,6 +301,12 @@ export default function RegisterClient() {
 
           {step === 3 && (
             <View style={styles.doneCard}>
+              <Image
+                source={require('@/assets/images/logo-lookify.png')}
+                style={styles.doneLogo}
+                resizeMode="contain"
+                accessibilityLabel="Lookify"
+              />
               <Text style={styles.done}>🎉</Text>
               <Text style={styles.cardTitle}>¡Cuenta lista, {firstName}!</Text>
               <Text style={styles.sub}>
@@ -389,6 +410,7 @@ const styles = StyleSheet.create({
   },
   back: { fontWeight: '700', color: '#FFE9C2' },
   steps: { fontSize: 12, fontWeight: '700', color: '#FFE9C2', opacity: 0.8 },
+  headerLogo: { width: 64, height: 64, borderRadius: 16, marginTop: 8 },
   title: { fontSize: 18, fontWeight: '600', color: '#fff' },
   subtitle: { fontSize: 13, color: '#FFE9C2', opacity: 0.75, marginTop: 4, textAlign: 'center' },
   dots: { flexDirection: 'row', gap: 6, marginTop: 10 },
@@ -450,6 +472,7 @@ const styles = StyleSheet.create({
   hint: { fontSize: 12, color: Stitch.colors.onSurfaceVariant, textAlign: 'center' },
   error: { color: Stitch.colors.error, textAlign: 'center', fontSize: 13, fontWeight: '600' },
   doneCard: { alignItems: 'center', gap: 8, paddingVertical: 16 },
+  doneLogo: { width: 72, height: 72, borderRadius: 18 },
   done: { fontSize: 52, textAlign: 'center' },
   link: { alignItems: 'center', padding: 10 },
   linkSub: { fontSize: 14, color: Stitch.colors.onSurfaceVariant },

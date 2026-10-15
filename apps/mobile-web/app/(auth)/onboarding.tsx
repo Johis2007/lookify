@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Stitch } from '@/constants/StitchTheme';
 import { useAuth } from '@/lib/auth';
 import { ensureLocationPermission } from '@/lib/permissions';
@@ -18,9 +18,12 @@ export default function Onboarding() {
   return (
     <View style={styles.wrap}>
       <View style={styles.brand}>
-        <View style={styles.logoCircle}>
-          <Text style={styles.logoL}>{(user?.first_name?.[0] || 'L').toUpperCase()}</Text>
-        </View>
+        <Image
+          source={require('@/assets/images/logo-lookify.png')}
+          style={styles.logo}
+          resizeMode="contain"
+          accessibilityLabel="Lookify"
+        />
         <Text style={styles.hi}>Hola, {user?.first_name || 'Lookify Lover'} 👋</Text>
       </View>
       <View style={styles.card}>
@@ -59,8 +62,7 @@ export default function Onboarding() {
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: Stitch.colors.surface, padding: 20, justifyContent: 'center', gap: 14, maxWidth: 480, width: '100%', alignSelf: 'center' },
   brand: { alignItems: 'center', gap: 8 },
-  logoCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: Stitch.colors.primaryContainer, alignItems: 'center', justifyContent: 'center' },
-  logoL: { color: Stitch.colors.secondaryContainer, fontSize: 30, fontWeight: '900' },
+  logo: { width: 88, height: 88, borderRadius: 22 },
   hi: { fontSize: 18, fontWeight: '800', color: Stitch.colors.onSurface },
   card: { backgroundColor: '#fff', borderRadius: 20, padding: 24, alignItems: 'center', gap: 10, borderWidth: 1, borderColor: Stitch.colors.surfaceHigh },
   emoji: { fontSize: 44 },

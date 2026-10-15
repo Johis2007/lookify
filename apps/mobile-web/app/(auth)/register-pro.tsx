@@ -110,10 +110,28 @@ export default function RegisterPro() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.wrap}>
-      <Pressable onPress={() => (step === 1 ? router.back() : setStep(step - 1))} style={styles.backRow}>
+      <Pressable
+        onPress={() => {
+          // Sin historial (deep link / recarga) no hay a dónde volver:
+          // GO_BACK sin navigator registrado revienta en dev. Fallback a elegir rol.
+          if (step === 1) {
+            if (router.canGoBack()) router.back();
+            else router.replace('/(auth)/register' as any);
+          } else {
+            setStep(step - 1);
+          }
+        }}
+        style={styles.backRow}
+      >
         <Text style={styles.back}>← {step === 1 ? 'Elegir rol' : 'Atrás'}</Text>
         <Text style={styles.steps}>Paso {step} de 4</Text>
       </Pressable>
+      <Image
+        source={require('@/assets/images/logo-lookify.png')}
+        style={styles.headerLogo}
+        resizeMode="contain"
+        accessibilityLabel="Lookify"
+      />
       <Text style={styles.h1}>Cuenta profesional</Text>
       <View style={styles.dots}>
         {[1, 2, 3, 4].map((d) => (
@@ -230,6 +248,12 @@ export default function RegisterPro() {
 
       {step === 4 && (
         <View style={styles.card}>
+          <Image
+            source={require('@/assets/images/logo-lookify.png')}
+            style={styles.doneLogo}
+            resizeMode="contain"
+            accessibilityLabel="Lookify"
+          />
           <Text style={styles.done}>⏳</Text>
           <Text style={styles.cardTitle}>¡Solicitud recibida!</Text>
           <Text style={styles.sub}>
@@ -259,6 +283,7 @@ const styles = StyleSheet.create({
   backRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   back: { fontWeight: '700', color: Stitch.colors.onSurfaceVariant },
   steps: { fontSize: 12, fontWeight: '700', color: Stitch.colors.onSurfaceVariant },
+  headerLogo: { width: 64, height: 64, borderRadius: 16 },
   h1: { fontSize: 24, fontWeight: '800', color: Stitch.colors.onSurface },
   dots: { flexDirection: 'row', gap: 6 },
   dot: { width: 28, height: 6, borderRadius: 3, backgroundColor: Stitch.colors.surfaceHigh },
@@ -294,6 +319,7 @@ const styles = StyleSheet.create({
   boxT: { fontSize: 14, fontWeight: '900', color: Stitch.colors.primaryContainer },
   checkT: { fontSize: 13, fontWeight: '600', color: Stitch.colors.onSurface, flex: 1, lineHeight: 18 },
   error: { color: Stitch.colors.error, textAlign: 'center', fontSize: 13, fontWeight: '600' },
+  doneLogo: { width: 72, height: 72, borderRadius: 18, alignSelf: 'center' },
   done: { fontSize: 52, textAlign: 'center' },
   link: { alignItems: 'center', padding: 10 },
   linkSub: { fontSize: 14, color: Stitch.colors.onSurfaceVariant },

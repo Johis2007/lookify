@@ -105,7 +105,14 @@ export default function AdminServices() {
   return (
     <View style={styles.screen}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()}>
+        <Pressable
+          onPress={() => {
+            // Entrada directa (deep link) sin historial: GO_BACK no lo maneja
+            // ningún navigator. Fallback al dashboard admin.
+            if (router.canGoBack()) router.back();
+            else router.replace('/admin/dashboard' as any);
+          }}
+        >
           <Text style={styles.back}>←</Text>
         </Pressable>
         <View style={{ flex: 1 }}>
