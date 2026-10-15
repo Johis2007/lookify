@@ -4,11 +4,15 @@ import {
   sesionToRouteParams,
 } from '../types/professionalAuth';
 
-export type ProfessionalPostLoginRouteName =
-  | 'ProfessionalDashboardPlaceholder'
-  | 'ProfessionalVerificationPlaceholder'
-  | 'ProfessionalServiceSelectionPlaceholder'
-  | 'ProfessionalCertificateUploadPlaceholder';
+import type { ProfessionalStackParamList } from './ProfessionalStackNavigator';
+
+export type ProfessionalPostLoginRouteName = Exclude<
+  keyof ProfessionalStackParamList,
+  | 'ProfessionalLogin'
+  | 'RegisterProfessional'
+  | 'ProfessionalTermsRead'
+  | 'ProfessionalPrivacyRead'
+>;
 
 export type ProfessionalPostLoginRoute = {
   name: ProfessionalPostLoginRouteName;
@@ -20,7 +24,10 @@ export function resolvePostLoginRoute(session: SesionProfesional): ProfessionalP
 
   switch (session.estadoSolicitud) {
     case 'APROBADO':
-      return { name: 'ProfessionalDashboardPlaceholder', params };
+      if (session.profesionalActivado) {
+        return { name: 'ProfessionalDashboardPlaceholder', params };
+      }
+      return { name: 'ProfessionalVerificationPlaceholder', params };
     case 'EN_REVISION':
     case 'RECHAZADO':
       return { name: 'ProfessionalVerificationPlaceholder', params };
@@ -28,7 +35,7 @@ export function resolvePostLoginRoute(session: SesionProfesional): ProfessionalP
       if (session.onboardingPaso === 'CERTIFICADOS') {
         return { name: 'ProfessionalCertificateUploadPlaceholder', params };
       }
-      return { name: 'ProfessionalServiceSelectionPlaceholder', params };
+      return { name: 'ProfessionalServiceSelection', params };
     }
     default: {
       const _exhaustive: never = session.estadoSolicitud;

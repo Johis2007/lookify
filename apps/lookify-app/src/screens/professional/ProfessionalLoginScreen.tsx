@@ -13,13 +13,18 @@ import { loginValido, validarContrasenaLogin, validarCorreo } from '../../utils/
 import { getProfessionalAuthService } from '../../services/professionalAuthService';
 import { ServiceError } from '../../services/errors';
 import { resolvePostLoginRoute } from '../../navigation/professionalRoutes';
-import { RootStackParamList } from '../../navigation/AppNavigator';
+import { resetProfessionalSession } from '../../navigation/professionalNavigation';
+import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
+import type { NavigationProp } from '@react-navigation/native';
+import type { RootStackParamList } from '../../navigation/AppNavigator';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'ProfessionalLogin'>;
+type Props = NativeStackScreenProps<ProfessionalStackParamList, 'ProfessionalLogin'>;
 
 type Tab = 'login' | 'register';
 
 export default function ProfessionalLoginScreen({ navigation }: Props) {
+  const rootParent = navigation.getParent<NavigationProp<RootStackParamList>>();
+  const canBackToClient = rootParent?.canGoBack() ?? false;
   const [tab, setTab] = useState<Tab>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -44,10 +49,7 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
     try {
       const session = await getProfessionalAuthService().iniciarSesion(email, password);
       const route = resolvePostLoginRoute(session);
-      navigation.reset({
-        index: 0,
-        routes: [{ name: route.name, params: route.params }],
-      });
+      resetProfessionalSession(navigation, route.name, route.params);
     } catch (error) {
       if (error instanceof ServiceError) {
         if (error.code === 'INVALID_CREDENTIALS') {
@@ -77,7 +79,17 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
       <View style={styles.screen}>
         <View style={styles.header}>
           <View style={styles.backWrap}>
-            <BackHeader variant="dark" />
+            <BackHeader
+              variant="dark"
+              onBack={
+                canBackToClient
+                  ? () => {
+                      const parent = navigation.getParent<NavigationProp<RootStackParamList>>();
+                      if (parent?.canGoBack()) parent.goBack();
+                    }
+                  : undefined
+              }
+            />
           </View>
           <Image source={require('../../../assets/logo-lookify.png')} style={styles.logo} />
           <Text style={styles.brand}>Lookify PRO</Text>
@@ -148,9 +160,9 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
 
             {__DEV__ ? (
               <Text style={styles.devHint}>
-                Demo: pro.aprobado@lookify.test, pro.revision@lookify.test,
-                pro.rechazado@lookify.test, pro.docs-servicios@lookify.test,
-                pro.docs-certificados@lookify.test — contraseña Lookify123
+                Demo: pro.aprobado@lookify.test, pro.aprobado-nuevo@lookify.test,
+                pro.revision@lookify.test, pro.rechazado@lookify.test,
+                pro.docs-servicios@lookify.test, pro.docs-certificados@lookify.test — Lookify123
               </Text>
             ) : null}
           </ScrollView>

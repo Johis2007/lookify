@@ -1,7 +1,15 @@
 import {
+  GuardarServiciosRequest,
+  GuardarServiciosResponse,
   RegistrarProfesionalRequest,
   RegistrarProfesionalResponse,
 } from '../../types/professionalRegistration';
+import { esServicioIdValido } from './catalogServicioIds';
+import {
+  setOnboardingPasoForSolicitud,
+  setServiciosForSolicitud,
+  solicitudExiste,
+} from './mockProfessionalRegistryStore';
 import { ServiceError } from '../errors';
 import { ProfessionalRegistrationService } from '../professionalRegistrationService';
 import { isEmailRegistered } from '../../data/mockUsers';
@@ -13,6 +21,7 @@ import {
 } from './mockProfessionalRegistryStore';
 
 const MOCK_REGISTRATION_LATENCY_MS = 650;
+const MOCK_GUARDAR_SERVICIOS_LATENCY_MS = 500;
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,6 +82,30 @@ export function createMockProfessionalRegistrationService(): ProfessionalRegistr
         email,
         estadoSolicitud: 'DOCUMENTOS_PENDIENTES',
         onboardingPaso: 'SERVICIOS',
+      };
+    },
+
+    async guardarServicios(input: GuardarServiciosRequest): Promise<GuardarServiciosResponse> {
+      await delay(MOCK_GUARDAR_SERVICIOS_LATENCY_MS);
+
+      if (!solicitudExiste(input.solicitudId)) {
+        throw new ServiceError('SOLICITUD_NO_ENCONTRADA');
+      }
+      if (input.servicioIds.length === 0) {
+        throw new ServiceError('VALIDATION');
+      }
+      const unique = [...new Set(input.servicioIds)];
+      if (unique.some((id) => !esServicioIdValido(id))) {
+        throw new ServiceError('SERVICIO_INVALIDO');
+      }
+
+      setServiciosForSolicitud(input.solicitudId, unique);
+      setOnboardingPasoForSolicitud(input.solicitudId, 'CERTIFICADOS');
+
+      return {
+        solicitudId: input.solicitudId,
+        servicioIds: unique,
+        onboardingPaso: 'CERTIFICADOS',
       };
     },
   };

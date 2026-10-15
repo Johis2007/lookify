@@ -2,7 +2,12 @@ import { SesionProfesional } from '../../types/professionalAuth';
 import { ServiceError } from '../errors';
 import { ProfessionalAuthService } from '../professionalAuthService';
 import { MOCK_PROFESSIONAL_ACCOUNTS } from './mockProfessionalAccounts';
-import { findRegisteredByEmail } from './mockProfessionalRegistryStore';
+import {
+  findRegisteredByEmail,
+  getEstadoSolicitudForSolicitud,
+  getOnboardingPasoForSolicitud,
+  isProfesionalActivado,
+} from './mockProfessionalRegistryStore';
 
 const MOCK_PRO_AUTH_LATENCY_MS = 600;
 
@@ -25,15 +30,20 @@ export function createMockProfessionalAuthService(): ProfessionalAuthService {
         if (registered.password !== password) {
           throw new ServiceError('INVALID_CREDENTIALS');
         }
+        const onboardingPaso = getOnboardingPasoForSolicitud(registered.solicitudId);
+        const estado =
+          getEstadoSolicitudForSolicitud(registered.solicitudId) ?? registered.estadoSolicitud;
         const session: SesionProfesional = {
           profesionalId: registered.profesionalId,
+          solicitudId: registered.solicitudId,
           email: registered.email,
           nombre: registered.nombre,
-          estadoSolicitud: registered.estadoSolicitud,
+          estadoSolicitud: estado,
         };
-        if (registered.onboardingPaso !== undefined) {
-          session.onboardingPaso = registered.onboardingPaso;
+        if (onboardingPaso !== undefined) {
+          session.onboardingPaso = onboardingPaso;
         }
+        session.profesionalActivado = isProfesionalActivado(registered.profesionalId);
         return session;
       }
 
@@ -43,15 +53,22 @@ export function createMockProfessionalAuthService(): ProfessionalAuthService {
         throw new ServiceError('INVALID_CREDENTIALS');
       }
 
+      const onboardingPaso = getOnboardingPasoForSolicitud(account.solicitudId);
+      const estado =
+        getEstadoSolicitudForSolicitud(account.solicitudId) ?? account.estadoSolicitud;
       const session: SesionProfesional = {
         profesionalId: account.profesionalId,
+        solicitudId: account.solicitudId,
         email: account.email,
         nombre: account.nombre,
-        estadoSolicitud: account.estadoSolicitud,
+        estadoSolicitud: estado,
       };
-      if (account.onboardingPaso !== undefined) {
+      if (onboardingPaso !== undefined) {
+        session.onboardingPaso = onboardingPaso;
+      } else if (account.onboardingPaso !== undefined) {
         session.onboardingPaso = account.onboardingPaso;
       }
+      session.profesionalActivado = isProfesionalActivado(account.profesionalId);
       return session;
     },
   };

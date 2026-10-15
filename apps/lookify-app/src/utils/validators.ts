@@ -133,3 +133,42 @@ export function registroClienteValido(values: RegistroClienteValues): boolean {
 export function loginValido(email: string, password: string): boolean {
   return validarCorreo(email) === null && validarContrasenaLogin(password) === null;
 }
+
+export function validarNombreTipoCertificado(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'El nombre o tipo del certificado es obligatorio';
+  if (trimmed.length < 2) return 'Mínimo 2 caracteres';
+  return null;
+}
+
+export function validarEntidadEmisoraCertificado(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return 'La entidad emisora es obligatoria';
+  if (trimmed.length < 2) return 'Mínimo 2 caracteres';
+  return null;
+}
+
+/** Fecha de emisión opcional; si se elige, no puede ser futura. */
+export function validarFechaEmisionCertificado(date: Date | null): string | null {
+  if (!date) return null;
+  const hoy = new Date();
+  hoy.setHours(23, 59, 59, 999);
+  if (date.getTime() > hoy.getTime()) return 'La fecha no puede ser futura';
+  return null;
+}
+
+export function certificadoFormularioValido(
+  nombreTipo: string,
+  entidadEmisora: string,
+  fechaEmision: Date | null,
+  servicioIds: string[],
+  tieneArchivo: boolean
+): boolean {
+  return (
+    validarNombreTipoCertificado(nombreTipo) === null &&
+    validarEntidadEmisoraCertificado(entidadEmisora) === null &&
+    validarFechaEmisionCertificado(fechaEmision) === null &&
+    servicioIds.length > 0 &&
+    tieneArchivo
+  );
+}

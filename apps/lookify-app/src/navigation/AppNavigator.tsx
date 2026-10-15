@@ -6,11 +6,11 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import type { NavigatorScreenParams } from '@react-navigation/native';
 
 import LoginScreen from '../screens/LoginScreen';
 import AccountTypeScreen from '../screens/AccountTypeScreen';
 import RegisterClientScreen from '../screens/RegisterClientScreen';
-import RegisterProfessionalScreen from '../screens/RegisterProfessionalScreen';
 import HomeScreen from '../screens/HomeScreen';
 import ServiceSelectionScreen from '../screens/ServiceSelectionScreen';
 import MatchingScreen from '../screens/MatchingScreen';
@@ -18,17 +18,12 @@ import ProfessionalOfferScreen from '../screens/ProfessionalOfferScreen';
 import TrackingScreen from '../screens/TrackingScreen';
 import ServiceInProgressScreen from '../screens/ServiceInProgressScreen';
 import PaymentRatingScreen from '../screens/PaymentRatingScreen';
-import ProfessionalLoginScreen from '../screens/professional/ProfessionalLoginScreen';
-import ProfessionalDashboardPlaceholderScreen from '../screens/professional/placeholders/ProfessionalDashboardPlaceholderScreen';
-import ProfessionalVerificationPlaceholderScreen from '../screens/professional/placeholders/ProfessionalVerificationPlaceholderScreen';
-import ProfessionalServiceSelectionPlaceholderScreen from '../screens/professional/placeholders/ProfessionalServiceSelectionPlaceholderScreen';
-import ProfessionalCertificateUploadPlaceholderScreen from '../screens/professional/placeholders/ProfessionalCertificateUploadPlaceholderScreen';
-import ProfessionalTermsReadScreen from '../screens/professional/ProfessionalTermsReadScreen';
-import ProfessionalPrivacyReadScreen from '../screens/professional/ProfessionalPrivacyReadScreen';
 import ClientTermsReadScreen from '../screens/ClientTermsReadScreen';
 import ClientPrivacyReadScreen from '../screens/ClientPrivacyReadScreen';
+import ProfessionalStackNavigator, {
+  ProfessionalStackParamList,
+} from './ProfessionalStackNavigator';
 import { CategoriaId } from '../data/mockProfessionals';
-import { ProfessionalSessionRouteParams } from '../types/professionalAuth';
 
 export type MatchingRouteParams = {
   categoriaId: CategoriaId;
@@ -64,14 +59,7 @@ export type RootStackParamList = {
   RegisterClient: undefined;
   ClientTermsRead: undefined;
   ClientPrivacyRead: undefined;
-  RegisterProfessional: undefined;
-  ProfessionalTermsRead: undefined;
-  ProfessionalPrivacyRead: undefined;
-  ProfessionalLogin: undefined;
-  ProfessionalDashboardPlaceholder: ProfessionalSessionRouteParams;
-  ProfessionalVerificationPlaceholder: ProfessionalSessionRouteParams;
-  ProfessionalServiceSelectionPlaceholder: ProfessionalSessionRouteParams;
-  ProfessionalCertificateUploadPlaceholder: ProfessionalSessionRouteParams;
+  ProfessionalApp: NavigatorScreenParams<ProfessionalStackParamList>;
   Home: undefined;
   ServiceSelection: { categoriaId: CategoriaId; categoriaNombre: string };
   Matching: MatchingRouteParams;
@@ -96,26 +84,7 @@ export default function AppNavigator() {
           <Stack.Screen name="RegisterClient" component={RegisterClientScreen} />
           <Stack.Screen name="ClientTermsRead" component={ClientTermsReadScreen} />
           <Stack.Screen name="ClientPrivacyRead" component={ClientPrivacyReadScreen} />
-          <Stack.Screen name="RegisterProfessional" component={RegisterProfessionalScreen} />
-          <Stack.Screen name="ProfessionalTermsRead" component={ProfessionalTermsReadScreen} />
-          <Stack.Screen name="ProfessionalPrivacyRead" component={ProfessionalPrivacyReadScreen} />
-          <Stack.Screen name="ProfessionalLogin" component={ProfessionalLoginScreen} />
-          <Stack.Screen
-            name="ProfessionalDashboardPlaceholder"
-            component={ProfessionalDashboardPlaceholderScreen}
-          />
-          <Stack.Screen
-            name="ProfessionalVerificationPlaceholder"
-            component={ProfessionalVerificationPlaceholderScreen}
-          />
-          <Stack.Screen
-            name="ProfessionalServiceSelectionPlaceholder"
-            component={ProfessionalServiceSelectionPlaceholderScreen}
-          />
-          <Stack.Screen
-            name="ProfessionalCertificateUploadPlaceholder"
-            component={ProfessionalCertificateUploadPlaceholderScreen}
-          />
+          <Stack.Screen name="ProfessionalApp" component={ProfessionalStackNavigator} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="ServiceSelection" component={ServiceSelectionScreen} />
           <Stack.Screen name="Matching" component={MatchingScreen} />

@@ -4,13 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import Button from '../../components/Button';
 import { colors, radius, spacing, typography } from '../../theme/colors';
-import { RootStackParamList } from '../../navigation/AppNavigator';
+import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
+import { resetProfessionalSession } from '../../navigation/professionalNavigation';
 import { ProfessionalSessionRouteParams } from '../../types/professionalAuth';
 
 type PlaceholderRouteNames =
   | 'ProfessionalDashboardPlaceholder'
   | 'ProfessionalVerificationPlaceholder'
-  | 'ProfessionalServiceSelectionPlaceholder'
   | 'ProfessionalCertificateUploadPlaceholder';
 
 function SessionDetails({ params }: { params: ProfessionalSessionRouteParams }) {
@@ -38,6 +38,12 @@ function SessionDetails({ params }: { params: ProfessionalSessionRouteParams }) 
           {params.onboardingPaso}
         </Text>
       ) : null}
+      {params.servicioIds && params.servicioIds.length > 0 ? (
+        <Text style={styles.detailLine}>
+          <Text style={styles.detailLabel}>servicioIds: </Text>
+          {params.servicioIds.join(', ')}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -46,14 +52,11 @@ export function createProfessionalPlaceholderScreen(screenTitle: string) {
   return function ProfessionalPlaceholderScreen({
     navigation,
     route,
-  }: NativeStackScreenProps<RootStackParamList, PlaceholderRouteNames>) {
+  }: NativeStackScreenProps<ProfessionalStackParamList, PlaceholderRouteNames>) {
     const params = route.params;
 
     const handleLogout = () => {
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'ProfessionalLogin' }],
-      });
+      resetProfessionalSession(navigation, 'ProfessionalLogin');
     };
 
     return (

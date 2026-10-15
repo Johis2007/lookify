@@ -3,7 +3,13 @@
 **Flujo cliente (pantallas 1 a 10): completo.** Verificado en celular por USB y
 subido a GitHub (`e0696de` en `main`). Siguiente bloque: **App Profesional**, construida
 **pantalla por pantalla** (una pantalla por turno; el wizard de 4 pasos en una sola
-pantalla quedó descartado). Entrada pro desde Tipo de cuenta → Login Profesional.
+pantalla quedó descartado). Entrada pro desde Tipo de cuenta → `ProfessionalApp`
+(Login Profesional dentro del stack pro). **Siguiente paso inmediato:** pantallas pro 1 a 10
+completas; el siguiente paso (Admin Web o los pendientes de negocio) lo define el dueño del proyecto.
+
+**Commits recientes:** `7db63d8` — feat(pro) pantalla 10 historial de ingresos (`main`) ·
+`31a2da9` — feat(pro) pantalla 9 servicio en curso (`main`) · `3c5cc99` — docs(pro) contrato
+pantalla 8 (`main`).
 
 Fase actual: **frontend únicamente** (React Native + Expo SDK 57). El backend se
 construye después de cerrar todo el frontend. No hay autenticación real, base de
@@ -150,13 +156,15 @@ _(Tipo de cuenta = pantalla compartida del cliente; no cuenta en esta lista.)_
 
 1. Login Profesional — **verificada en celular USB**
 2. Registro — **verificada en celular USB**
-3. Selección de servicios
-4. Carga de certificados
-5. Estado de verificación
-6. Panel principal (toggle Disponible/Ocupado)
-7. Solicitud entrante (ventana de 30 s)
-8. Servicio en curso (ingreso PIN del cliente)
-9. Historial/ingresos (gestión de portafolio)
+3. Selección de servicios — **verificada en celular USB**
+4. Carga de certificados — **verificada en celular USB**
+5. Estado de verificación — **verificada en celular USB**
+6. Panel principal (toggle Disponible/Ocupado) — **verificada en celular USB**
+7. Mi portafolio — **verificada en celular USB**
+8. Solicitud entrante (ventana de 30 s) — **verificada en celular USB** (pruebas 1–8 y
+   regresión toggle; pruebas 9–10 no verificables a mano con la app actual)
+9. Servicio en curso (En camino, Llegué, Iniciado + ingreso PIN del cliente) — **verificada en celular USB** (13 pruebas)
+10. Historial/ingresos — **verificada en celular USB** (12 pruebas)
 
 ### App Profesional — 10 pantallas oficiales (sin renumerar)
 
@@ -169,7 +177,7 @@ _(Tipo de cuenta = pantalla compartida del cliente; no cuenta en esta lista.)_
 7. Panel principal (con toggle Disponible/Ocupado)
 8. Solicitud entrante (ventana de 30 s)
 9. Servicio en curso (con ingreso del PIN del cliente)
-10. Historial/ingresos (con gestión de portafolio)
+10. Historial/ingresos
 
 ### App Profesional — Login (pantalla 1 provisional)
 
@@ -178,24 +186,34 @@ _(Tipo de cuenta = pantalla compartida del cliente; no cuenta en esta lista.)_
 eslogan «Convierte tu talento en ingresos»; tarjeta blanca; segmento
 Ingresar | Registrarme; validación como cliente (`validators.ts`); login vía
 `getProfessionalAuthService()` (mock en `src/services/mock/`). Tras login,
-`resolvePostLoginRoute` + `navigation.reset` a placeholders «sin construir» con
-params de sesión tipados. **Registrarme** navega a `RegisterProfessional`.
+`resolvePostLoginRoute` + `resetProfessionalSession` con params de sesión tipados según
+`estadoSolicitud`, `onboardingPaso` y `profesionalActivado` (onboarding 3–5, panel 6 o
+verificación 5). **Registrarme** navega a `RegisterProfessional`.
 **Verificada en celular USB.**
 
 Cuentas demo (mock): `pro.aprobado@lookify.test`, `pro.revision@lookify.test`,
 `pro.rechazado@lookify.test`, `pro.docs-servicios@lookify.test`,
 `pro.docs-certificados@lookify.test` — contraseña `Lookify123`.
 
-Placeholders post-login incluyen **«Cerrar sesión (temporal)»** (`reset` a
-`ProfessionalLogin`) para probar las 5 cuentas sin recargar la app; se reemplazará
+Placeholders post-login incluyen **«Cerrar sesión (temporal)»** (`resetProfessionalSession`
+→ `ProfessionalLogin`) para probar las 5 cuentas sin recargar la app; se reemplazará
 por cierre de sesión real (JWT + limpieza de token).
 
 **Onboarding entre pantallas 3–5:** params tipados (`ProfessionalSessionRouteParams`,
 incluye `solicitudId` tras registro). **Sin contexto global** por ahora. Pendiente
 opcional: contexto de sesión + JWT en `expo-secure-store` (decidir más adelante).
 
-**Pendiente técnico:** `ProfessionalStackNavigator` separado del stack cliente — tarea
-aparté con su propia prueba USB **antes de la pantalla 3** (stacks siguen unificados).
+**Navegación (stack pro):** el root del cliente tiene una sola entrada a la app
+profesional, `ProfessionalApp`, que monta `ProfessionalStackNavigator` (`src/navigation/ProfessionalStackNavigator.tsx`)
+con rutas pro incl. **`ProfessionalIncomingRequest`**, **`ProfessionalServiceInProgressPlaceholder`**
+(pantalla 9 real; el nombre de ruta sigue con sufijo Placeholder), más login, registro, legal, onboarding 3–5, panel, portafolio y
+verificación (varias rutas legacy con sufijo **Placeholder**). Tipo de cuenta → `navigate('ProfessionalApp')`.
+Helper `resetProfessionalSession` (`src/navigation/professionalNavigation.ts`): login
+exitoso, registro exitoso, guardar servicios, params inválidos y cerrar sesión hacen
+**reset en el root** a una sola ruta `ProfessionalApp` con el stack anidado en la
+pantalla destino, para que el atrás de Android no vuelva al flujo cliente (paridad con
+el root plano anterior). Login Pro: atrás al parent con `canGoBack()` cuando se entró
+desde Tipo de cuenta. **Verificado en celular USB** (refactor stack, sin cambio de UI).
 
 **Backend pendiente (Login Pro):** límite de intentos y bloqueo; JWT y almacenamiento
 seguro (`expo-secure-store`); recuperación de contraseña.
@@ -223,22 +241,381 @@ domicilio y correo para solicitudes de datos personales (en borrador aparecen co
 Registro vía `getProfessionalRegistrationService().registrarProfesional` (mock +
 `mockProfessionalRegistryStore`). Errores: `EMAIL_DUPLICATE`, `DOCUMENTO_DUPLICADO`,
 `NETWORK`. `fechaNacimiento` en payload como **YYYY-MM-DD local** (no `toISOString`).
-Éxito → `reset` a placeholder selección de servicios con `solicitudId`. **Verificada
-en celular USB.**
+Éxito → `resetProfessionalSession` a `ProfessionalServiceSelection` con `solicitudId`.
+**Verificada en celular USB.**
 
 **Backend pendiente (Registro):** rate limit; unicidad real de correo/documento;
 política de contraseñas; consentimiento con IP y timestamp servidor.
 
 **Pruebas Jest:** commit aparte cuando las pantallas pro estén verificadas en USB.
 
-**Contrato de servicios (resto; no implementado aún):**
+### App Profesional — Selección de servicios (pantalla 3)
 
-| Pantalla pro (prov.) | Función servicio | HTTP previsto (TBD) |
+`ProfessionalServiceSelectionScreen.tsx` en el stack pro (`ProfessionalServiceSelection`;
+no ruta `ProfessionalServiceSelectionPlaceholder` en navigator). Catálogo vía `getCatalogService()`
+(`listarServiciosPorCategoria`; mock lee `mockServices.ts`). Guardado vía
+`guardarServicios({ solicitudId, servicioIds })` en `ProfessionalRegistrationService`
+(servicios en mapa por `solicitudId` en store mock; cuentas semilla no se mutan).
+Checkboxes multi-categoría; mínimo 1 servicio. Sin `BackHeader`; atrás/gesto → Alert
+«Seguir seleccionando» / «Cerrar sesión» → `resetProfessionalSession` → Login Pro
+(`permitirSalida` antes de cada reset). Tras guardar → `resetProfessionalSession`
+a la pantalla 4 (ruta `ProfessionalCertificateUploadPlaceholder`) con `servicioIds` y
+`onboardingPaso: 'CERTIFICADOS'`.
+Íconos categoría en `src/constants/categoryIcons.ts` (duplicado de Inicio; refactor
+opcional compartir import con `HomeScreen`).
+
+**Backend (pantalla 3):** `GET /api/v1/catalogo/servicios` ·
+`PUT /api/v1/profesionales/solicitudes/:id/servicios` (body `{ servicioIds }`; el
+backend revalida IDs contra el catálogo).
+
+**Pendientes producto/técnicos (no implementados):**
+
+- **(a)** Matching: filtrar por `servicioIds` del profesional, no solo categoría — tarea
+  aparte + prueba USB (no tocar `MatchingScreen` / `mockProfessionals` hasta entonces).
+- **(b)** Editar servicios ofrecidos después del onboarding.
+- **(d)** Ajuste de precio ±20 % por servicio — **aplazado** (no implementado; pendiente backend/producto).
+
+**Verificada en celular USB.**
+
+### App Profesional — Carga de certificados (pantalla 4)
+
+`ProfessionalCertificateUploadScreen.tsx` registrada en el stack pro bajo la ruta
+**`ProfessionalCertificateUploadPlaceholder`** (deuda de nombre: el identificador sigue
+diciendo «Placeholder» hasta un refactor de rutas acordado). Params:
+`ProfessionalSessionRouteParams` con **`servicioIds` opcional**; si faltan, el mock resuelve
+los servicios guardados por `solicitudId` (`obtenerServiciosDeSolicitud`).
+
+Demo **`pro.docs-certificados@lookify.test`:** servicios sembrados en memoria para
+`sol-demo-docs-certificados` (**pel-1**, **bar-2**, **una-1**); las cuentas semilla en
+`mockProfessionalAccounts.ts` **no se mutan**.
+
+Origen de archivo: galería, cámara (`quality` 0,7) o PDF (`expo-image-picker`,
+`expo-document-picker`; tamaño con picker o `expo-file-system`; si el tamaño es
+desconocido → `ARCHIVO_INVALIDO`). Máx. 5 MB; JPG, PNG, PDF. Metadatos: nombre/tipo y
+entidad obligatorios; fecha de emisión opcional. Un certificado cubre ≥1 servicio elegido;
+mín. 1 y máx. **3 certificados por servicio** (un certificado multi-servicio cuenta en
+cada uno). Todo-o-nada al enviar: `SERVICIO_SIN_CERTIFICADO` si falta cobertura.
+
+Servicio **`getProfessionalCertificateService()`** (mock en memoria por `solicitudId`):
+`listarCertificados`, `obtenerServiciosDeSolicitud`, `agregarCertificado`,
+`actualizarCertificado`, `eliminarCertificado`, `enviarSolicitudVerificacion`. Errores:
+`ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`, `SERVICIO_SIN_CERTIFICADO`,
+`LIMITE_CERTIFICADOS_SERVICIO`, etc. Tras enviar OK → `estadoSolicitud: EN_REVISION` vía
+**mapa** `estadoSolicitudBySolicitudId` (no muta semillas); **al recargar la app el estado
+mock se reinicia**. Navegación con `resetProfessionalSession` (login, params inválidos,
+cerrar sesión, envío → `ProfessionalVerificationPlaceholder`). Atrás/gesto como pantalla 3;
+modal agregar/editar intercepta el atrás de Android antes que la alerta de cerrar sesión.
+
+**Permisos cámara/galería:** plugin `expo-image-picker` en `app.json` con textos en español;
+en **Expo Go** los mensajes del plugin **no aplican** (solo surten efecto en **development
+build** / binario propio). Sin `console.log` de URIs de certificados.
+
+**Verificada en celular USB** (cobertura mín/máx por servicio, multi-servicio, todo-o-nada,
+límite 5 MB, galería/cámara/PDF, envío a revisión).
+
+**Backend pendiente (pantalla 4; frontend mock listo):**
+
+- `GET /api/v1/profesionales/solicitudes/:id/certificados`
+- `POST /api/v1/profesionales/solicitudes/:id/certificados` (multipart)
+- `PATCH /api/v1/profesionales/solicitudes/:id/certificados/:certificadoId`
+- `DELETE /api/v1/profesionales/solicitudes/:id/certificados/:certificadoId`
+- `POST /api/v1/profesionales/solicitudes/:id/enviar-verificacion`
+
+### App Profesional — Estado de verificación (pantalla 5)
+
+`ProfessionalVerificationScreen.tsx` bajo la ruta **`ProfessionalVerificationPlaceholder`**
+(deuda de nombre, igual que pantalla 4). Estados UI: **EN_REVISION** (resumen enviado +
+«Actualizar estado»), **RECHAZADO** (motivo + servicios afectados + «Corregir certificados»
+→ pantalla 4 con certificados intactos), **APROBADO sin activar** (código de activación;
+no reemplaza la contraseña), **APROBADO activado** → login va directo al Dashboard
+(`pro.aprobado@lookify.test`; mapa `activadoByProfesionalId`, no muta semillas).
+
+Activación: **6 dígitos**, vigencia **10 min**, **5** intentos fallidos → bloqueo **15 min**,
+reenvío cada **60 s**, máx. **3** reenvíos (solo `reenviarCodigoActivacion` en app; el
+primer código lo genera la simulación admin `__DEV__` o la **primera** `obtenerEstadoVerificacion`
+— simula correo del servidor). Límites en `src/constants/professionalActivation.ts`.
+Validación en servicio; `emailEnmascarado` viene ya enmascarado del mock/backend.
+Sin salida: reenvíos agotados + código expirado → mensaje soporte con marcadores.
+
+Servicio **`getProfessionalVerificationService()`** (mock en memoria): `obtenerEstadoVerificacion`,
+`actualizarEstadoVerificacion`, `iniciarCorreccionCertificados`, `reenviarCodigoActivacion`,
+`validarCodigoActivacion`, `obtenerAvisoCorreccion` (banner en pantalla 4 al corregir),
+`simularDecisionAdministrador` / `expirarCodigoActivacionDemo` (**solo `__DEV__`**; panel
+DEMO en pantalla; `OPERACION_NO_PERMITIDA` si no es dev). Cuenta demo nueva:
+**`pro.aprobado-nuevo@lookify.test`**. `resolvePostLoginRoute`: `APROBADO` + no activado →
+pantalla 5; activado → Dashboard. Estado/rechazo/activación en mapas por `solicitudId` —
+**al recargar la app se reinicia**. Navegación: `resetProfessionalSession` (corregir, activar,
+cerrar sesión). **Verificada en celular USB.**
+
+**Backend pendiente (pantalla 5):** ver `docs/contratos-backend-profesional.md`.
+
+### App Profesional — Panel principal (pantalla 6)
+
+`ProfessionalDashboardScreen.tsx` registrada bajo la ruta **`ProfessionalDashboardPlaceholder`**
+(deuda de nombre: el identificador sigue diciendo «Placeholder»). Contenido (USB): cabecera
+con foto de perfil («Cambiar foto» galería/cámara, recorte 1:1, JPG/PNG máx. 5 MB, quality 0,7;
+avatar con iniciales si no hay foto), nombre y calificación con **`StarRating`** en modo
+**`readOnly`** (prop opcional; pantalla 10 cliente sin cambios); toggle grande **Disponible /
+Ocupado**; resumen del día con etiqueta **«Datos de ejemplo»**; **Mis calificaciones**
+(promedio, total, últimas 2–3 reseñas; sin estrellas ni «0.0» si no hay reseñas — solo
+«Todavía no tienes reseñas»); **Mis servicios** (precio base + duración, sin ±20 % en este
+commit); botón **Mi portafolio** → `navigate` a **`ProfessionalPortfolioPlaceholder`** (solo
+atrás, sin cerrar sesión); **Cerrar sesión** con confirmación («Seguir aquí / Cerrar sesión»).
+
+Servicio **`getProfessionalDashboardService()`** (mock en memoria por `profesionalId`):
+`obtenerPanelPrincipal`, `cambiarDisponibilidad`, `actualizarFotoPerfil`, `registrarCierreSesion`.
+Pasar a **Disponible** exige **aprobado + activado** en el **servicio** (`PROFESIONAL_NO_HABILITADO`).
+**Ubicación:** `expo-location` — `requestForegroundPermissionsAsync` en UI **antes** de
+`cambiarDisponibilidad`; **no** `getCurrentPosition`; **no** se guardan, muestran ni loguean
+coordenadas (`PUT` ubicación = contrato futuro en docs). Plugin en `app.json` (texto ES):
+solo aplica en **development build**, no en **Expo Go** (igual que image-picker). Si niega
+permiso → permanece **Ocupado**, mensaje + Ajustes. **`registrarCierreSesion`** deja siempre
+**Ocupado** (producción: backend + inactividad/heartbeat). Disponibilidad/foto/reseñas/resumen
+en mapas — **al recargar la app se reinicia**. Atrás/gesto Android: misma alerta que cerrar
+sesión; `navigate` al portafolio **no** dispara `beforeRemove` del panel.
+
+Semilla servicios (mapa, no muta cuentas): **`pro.aprobado`** → `sol-demo-aprobado`
+(**pel-1**, **pel-2**, **maq-1**); **`pro.aprobado-nuevo`** → `sol-demo-aprobado-nuevo`
+(**bar-1**, **bar-2**). Reseñas mock sembradas para ambos `profesionalId`. Tipo
+**`ResenaProfesional`** — deuda: unificar con **`MockResenaDestacada`** del cliente cuando
+exista backend compartido.
+
+**Verificada en celular USB** (toggle permiso ok/denegado, foto galería/cámara, portafolio,
+cierre → Ocupado, regresión StarRating cliente).
+
+**Backend pendiente (pantalla 6):** ver `docs/contratos-backend-profesional.md` (panel, foto,
+disponibilidad, reseñas, ubicación futura).
+
+### App Profesional — Mi portafolio (pantalla 7)
+
+`ProfessionalPortfolioScreen.tsx` registrada bajo la ruta **`ProfessionalPortfolioPlaceholder`**
+(deuda de nombre: el identificador sigue diciendo «Placeholder»). Entrada desde el panel:
+**Mi portafolio** → `navigate` (solo atrás, sin cerrar sesión).
+
+**Reglas de producto (portafolio opcional):** no hay mínimo de fotos ni videos; el **matching
+del cliente no filtra** por portafolio. **No hay revisión previa del admin** para publicar
+trabajos (solo se aprueban **certificados** en onboarding). **Portada** = foto con **orden 0**
+(`esPortada` en UI); **reordenar** fotos y videos por separado con botones mover antes/después
+(sin drag). **Descripción** opcional, máx. **100** caracteres (trim en servicio). **Servicio
+asociado** opcional, limitado a los `servicioIds` del profesional (`VALIDATION` si no pertenece).
+
+**Límites:** hasta **10** fotos (JPG/PNG, **5 MB**, `quality` **0,7**, sin recorte forzado);
+hasta **4** videos (MP4/MOV, **50 MB**, máx. **30 s**). **Aviso informativo** (texto fijo) si
+hay **menos de 3 fotos**; no bloquea. **Videos:** solo galería; tarjeta con ícono play; preview
+con **`expo-video`** en modal **al tocar** (probado en **Expo Go**); plugin `expo-video` en
+`app.json`.
+
+Servicio **`getProfessionalPortfolioService()`** (mock en memoria por `profesionalId`):
+`obtenerPortafolio`, `listarServiciosAsociables`, `agregarFoto`, `agregarVideo`, `actualizarItem`,
+`eliminarItem`, `reemplazarArchivo`, `moverItem`, `definirPortada`. Errores:
+`LIMITE_FOTOS_PORTAFOLIO`, `LIMITE_VIDEOS_PORTAFOLIO`, `ITEM_PORTAFOLIO_NO_ENCONTRADO`,
+`VIDEO_DURACION_EXCEDIDA`, más reutilizados (`ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`,
+`PROFESIONAL_NO_HABILITADO`, `VALIDATION`, etc.).
+
+**Semilla mock:** portafolio **vacío** para `pro-demo-aprobado` y `pro-demo-aprobado-nuevo`; **se
+pierde al recargar** la app (mapa en memoria, no muta cuentas semilla).
+
+**Verificada en celular USB** (vacío + aviso, fotos galería/cámara, portada, reemplazar, límites,
+video galería + preview, servicio asociado).
+
+**Deudas / follow-ups:**
+- **(a) Oferta cliente:** hoy `ProfessionalOfferScreen` no muestra el portafolio real (IDs en
+  `mockProfessionals` ≠ `pro-demo-*`). Cambio mínimo propuesto: `obtenerPortafolioPublicoParaOferta`
+  en capa servicios — `Image` si hay `uri`, ícono actual si no, copy «Este profesional aún no ha
+  publicado trabajos» si la lista está vacía.
+- **(b) Guard explícito** de `solicitudId` en cada handler de picker (evitar `params.solicitudId!`).
+- **(c) Nombre de rutas:** `ProfessionalPortfolioPlaceholderScreen.tsx` sin uso; rutas con
+  sufijo **Placeholder** en pantallas 4, 5, 6, 7 y 9 (refactor de nombres pendiente).
+
+**Backend pendiente (pantalla 7):** ver `docs/contratos-backend-profesional.md` (CRUD portafolio,
+moderación a posteriori).
+
+### App Profesional — Solicitud entrante (pantalla 8)
+
+`ProfessionalIncomingRequestScreen.tsx` en ruta **`ProfessionalIncomingRequest`**. **No tiene botón
+de entrada** en el panel: la pantalla aparece cuando llega una solicitud y solo si el profesional
+está **verificado (APROBADO)**, **activado** y en toggle **DISPONIBLE**. Ventana de **30 s** con
+**`expiraEn`** como autoridad del servidor; la UI recalcula el tiempo restante al volver a primer
+plano (`AppState`). Al llegar a **0** la pantalla llama al servicio **`procesarExpiracion`** — la
+app **no** decide sola si expiró. **Rechazar** o **expirar** deja al profesional **Disponible**,
+sin penalización. **Atrás** (gesto o botón Android) cuenta como **rechazar** con `Alert` de
+confirmación. Tras **Aceptar** queda en **«Esperando respuesta del cliente»** (sin cuenta de 30 s).
+Si el **cliente acepta** → disponibilidad **OCUPADO** automáticamente y **`replace`** a
+**`ProfessionalServiceInProgressPlaceholder`** (pantalla 9 real; la ruta conserva el nombre). Si el **cliente rechaza**
+→ sigue **Disponible**. **Una sola solicitud activa** por profesional.
+
+Contenido visible: servicio, **distancia aproximada**, **primer nombre** del cliente
+(`primerNombre.ts`), calificación si hay reseñas, desglose **Precio base + Domicilio = Total**; **sin
+dirección exacta**. Comisión del **15 % oculta**; **sin ajuste ±20 %** en esta pantalla.
+
+**Arquitectura:** **`getProfessionalIncomingRequestService()`** — `obtenerSolicitudActiva`,
+`suscribirseASolicitudesEntrantes`, `obtenerSolicitud`, `aceptarSolicitud`, `rechazarSolicitud`,
+`procesarExpiracion`, `alCerrarSesion`; métodos DEMO **`simularSolicitudEntrante`**, `simularClienteAcepta`,
+`simularClienteRechaza`, `simularExpiracionSolicitud` (**solo `__DEV__`**). Respuestas de acción:
+**`resultado`:** `ACEPTADA` | `RECHAZADA` | `EXPIRADA` | `YA_ASIGNADA`. Errores nuevos:
+**`PROFESIONAL_NO_DISPONIBLE`**, **`SOLICITUD_ENTRANTE_NO_ENCONTRADA`**, **`SOLICITUD_NO_VIGENTE`**.
+
+**`ProfessionalIncomingRequestListener`** montado a nivel del stack pro (hermano del
+`<Stack.Navigator>`): cuando hay solicitud vigente y el pro está DISPONIBLE, abre la pantalla 8
+desde **cualquier pantalla** de la sesión. Navegación anidada desde el **root**:
+`navigate('ProfessionalApp', { screen: 'ProfessionalIncomingRequest', params })` — en USB apareció
+el error *«NAVIGATE was not handled by any navigator»* al usar `navigate('ProfessionalIncomingRequest')`
+directo porque `useNavigation()` enlazaba al navigator padre; corregido con **`RootStackParamList`**.
+Estado de ruta para deduplicar aperturas: **`professionalSessionFromState.ts`** (recorre estado anidado).
+
+**Disponibilidad en listener:** polling **`consultarDisponibilidad`** vía
+`getProfessionalDashboardService()` (~1,5 s) mientras hay sesión; el backend lo reemplazará por evento.
+
+**Mock:** store en memoria por **`profesionalId`**; **se pierde al recargar** la app. DEMO en panel
+(**`__DEV__`**) simula solicitud entrante; en pantalla 8 en espera, DEMO cliente acepta/rechaza.
+
+**Verificada en celular USB** (pruebas 1–8 documentadas en turno de QA + regresión toggle Disponible/Ocupado).
+
+**Deudas / follow-ups (pantalla 8):**
+- **(a)** Pruebas USB **9** (solicitud entrante mientras el pro está en **Mi portafolio**) y **10**
+  (DEMO deshabilitado con solicitud activa) **no verificadas a mano**. La pantalla 9 pro se probó por
+  el flujo normal (panel → solicitud → cliente acepta). Opcional futuro: DEMO en portafolio solo para
+  repetir la prueba 9.
+- **(b)** Listener usa **polling** de disponibilidad; backend → evento push/WebSocket.
+- **(c)** La comisión del **15 %** (solo sobre precio base) ya se **muestra** en la pantalla 10.
+  El ajuste de precio **±20 %** sigue **aplazado**.
+- **(d)** La pantalla 9 real ya está montada en **`ProfessionalServiceInProgressPlaceholder`**; el sufijo Placeholder de la ruta sigue como deuda de nombre.
+- **(e)** La solicitud solo llega con la **app abierta**; **notificaciones push** en fase backend.
+
+**Backend pendiente (pantalla 8):** ver `docs/contratos-backend-profesional.md`.
+
+### App Profesional — Servicio en curso (pantalla 9)
+
+`ProfessionalServiceInProgressScreen.tsx` en la ruta **`ProfessionalServiceInProgressPlaceholder`**
+(deuda de nombre: el identificador sigue diciendo «Placeholder»). Se borró el archivo placeholder.
+**No tiene botón de entrada.** Se abre con **`replace`** desde la pantalla 8 cuando el cliente acepta.
+El profesional ya está **OCUPADO**.
+
+**Etapas en una sola pantalla:** **EN_CAMINO** (servicio, primer nombre, dirección exacta y desglose
+Precio base + Domicilio = Total con `formatCOP`; sin comisión ni ±20 %) → botón **«Ya llegué»** →
+**LLEGUE** (el profesional escribe el PIN de 4 dígitos que le dicta el cliente) → PIN válido →
+**INICIADO** (cronómetro y «Finalizar servicio»). La dirección de hoy es un **texto fijo de ejemplo**.
+Botón **«Abrir en el mapa»** con `Linking` (sin paquete nuevo).
+
+**PIN:** la app profesional **nunca** conoce el correcto. `validarPin` devuelve `VALIDO` |
+`INVALIDO` (intentos restantes) | `BLOQUEADO`. Máximo **3** intentos; bloqueo **5 minutos**; al
+cumplirse se reinician los intentos. El reloj usa **`ahoraServidor`**: la pantalla calcula el desfase
+una vez por consulta y lo aplica al cronómetro y a la cuenta del bloqueo. Al volver a primer plano
+(`AppState`) vuelve a pedir el servicio. El campo es numérico, máximo 4 dígitos, se limpia si falla
+y no viaja por params ni a un log.
+
+**Cancelación del profesional:** solo en **EN_CAMINO** y **LLEGUE**. Cuatro motivos, sin «Otro» ni
+texto libre: «El cliente no está», «No encuentro la dirección», «El cliente canceló en persona»,
+«No puedo continuar». Alerta y luego confirmación. En **INICIADO** no hay cancelar ni salida: el
+atrás solo dice «El servicio ya empezó» / «Entendido». La flecha del encabezado abre **la misma
+alerta** que el botón de Android. `permitirSalida` deja pasar el `navigate` al panel cuando finaliza
+o cancela a propósito.
+
+**Al finalizar o cancelar** vuelve al panel con `navigate` y **sigue OCUPADO**. Él decide cuándo
+ponerse Disponible. El panel, al recuperar foco, vuelve a consultar el toggle y la tarjeta
+**«Continuar servicio»**. Mientras hay servicio activo, pasar a Disponible y cerrar sesión se
+rechazan con **`SERVICIO_EN_CURSO_ACTIVO`**.
+
+Servicio **`getProfessionalServiceInProgressService()`**: `obtenerServicioActivo`, `marcarLlegada`,
+`validarPin`, `cancelarPorProfesional`, `finalizarServicio`, y DEMO **`obtenerPinDemo`** /
+**`expirarBloqueoPinDemo`** (solo `__DEV__`; fuera de eso, `OPERACION_NO_PERMITIDA`). Errores:
+**`SERVICIO_EN_CURSO_NO_ENCONTRADO`**, **`ETAPA_NO_PERMITE_ACCION`**, **`SERVICIO_EN_CURSO_ACTIVO`**.
+El tipo `ServicioEnCurso` no trae el PIN. Mock en memoria por `profesionalId`; no muta cuentas
+semilla; **se pierde al recargar** la app.
+
+**DEMO `__DEV__`:** muestra el PIN, «Quitar bloqueo» e «Ir al panel» (el servicio sigue activo).
+
+**Verificada en celular USB** (13 pruebas).
+
+**Deudas / follow-ups (pantalla 9):**
+- El PIN del cliente (pantalla 9 cliente) y el de esta pantalla son **distintos** en el mock. En
+  backend habrá **un solo PIN**, generado al aceptar ambos. La demo en un solo celular aún no enlaza
+  cliente y profesional.
+- La flecha del encabezado abre la misma alerta que el botón de Android.
+- La ruta conserva el nombre **Placeholder**.
+- Comisión del **15 %** visible en pantalla 10; ajuste **±20 %** aplazado.
+- **Reapertura:** el contrato exige que `resolvePostLoginRoute` abra esta pantalla si hay servicio
+  activo. Hoy el login sigue al panel y el mock se pierde al recargar.
+- Al **finalizar** o **cancelar por profesional**, el mock registra el ítem en el **historial de
+  ingresos** (idempotente por `servicio.id`).
+
+**Backend pendiente (pantalla 9):** ver `docs/contratos-backend-profesional.md`.
+
+### App Profesional — Historial / ingresos (pantalla 10)
+
+`ProfessionalEarningsHistoryScreen.tsx` en la ruta **`ProfessionalEarningsHistory`** (sin sufijo
+Placeholder). Entrada: botón **«Mis ingresos»** en el panel (funciona **con servicio activo**; no se
+deshabilita). Atrás: **`goBack`** al panel (Android incluido); no hace `resetProfessionalSession`
+salvo sesión inválida.
+
+**Filtros:** chips **Hoy / Semana / Mes** (altura mínima 44, accesibilidad). Límites de periodo con
+**UTC−5 fijo** sobre **`ahoraServidor`** (`src/utils/bogotaTime.ts`; sin `Intl` ni zona del celular).
+**Semana:** lunes 00:00 a domingo 23:59:59 (calendario Bogotá).
+
+**Resumen del periodo:** cantidad de **finalizados** y **cancelados** por separado; los cancelados
+**solo cuentan**, no suman en total, comisión, neto ni comisión por efectivo. Montos del resumen solo
+de **FINALIZADOS**: total cobrado, comisión Lookify, neto y línea **«Comisión por servicios en
+efectivo»** (informativa; sin saldo global, cobro, bloqueo ni botón pagar).
+
+**Comisión (mock):** **15 % solo sobre `precioBaseCop`**, redondeo al entero más cercano en pesos:
+`Math.round((precioBaseCop * 15) / 100)` en `earningsMontos.ts`. Domicilio 100 % del profesional.
+**Neto = precioTotalCop − comisión.** La pantalla **no** importa mocks ni recalcula comisión/neto.
+
+**Lista:** ítems orden **descendente** por fecha de cierre, **20** por página, cursor
+`` `cerradoEnMs:id` ``. Estados: carga, vacío, error con **Reintentar**, error de página siguiente,
+**pull-to-refresh** (conserva filtro), recarga al **recuperar foco**. **Guard** por contador de
+consulta (cambio rápido de filtro / recarga) y guard anti-doble en **cargar más**.
+
+**Filas:** servicio, primer nombre del cliente, fecha/hora Bogotá, método de pago. **Finalizado:**
+total, comisión, neto; en **efectivo**, nota **«Debes a Lookify: $X»** (X = comisión). **Cancelado**
+(solo cancelación **del profesional**): etiqueta Cancelado + motivo (lista cerrada), montos **$0** sin
+total tachado. Sin dirección, correo, teléfono ni documento.
+
+**Resumen del día (panel):** lee el mismo store vía **`resumenHoyParaPanel`** (periodo HOY: servicios
+finalizados e ingresos = neto). Etiqueta **«Datos de ejemplo»** solo en **`__DEV__`** y solo si el
+resumen de hoy proviene **únicamente** de ítems de semilla.
+
+**Registro en historial:** en el **mock de servicio en curso**, dentro de la misma operación de
+**finalizar** o **cancelar por profesional**, idempotente por **`servicio.id`**. La pantalla 10 **no**
+llama a registrar. Ítems **inmutables** tras registrarse.
+
+**Semilla demo:** `sembrarHistorialDemo` solo **`__DEV__`**, solo si el store está **vacío**, ítems con
+**`origenSemilla`**. Fuera de dev → **`OPERACION_NO_PERMITIDA`**. Se invoca al **primer cargue** de
+**Mis ingresos** (no al abrir solo el panel). No mezcla ni borra servicios reales de la sesión.
+
+**Servicio:** `getProfessionalEarningsHistoryService()` — `obtenerResumenPeriodo`, `listarHistorial`,
+`sembrarHistorialDemo` (solo dev). Errores: **`PERIODO_INVALIDO`**, **`CURSOR_INVALIDO`**, más
+**`PROFESIONAL_NO_HABILITADO`**, **`VALIDATION`**, **`NETWORK`**.
+
+**Mock método de pago** en ítems de sesión: alternancia **determinista** por `id` (suma de
+`charCodeAt`; par → Efectivo, impar → Digital).
+
+**Verificada en celular USB** (12 pruebas).
+
+**Deudas / follow-ups (pantalla 10):**
+- **`RESUMEN_DIA_MOCK` / `datosMock`** siguen en `mockProfessionalDashboardStore` sin uso (limpieza
+  cosmética).
+- Badge **«Datos de ejemplo»** en historial si **hay alguna** semilla en el periodo; en el panel exige
+  que **todos** los de hoy sean semilla.
+- **Cancelaciones del cliente tras aceptar:** no entran al historial (pendiente backend/producto).
+- Ajuste **±20 %**, cobro real de comisión en efectivo, pago al profesional del digital y método de
+  pago real en producción: ver contrato backend.
+
+**Backend pendiente (pantalla 10):** ver `docs/contratos-backend-profesional.md`.
+
+**Contrato de servicios (resto; HTTP no implementado):**
+
+| Pantalla pro | Función servicio | HTTP previsto (TBD) |
 |---------------------|------------------|---------------------|
-| 2 Registro | `registrarProfesional` | `POST /api/v1/auth/register/professional` — implementado mock |
-| 3 Selección servicios | `guardarServicios` | TBD |
-| 4 Certificados | `subirCertificado`, `enviarSolicitudVerificacion` | TBD (multipart) |
-| 5 Estado verificación | `obtenerEstadoVerificacion` | TBD |
+| 2 Registro | `registrarProfesional` | `POST /api/v1/auth/register/professional` — mock |
+| 3 Selección servicios | `listarServiciosPorCategoria`, `guardarServicios` | GET catálogo · PUT solicitudes/:id/servicios — mock |
+| 4 Certificados | `getProfessionalCertificateService()` · ver métodos arriba | GET/POST/PATCH/DELETE certificados · POST enviar-verificacion — **mock** |
+| 5 Estado verificación | `getProfessionalVerificationService()` | GET estado · POST corregir · POST reenviar/validar código — **mock** |
+| 6 Panel principal | `getProfessionalDashboardService()` | GET panel · PATCH disponibilidad · POST foto — **mock** |
+| 7 Mi portafolio | `getProfessionalPortfolioService()` | GET/POST/PATCH/DELETE portafolio · POST portada/reorden — **mock** |
+| 8 Solicitud entrante | `getProfessionalIncomingRequestService()` | WebSocket/push + GET activa · POST aceptar/rechazar — **mock** |
+| 9 Servicio en curso | `getProfessionalServiceInProgressService()` | GET servicio-activo · POST llegada/validar-pin/cancelar/finalizar — **mock** |
+| 10 Historial / ingresos | `getProfessionalEarningsHistoryService()` | GET `/me/historial-ingresos/resumen` · GET `/me/historial-ingresos` (cursor) — **mock**; registro al finalizar/cancelar en pantalla 9 |
 
 Estados de solicitud: `DOCUMENTOS_PENDIENTES`, `EN_REVISION`, `APROBADO`, `RECHAZADO`.
 
@@ -254,8 +631,18 @@ memoria** (registros nuevos del mock); desaparece al conectar el backend real.
 ### Capa de servicios (App Profesional)
 Las pantallas pro hablan solo con `src/services/` (interfaz + mock + `ServiceError`).
 No importan `mockUsers`, `mockProfessionals` ni seeds directamente. Punto de entrada:
-`getProfessionalAuthService()`, `getProfessionalRegistrationService()` (implementación
-intercambiable). Login y registro pro ya siguen este patrón.
+`getProfessionalAuthService()`, `getProfessionalRegistrationService()`,
+`getProfessionalCertificateService()`, `getProfessionalVerificationService()`,
+`getProfessionalDashboardService()`, `getProfessionalPortfolioService()`,
+`getProfessionalIncomingRequestService()`, `getProfessionalServiceInProgressService()`
+(implementación intercambiable). Login y registro pro ya siguen este patrón.
+
+### Navegación App Profesional (stack separado)
+El `RootStackParamList` del cliente expone solo `ProfessionalApp` hacia el flujo pro.
+Las pantallas pro usan `ProfessionalStackParamList` y no importan mocks de datos directamente.
+Cualquier transición que inicia una «sesión nueva» en pro (post-login, post-registro,
+post-guardar servicios, post-envío de certificados, logout, params inválidos) debe usar
+`resetProfessionalSession`, no `navigation.reset` local en el stack anidado.
 
 ### Separación de los archivos de datos mock
 `mockProfessionals.ts` modela **profesionales** (incluye `EstadoProfesional`,
@@ -414,14 +801,18 @@ a Login durante las pruebas hay que **recargar la app** (p. ej. menú de desarro
 Expo Go → Reload, o cerrar y reabrir la app).
 
 ### App Profesional — navegación (Login)
-- Tipo de cuenta → Continuar como profesional → `ProfessionalLogin` (ya no abre
-  directo `RegisterProfessional`).
+- Tipo de cuenta → Continuar como profesional → `ProfessionalApp` (stack pro arranca en
+  `ProfessionalLogin`; ya no abre directo `RegisterProfessional`).
 - Login Pro → Registrarme → `RegisterProfessional`; al volver, segmento en Ingresar.
-- Registro OK → `reset` a `ProfessionalServiceSelectionPlaceholder` con `solicitudId`.
-- Lectura legal: `ProfessionalTermsRead`, `ProfessionalPrivacyRead`.
-- Login Pro → ingreso OK → `reset` a placeholder según `estadoSolicitud` / `onboardingPaso`.
-- Placeholders: `ProfessionalDashboardPlaceholder`, `ProfessionalVerificationPlaceholder`,
-  `ProfessionalServiceSelectionPlaceholder`, `ProfessionalCertificateUploadPlaceholder`.
+- Registro OK / login docs-servicios → `ProfessionalServiceSelection` con `solicitudId`
+  (vía `resetProfessionalSession`).
+- Lectura legal: `ProfessionalTermsRead`, `ProfessionalPrivacyRead` (dentro del stack pro).
+- Login Pro → ingreso OK → `resetProfessionalSession` vía `resolvePostLoginRoute` según
+  `estadoSolicitud`, `onboardingPaso` y `profesionalActivado`.
+- Stack pro: pantallas 3–10 implementadas; rutas legacy 4–7 y 9 (`…UploadPlaceholder`,
+  `…VerificationPlaceholder`, `…DashboardPlaceholder`, `…PortfolioPlaceholder`,
+  `ProfessionalServiceInProgressPlaceholder` con pantalla real). Pantalla 10:
+  **`ProfessionalEarningsHistory`** (sin sufijo Placeholder).
 
 ### Registro de profesional
 Pantalla 2 provisional reconstruida (`RegisterProfessionalScreen.tsx`). Entrada:
@@ -467,14 +858,17 @@ solo en código.
 
 ### PIN de inicio del servicio
 
-Cuando el profesional llega (pantalla 9), el cliente ve un **PIN de 4 dígitos** para
-autorizar el inicio. El profesional debe ingresarlo en su app; en frontend se simula
-entrada correcta tras `MOCK_PIN_INGRESO_MS`. **INICIADO** exige PIN válido (mock siempre
-correcto). El PIN **no** viaja en params hacia la pantalla 10; en **producción** lo
-genera el backend al aceptar el servicio y permanece fijo durante toda la solicitud.
+Cuando el profesional llega (pantalla 9 pro), el cliente ve un **PIN de 4 dígitos** para
+autorizar el inicio. En la app del cliente el ingreso se simula tras `MOCK_PIN_INGRESO_MS`
+(mock siempre correcto). En la app profesional el PIN **no** se conoce: se envía lo escrito
+y el servicio responde válido, no válido o bloqueado. Máximo **3 intentos**; al tercero,
+bloqueo de **5 minutos** (`PIN_BLOQUEO_MS`); al cumplirse se reinician los 3 intentos.
+**INICIADO** exige PIN válido. El PIN **no** viaja en params. En **producción** lo genera
+el backend al aceptar ambos y permanece fijo durante toda la solicitud. Hoy los dos mocks
+generan PIN distintos (deuda: un solo PIN en backend).
 
-**Backend (documentado, no implementado):** máximo **3 intentos fallidos** de PIN; luego
-bloqueo (detalle TBD).
+**Backend (documentado, no implementado):** ver `docs/contratos-backend-profesional.md`
+(pantalla 9).
 
 ### Regla de los 30 s
 
@@ -536,8 +930,8 @@ de deuda y/o tope de deuda que bloquea aceptar nuevos servicios en efectivo.
   datos personales, Selección de servicios, Carga de certificados, Estado de
   verificación, Panel principal (con toggle Disponible/Ocupado), Solicitud
   entrante (ventana de 30 s), Servicio en curso (con ingreso del PIN del cliente),
-  Historial/ingresos (con gestión de portafolio). La pantalla **«Servicio en curso»**
-  exige el PIN del cliente antes de pasar a INICIADO (alineado con la pantalla 9).
+  Historial/ingresos. La pantalla **«Servicio en curso»**
+  exige el PIN del cliente antes de pasar a INICIADO (en la pantalla 9 del profesional se escribe el PIN; en el mock el PIN del cliente y el del profesional aún son distintos, el backend generará uno solo).
 - Las duraciones y precios de `mockServices.ts` son **oficiales**. Catálogo vigente:
 
 | Categoría | Servicio | Precio (COP) | Duración (min) |

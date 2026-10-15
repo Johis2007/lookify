@@ -5,30 +5,50 @@ import { colors, spacing } from '../theme/colors';
 
 interface StarRatingProps {
   value: number;
-  onChange: (stars: number) => void;
+  onChange?: (stars: number) => void;
   maxStars?: number;
+  readOnly?: boolean;
+  size?: number;
 }
 
-export default function StarRating({ value, onChange, maxStars = 5 }: StarRatingProps) {
+export default function StarRating({
+  value,
+  onChange,
+  maxStars = 5,
+  readOnly = false,
+  size = 36,
+}: StarRatingProps) {
+  const displayValue = readOnly ? Math.floor(value) : value;
+
   return (
     <View style={styles.row}>
       {Array.from({ length: maxStars }, (_, i) => {
         const starValue = i + 1;
-        const filled = starValue <= value;
+        const filled = starValue <= displayValue;
+        const icon = (
+          <MaterialCommunityIcons
+            name={filled ? 'star' : 'star-outline'}
+            size={size}
+            color={colors.honey}
+          />
+        );
+        if (readOnly) {
+          return (
+            <View key={starValue} style={styles.starHit} accessible accessibilityLabel={`${starValue} estrellas`}>
+              {icon}
+            </View>
+          );
+        }
         return (
           <Pressable
             key={starValue}
-            onPress={() => onChange(starValue)}
+            onPress={() => onChange?.(starValue)}
             style={styles.starHit}
             accessibilityRole="button"
             accessibilityLabel={`Calificar con ${starValue} ${starValue === 1 ? 'estrella' : 'estrellas'}`}
             accessibilityState={{ selected: filled }}
           >
-            <MaterialCommunityIcons
-              name={filled ? 'star' : 'star-outline'}
-              size={36}
-              color={colors.honey}
-            />
+            {icon}
           </Pressable>
         );
       })}

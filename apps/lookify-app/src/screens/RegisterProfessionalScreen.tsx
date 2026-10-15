@@ -16,7 +16,8 @@ import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
 import TextField from '../components/TextField';
 import BackHeader from '../components/BackHeader';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { ProfessionalStackParamList } from '../navigation/ProfessionalStackNavigator';
+import { resetProfessionalSession } from '../navigation/professionalNavigation';
 import {
   registroClienteValido,
   validarConfirmarContrasena,
@@ -49,7 +50,7 @@ type FieldKey =
   | 'password'
   | 'confirmPassword';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'RegisterProfessional'>;
+type Props = NativeStackScreenProps<ProfessionalStackParamList, 'RegisterProfessional'>;
 
 export default function RegisterProfessionalScreen({ navigation }: Props) {
   const [form, setForm] = useState({
@@ -158,21 +159,13 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
         consentimientoPoliticaDatos: { version: DATA_POLICY_VERSION, aceptadoEn },
       });
 
-      navigation.reset({
-        index: 0,
-        routes: [
-          {
-            name: 'ProfessionalServiceSelectionPlaceholder',
-            params: {
-              profesionalId: result.profesionalId,
-              solicitudId: result.solicitudId,
-              nombre: result.nombre,
-              email: result.email,
-              estadoSolicitud: result.estadoSolicitud,
-              onboardingPaso: result.onboardingPaso,
-            },
-          },
-        ],
+      resetProfessionalSession(navigation, 'ProfessionalServiceSelection', {
+        profesionalId: result.profesionalId,
+        solicitudId: result.solicitudId,
+        nombre: result.nombre,
+        email: result.email,
+        estadoSolicitud: result.estadoSolicitud,
+        onboardingPaso: result.onboardingPaso,
       });
     } catch (error) {
       if (error instanceof ServiceError) {

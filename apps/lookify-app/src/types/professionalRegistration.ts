@@ -27,3 +27,14 @@ export interface RegistrarProfesionalResponse {
   estadoSolicitud: 'DOCUMENTOS_PENDIENTES';
   onboardingPaso: 'SERVICIOS';
 }
+
+export interface GuardarServiciosRequest {
+  solicitudId: string;
+  servicioIds: string[];
+}
+
+export interface GuardarServiciosResponse {
+  solicitudId: string;
+  servicioIds: string[];
+  onboardingPaso: 'CERTIFICADOS';
+}

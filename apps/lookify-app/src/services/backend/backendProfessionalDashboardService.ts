@@ -1,0 +1,197 @@
+// src/services/backend/backendProfessionalDashboardService.ts
+// Panel real: beauty_professionals + reviews + bookings de hoy +
+// professional_services. Foto a /files + avatar. Cierre: offline + socket.
+
+import {
+  ProfessionalDashboardService,
+} from '../professionalDashboardService';
+import {
+  ActualizarFotoPerfilRequest,
+  ActualizarFotoPerfilResponse,
+  CambiarDisponibilidadRequest,
+  CambiarDisponibilidadResponse,
+  ConsultarDisponibilidadRequest,
+  ConsultarDisponibilidadResponse,
+  ObtenerPanelPrincipalRequest,
+  PanelPrincipalResponse,
+  RegistrarCierreSesionRequest,
+} from '../../types/professionalDashboard';
+import { ResenaProfesional } from '../../types/professionalReview';
+import { ServiceError } from '../errors';
+import { api, assetUrl, uploadFile } from '../../lib/backend/directus';
+import {
+  clearBackendSession,
+  loadBackendSession,
+  resolveProfessionalId,
+} from '../../lib/backend/session';
+import { DProfessional, DReview } from '../../lib/backend/mapping';
+import { disconnectRealtime, emitProOffline, ensureProOnline } from '../../lib/backend/realtime';
+import { resumenDiaBackend } from './backendProfessionalEarningsHistoryService';
+import { validarArchivoFotoPerfil } from '../../utils/profilePhotoFile';
+import { FotoPerfilMimePermitido } from '../../constants/professionalProfilePhoto';
+
+async function servicioActivo(token: string, professionalId: number): Promise<boolean> {
+  const rows = await api<unknown[]>(
+    'GET',
+    `/items/bookings?filter[professional][_eq]=${professionalId}` +
+      `&filter[status][_in]=accepted,in_progress&fields=id&limit=1`,
+    token,
+  );
+  return rows.length > 0;
+}
+
+async function assertHabilitado(token: string, professionalId: number): Promise<DProfessional> {
+  const pro = await api<DProfessional>(
+    'GET',
+    `/items/beauty_professionals/${professionalId}?fields=id,display_name,is_online,rating_avg,avatar,verification_status`,
+    token,
+    undefined,
+    'SOLICITUD_NO_ENCONTRADA',
+  );
+  if (pro.verification_status !== 'verified') throw new ServiceError('PROFESIONAL_NO_HABILITADO');
+  return pro;
+}
+
+export function createBackendProfessionalDashboardService(): ProfessionalDashboardService {
+  return {
+    async obtenerPanelPrincipal(input: ObtenerPanelPrincipalRequest): Promise<PanelPrincipalResponse> {
+      const session = await loadBackendSession();
+      if (!session) throw new ServiceError('INVALID_CREDENTIALS');
+      const professionalId = await resolveProfessionalId(input.profesionalId, input.solicitudId);
+      const pro = await assertHabilitado(session.token, professionalId);
+
+      const [reviews, conteo, servicios] = await Promise.all([
+        api<DReview[]>(
+          'GET',
+          `/items/reviews?filter[professional][_eq]=${professionalId}` +
+            `&fields=rating,comment,client&sort=-created_at&limit=3`,
+          session.token,
+        ),
+        api<unknown>(
+          'GET',
+          `/items/reviews?filter[professional][_eq]=${professionalId}&limit=1&meta=total_count`,
+          session.token,
+        ).catch(() => null),
+        api<{ service: { id: number; name: string; duration_min: number; price_base: number } }[]>(
+          'GET',
+          `/items/professional_services?filter[professional_id][_eq]=${professionalId}` +
+            `&fields=service.id,service.name,service.duration_min,service.price_base&limit=100`,
+          session.token,
+        ).catch(() => []),
+      ]);
+
+      const totalResenas =
+        conteo && typeof conteo === 'object' && 'meta' in (conteo as Record<string, unknown>)
+          ? Number(
+              ((conteo as { meta?: { filter_count?: number; total_count?: number } }).meta
+                ?.filter_count ??
+                (conteo as { meta?: { filter_count?: number; total_count?: number } }).meta
+                  ?.total_count ??
+                0),
+            ) || 0
+          : 0;
+      const ultimasResenas: ResenaProfesional[] = await Promise.all(
+        reviews.map(async (r) => {
+          let autor = 'Cliente';
+          try {
+            const u = await api<{ first_name?: string }>(
+              'GET',
+              `/users/${r.client}?fields=first_name`,
+              session.token,
+            );
+            if (u?.first_name?.trim()) autor = u.first_name.trim();
+          } catch {
+            /* sin nombre: Cliente */
+          }
+          return { autor, texto: r.comment ?? '', estrellas: r.rating };
+        }),
+      );
+      const resumenDia = await resumenDiaBackend(session.token, professionalId);
+
+      return {
+        nombre: pro.display_name,
+        calificacionPromedio: totalResenas > 0 ? (pro.rating_avg ?? null) : null,
+        totalResenas,
+        disponibilidad: pro.is_online ? 'DISPONIBLE' : 'OCUPADO',
+        resumenDia: { ...resumenDia },
+        ultimasResenas,
+        serviciosOfrecidos: servicios
+          .filter((s) => s.service)
+          .map((s) => ({
+            servicioId: String(s.service.id),
+            nombre: s.service.name,
+            duracionMin: s.service.duration_min,
+            precioBaseCop: s.service.price_base,
+          })),
+        fotoPerfil: pro.avatar
+          ? { uri: assetUrl(pro.avatar) ?? '', mimeType: 'image/jpeg' as FotoPerfilMimePermitido }
+          : null,
+      };
+    },
+
+    async cambiarDisponibilidad(input: CambiarDisponibilidadRequest): Promise<CambiarDisponibilidadResponse> {
+      const session = await loadBackendSession();
+      if (!session) throw new ServiceError('INVALID_CREDENTIALS');
+      const professionalId = await resolveProfessionalId(input.profesionalId, input.solicitudId);
+      if (input.disponibilidad === 'DISPONIBLE') {
+        await assertHabilitado(session.token, professionalId);
+        if (await servicioActivo(session.token, professionalId)) {
+          throw new ServiceError('SERVICIO_EN_CURSO_ACTIVO');
+        }
+        await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
+          is_online: true,
+        });
+        ensureProOnline();
+      } else {
+        await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
+          is_online: false,
+        });
+        emitProOffline();
+      }
+      return { disponibilidad: input.disponibilidad };
+    },
+
+    async actualizarFotoPerfil(input: ActualizarFotoPerfilRequest): Promise<ActualizarFotoPerfilResponse> {
+      const session = await loadBackendSession();
+      if (!session) throw new ServiceError('INVALID_CREDENTIALS');
+      const professionalId = await resolveProfessionalId(input.profesionalId);
+      if (!input.archivo?.uri) throw new ServiceError('VALIDATION');
+      const tam = await validarArchivoFotoPerfil(input.archivo.uri, input.archivo.mimeType, input.archivo.sizeBytes);
+      if (tam === 'muy_grande') throw new ServiceError('ARCHIVO_MUY_GRANDE');
+      if (tam === 'invalido') throw new ServiceError('ARCHIVO_INVALIDO');
+      const mimeType = input.archivo.mimeType as FotoPerfilMimePermitido;
+      const fileId = await uploadFile(session.token, input.archivo.uri, `perfil-${professionalId}.jpg`, mimeType);
+      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
+        avatar: fileId,
+      });
+      // Directus no tiene revisión de foto (ver docs/adaptacion-backend.md).
+      return { fotoPerfil: { uri: assetUrl(fileId) ?? input.archivo.uri, mimeType } };
+    },
+
+    async registrarCierreSesion(input: RegistrarCierreSesionRequest): Promise<void> {
+      const session = await loadBackendSession();
+      if (!session) return;
+      const professionalId = await resolveProfessionalId(input.profesionalId);
+      if (await servicioActivo(session.token, professionalId)) {
+        throw new ServiceError('SERVICIO_EN_CURSO_ACTIVO');
+      }
+      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
+        is_online: false,
+      }).catch(() => undefined);
+      disconnectRealtime();
+      await clearBackendSession();
+    },
+
+    async consultarDisponibilidad(input: ConsultarDisponibilidadRequest): Promise<ConsultarDisponibilidadResponse> {
+      const session = await loadBackendSession();
+      if (!session) throw new ServiceError('INVALID_CREDENTIALS');
+      const professionalId = await resolveProfessionalId(input.profesionalId);
+      const pro = await api<DProfessional>(
+        'GET',
+        `/items/beauty_professionals/${professionalId}?fields=is_online`,
+        session.token,
+      );
+      return { disponibilidad: pro.is_online ? 'DISPONIBLE' : 'OCUPADO' };
+    },
+  };
+}
