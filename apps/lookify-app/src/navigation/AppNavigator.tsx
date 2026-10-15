@@ -23,6 +23,7 @@ import ClientPrivacyReadScreen from '../screens/ClientPrivacyReadScreen';
 import ProfessionalStackNavigator, {
   ProfessionalStackParamList,
 } from './ProfessionalStackNavigator';
+import AdminStackNavigator, { AdminStackParamList } from './AdminStackNavigator';
 import { CategoriaId } from '../data/mockProfessionals';
 
 export type MatchingRouteParams = {
@@ -60,6 +61,7 @@ export type RootStackParamList = {
   ClientTermsRead: undefined;
   ClientPrivacyRead: undefined;
   ProfessionalApp: NavigatorScreenParams<ProfessionalStackParamList>;
+  AdminApp: NavigatorScreenParams<AdminStackParamList>;
   Home: undefined;
   ServiceSelection: { categoriaId: CategoriaId; categoriaNombre: string };
   Matching: MatchingRouteParams;
@@ -85,6 +87,7 @@ export default function AppNavigator() {
           <Stack.Screen name="ClientTermsRead" component={ClientTermsReadScreen} />
           <Stack.Screen name="ClientPrivacyRead" component={ClientPrivacyReadScreen} />
           <Stack.Screen name="ProfessionalApp" component={ProfessionalStackNavigator} />
+          <Stack.Screen name="AdminApp" component={AdminStackNavigator} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="ServiceSelection" component={ServiceSelectionScreen} />
           <Stack.Screen name="Matching" component={MatchingScreen} />

@@ -16,7 +16,7 @@ import { clientErrorMessage, isBackendEnabled, loginClient } from '../lib/backen
 
 interface LoginScreenProps {
   navigation: {
-    navigate: (screen: string) => void;
+    navigate: (screen: string, params?: object) => void;
     reset: (state: { index: number; routes: { name: 'Home' }[] }) => void;
   };
 }
@@ -140,6 +140,13 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               disabled={!canSubmit}
               style={styles.submitButton}
             />
+
+            <TouchableOpacity
+              style={styles.adminWrap}
+              onPress={() => navigation.navigate('AdminApp', { screen: 'AdminLogin' })}
+            >
+              <Text style={styles.adminLink}>Soy administrador →</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
@@ -200,6 +207,17 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginBottom: 0,
+  },
+  adminWrap: {
+    alignSelf: 'center',
+    marginTop: spacing.md,
+    paddingVertical: spacing.sm,
+  },
+  adminLink: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
   },
   tabs: {
     flexDirection: 'row',
