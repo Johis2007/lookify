@@ -11,8 +11,10 @@ import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import LookifyMap from '../components/LookifyMap';
+import { confirmNative } from '../components/ConfirmDialog';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
+import { clearClientSession } from '../lib/backend/clientAuth';
 import { MOCK_PROFESSIONALS, CATEGORIAS, CategoriaId } from '../data/mockProfessionals';
 import { MOCK_CLIENT_LOCATION } from '../constants/geo';
 
@@ -28,6 +30,7 @@ const CATEGORIA_ICONOS: Record<CategoriaId, keyof typeof MaterialCommunityIcons.
 interface HomeScreenProps {
   navigation: {
     navigate: (screen: string, params?: object) => void;
+    reset: (state: { index: number; routes: { name: string }[] }) => void;
   };
 }
 
@@ -70,6 +73,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     });
   };
 
+  const handleLogout = async () => {
+    const ok = await confirmNative(
+      'Cerrar sesión',
+      '¿Seguro que quieres salir de tu cuenta?',
+      'Salir',
+    );
+    if (!ok) return;
+    await clearClientSession();
+    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header con ubicación */}
@@ -78,9 +92,19 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <Text style={styles.headerLabel}>Ubicación actual</Text>
           <Text style={styles.headerLocation}>Chapinero, Bogotá</Text>
         </View>
-        <TouchableOpacity style={styles.notifButton}>
-          <Text style={styles.notifIcon}>🔔</Text>
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.notifButton}>
+            <Text style={styles.notifIcon}>🔔</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.logoutButton}
+            onPress={handleLogout}
+            accessibilityRole="button"
+            accessibilityLabel="Cerrar sesión"
+          >
+            <MaterialCommunityIcons name="logout" size={18} color={colors.navy} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Selector de categorías */}
@@ -164,6 +188,19 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: radius.full,
     backgroundColor: colors.honey,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  logoutButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.full,
+    backgroundColor: colors.white,
     alignItems: 'center',
     justifyContent: 'center',
   },

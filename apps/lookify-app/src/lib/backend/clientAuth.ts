@@ -51,6 +51,11 @@ export async function clearClientSession(): Promise<void> {
   }
 }
 
+/** Cierre de sesión cliente: olvida el token local. Sin backend es noop. */
+export async function logoutClient(): Promise<void> {
+  await clearClientSession();
+}
+
 function toDisplayName(me: { first_name?: string; last_name?: string; email?: string }): string {
   const full = [me.first_name, me.last_name].filter(Boolean).join(' ').trim();
   return full || me.email || 'Cliente';
