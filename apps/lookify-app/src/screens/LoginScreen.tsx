@@ -12,6 +12,7 @@ import Button from '../components/Button';
 import TextField from '../components/TextField';
 import { findMockUser } from '../data/mockUsers';
 import { loginValido, validarContrasenaLogin, validarCorreo } from '../utils/validators';
+import { clientErrorMessage, isBackendEnabled, loginClient } from '../lib/backend/clientAuth';
 
 interface LoginScreenProps {
   navigation: {
@@ -37,10 +38,14 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     setLoading(true);
     setLoginError(null);
     try {
-      const user = findMockUser(email, password);
-      if (!user) {
-        setLoginError('Correo o contraseña incorrectos');
-        return;
+      if (isBackendEnabled()) {
+        await loginClient(email, password);
+      } else {
+        const user = findMockUser(email, password);
+        if (!user) {
+          setLoginError('Correo o contraseña incorrectos');
+          return;
+        }
       }
       navigation.reset({
         index: 0,
@@ -48,6 +53,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
       });
     } catch (error) {
       console.error('Error al iniciar sesión', error);
+      setLoginError(clientErrorMessage(error));
     } finally {
       setLoading(false);
     }

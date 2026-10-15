@@ -14,6 +14,7 @@ import {
 } from '../../types/professionalRegistration';
 import { ServiceError } from '../errors';
 import { api, loginDirectus } from '../../lib/backend/directus';
+import { BACKEND } from '../../lib/backend/config';
 import {
   backendSolicitudId,
   loadBackendSession,
@@ -25,11 +26,13 @@ import { connectRealtime } from '../../lib/backend/realtime';
 export function createBackendProfessionalRegistrationService(): ProfessionalRegistrationService {
   return {
     async registrarProfesional(datos: RegistrarProfesionalRequest): Promise<RegistrarProfesionalResponse> {
-      // Registro público (sin token), igual que mobile-web.
+      // Registro público (sin token), igual que mobile-web. Incluye el rol
+      // App directo porque el flow de asignación no se ejecuta aquí.
       await api('POST', '/users', null, {
         email: datos.email.trim(),
         password: datos.password,
         first_name: datos.nombre.trim(),
+        role: BACKEND.appRoleId,
       });
       const { accessToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);

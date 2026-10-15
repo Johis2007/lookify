@@ -31,6 +31,16 @@ Activar: `npm run db:fresh` (o infra + setup + seed), luego
 | `GET solicitudes/:id/estado-verificacion` | `verification_status` + conteo docs/servicios; email enmascarado local |
 | `POST …/corregir-certificados` | `PATCH beauty_professionals {pending}` (solo si rejected) |
 | Certificados CRUD | `professional_documents` + `/files`; metadatos (tipo, entidad, fecha, servicioIds) en `note` como `LOOKIFY-CERT:v1 {...}` |
+| Login cliente | `POST /auth/login` + `client_profiles` (se crea si falta) |
+| Registro cliente | `POST /users` (público, **con `role` App directo**) + login + `client_profiles` |
+
+> **Rol en el registro**: el flow "Asignar rol App al registrarse" existe y está
+> activo, pero los flows por evento **no se ejecutan en esta instancia**
+> (verificado: ni en `directus_users` ni en colecciones normales, con o sin
+> condición). Por eso el registro (cliente y pro) envía `role: APP_ROLE_ID`
+> directo (el permiso público de `directus_users.create` es `fields: *`).
+> `EXPO_PUBLIC_APP_ROLE_ID` lo sobreescribe por entorno (el UUID cambia por
+> instancia; ver salida de `db:setup`). Solo expone el rol App, nunca admin.
 | `POST …/enviar-verificacion` | valida cobertura 1–3 por servicio + `PATCH verification_status=pending` |
 
 ## Desvíos conocidos (brechas backend, no del adapter)

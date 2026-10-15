@@ -13,6 +13,11 @@ import TextField from '../components/TextField';
 import BackHeader from '../components/BackHeader';
 import { isEmailRegistered, registerMockUser } from '../data/mockUsers';
 import {
+  clientErrorMessage,
+  isBackendEnabled,
+  registerClient,
+} from '../lib/backend/clientAuth';
+import {
   registroClienteValido,
   validarConfirmarContrasena,
   validarContrasenaRegistro,
@@ -46,6 +51,8 @@ type FieldKey =
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterClient'>;
 
 function correoYaRegistradoError(email: string): string | null {
+  // En modo backend el duplicado lo confirma el servidor al enviar.
+  if (isBackendEnabled()) return null;
   if (validarCorreo(email) !== null) return null;
   return isEmailRegistered(email) ? 'Este correo ya está registrado' : null;
 }
@@ -64,6 +71,8 @@ export default function RegisterClientScreen({ navigation }: Props) {
   const [fechaNacimiento, setFechaNacimiento] = useState<Date | null>(null);
   const [fechaTouched, setFechaTouched] = useState(false);
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState<Record<FieldKey, boolean>>({
     nombre: false,
     numeroDocumento: false,
@@ -87,7 +96,7 @@ export default function RegisterClientScreen({ navigation }: Props) {
   const errors = useMemo(() => {
     const emailFormat = validarCorreo(form.email);
     const emailDuplicate =
-      emailFormat === null && isEmailRegistered(form.email)
+      !isBackendEnabled() && emailFormat === null && isEmailRegistered(form.email)
         ? 'Este correo ya está registrado'
         : null;
 
@@ -115,22 +124,45 @@ export default function RegisterClientScreen({ navigation }: Props) {
       fechaNacimiento,
     }) && correoYaRegistradoError(form.email) === null;
 
-  const handleSubmit = () => {
-    if (!aceptaTerminos || !formValid) return;
-    const aceptadoEn = new Date().toISOString();
-    registerMockUser({
-      email: form.email,
-      password: form.password,
-      nombre: form.nombre.trim(),
-      consentimiento: {
-        terminos: { version: CLIENT_TERMS_VERSION, aceptadoEn },
-        politicaDatos: { version: CLIENT_DATA_POLICY_VERSION, aceptadoEn },
-      },
-    });
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'Home' }],
-    });
+  const handleSubmit = async () => {
+    if (!aceptaTerminos || !formValid || submitting) return;
+    setSubmitError(null);
+    if (!isBackendEnabled()) {
+      const aceptadoEn = new Date().toISOString();
+      registerMockUser({
+        email: form.email,
+        password: form.password,
+        nombre: form.nombre.trim(),
+        consentimiento: {
+          terminos: { version: CLIENT_TERMS_VERSION, aceptadoEn },
+          politicaDatos: { version: CLIENT_DATA_POLICY_VERSION, aceptadoEn },
+        },
+      });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
+      return;
+    }
+    // Backend: el usuario + perfil quedan en Directus (verificable en DB).
+    setSubmitting(true);
+    try {
+      await registerClient({
+        nombre: form.nombre,
+        email: form.email,
+        password: form.password,
+        telefono: form.telefono,
+      });
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
+    } catch (error) {
+      console.error('Error al registrar cliente', error);
+      setSubmitError(clientErrorMessage(error));
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleTipoDocumento = (tipo: TipoDocumentoId) => {
@@ -276,10 +308,12 @@ export default function RegisterClientScreen({ navigation }: Props) {
         </ScrollView>
 
         <View style={styles.footer}>
+          {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
           <Button
             label="Crear cuenta"
             onPress={handleSubmit}
-            disabled={!aceptaTerminos || !formValid}
+            loading={submitting}
+            disabled={!aceptaTerminos || !formValid || submitting}
             style={styles.submitButton}
           />
         </View>
@@ -404,5 +438,11 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginBottom: 0,
+  },
+  submitError: {
+    fontSize: 13,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
   },
 });
