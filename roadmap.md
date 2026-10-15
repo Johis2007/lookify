@@ -99,15 +99,11 @@ graph TD
     snapshots/                # schema versionado de Directus
     flows/                    # validación anti-doble-reserva
   apps/
-    mobile-web/               # Expo Router (web + móvil)
-      app/
-        (auth)/login.tsx
-        (client)/map.tsx
-        (client)/booking/[id].tsx
-        (pro)/online.tsx
-        (pro)/requests.tsx
-      lib/
-        directus.ts           # cliente Directus SDK
+    lookify-app/              # Expo + React Navigation (web + móvil)
+      src/
+        screens/              # cliente, profesional, admin
+        components/           # mapa unificado .web/.native, radar, diálogos
+      lib/backend/            # Directus + socket (opt-in USE_BACKEND)
         socket.ts             # cliente Socket.io
         location.ts           # wrapper expo-location + throttle
     realtime-server/
@@ -152,7 +148,7 @@ Flow Directus `validate-booking`: al crear `bookings`, si profesional tiene otro
 
 ### FASE 0 — Fundaciones (0.5 - 1 sem)
 **Objetivo:** repo corre en local y en Expo Go.
-- [ ] `npx create-expo-app apps/mobile-web --template tabs@latest` + TS + NativeWind
+- [ ] `npx create-expo-app apps/lookify-app + TS (una sola app: cliente/pro/admin)
 - [ ] Crear `docker-compose.yml` base + `.env.example`
 - [ ] Definir convenciones: ramas, commits, envs (`EXPO_PUBLIC_DIRECTUS_URL`, `EXPO_PUBLIC_SOCKET_URL`, `EXPO_PUBLIC_GOOGLE_MAPS_KEY`)
 - [ ] `npx expo start` → QR funciona en Expo Go + `w` abre web

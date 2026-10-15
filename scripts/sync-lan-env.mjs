@@ -1,9 +1,10 @@
-// Sincroniza apps/mobile-web/.env con las IPs LAN conocidas (multi-red).
+// Sincroniza apps/lookify-app/.env con las IPs LAN conocidas (multi-red).
 //
 // La app queda compilada con EXPO_PUBLIC_*; si el Wi-Fi cambia de IP (DHCP,
-// casa <-> universidad), la URL primaria deja de responder. Por eso se guardan
-// TODAS las redes conocidas como listas de fallback y el cliente (lib/endpoints)
-// prueba cada una con health-check hasta encontrar la que responde:
+// casa <-> universidad), la URL primaria deja de responder. Este script deja
+// la primaria lista para Expo Go en el teléfono y conserva el resto como
+// referencia. Si no existe .env, parte de apps/lookify-app/.env.example
+// (trae USE_BACKEND y demás claves necesarias).
 //
 //   npm run env:lan [IP-primaria] [IP-secundaria ...]
 //   npm run env:lan                      -> autodetecta la primaria
@@ -18,7 +19,8 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const envPath = join(root, 'apps', 'mobile-web', '.env');
+const envPath = join(root, 'apps', 'lookify-app', '.env');
+const envExample = join(root, 'apps', 'lookify-app', '.env.example');
 
 function currentLanIp() {
   const ifaces = networkInterfaces();
@@ -61,7 +63,9 @@ const ips = [primary, ...[...known].filter((ip) => ip !== primary)];
 const directusUrls = ips.map((ip) => `http://${ip}:8055`).join(',');
 const socketUrls = ips.map((ip) => `http://${ip}:4001`).join(',');
 
-let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+let lines = existsSync(envPath)
+  ? readFileSync(envPath, 'utf8').split(/\r?\n/)
+  : readFileSync(envExample, 'utf8').split(/\r?\n/);
 const seen = new Set();
 lines = lines.map((line) => {
   if (/^EXPO_PUBLIC_DIRECTUS_URL=/.test(line)) {

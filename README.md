@@ -1,13 +1,13 @@
 # Lookify — Belleza profesional a domicilio
 
-App móvil + web (Expo Router), realtime (Socket.IO) y backend Directus sobre
-PostgreSQL + PostGIS y Redis, todo orquestado con Docker Compose.
+App móvil + web (Expo + React Navigation), realtime (Socket.IO) y backend
+Directus sobre PostgreSQL + PostGIS y Redis, todo orquestado con Docker Compose.
 
 ## Stack
 
 | Pieza | Tecnología |
 |---|---|
-| App cliente/pro/admin | Expo SDK 57 + React Native + Expo Router (`apps/mobile-web`) |
+| App cliente/pro/admin | Expo SDK 57 + React Native + React Navigation (`apps/lookify-app`) |
 | Realtime y GPS en vivo | Node 20 + Socket.IO + Redis + `pg` (`apps/realtime-server`) |
 | Backend y datos | Directus (sin ORM: esquema vía API + SQL plano en `directus/migrations/`) |
 | Base de datos | PostgreSQL 16 + PostGIS (`postgis/postgis:16-3.4`) |
@@ -51,7 +51,7 @@ npm run db:fresh
 
 # 5. Realtime + app
 npm run dev:realtime          # servidor Socket.IO :4001 (otra terminal)
-npm run env:lan               # fija las IPs LAN en apps/mobile-web/.env
+npm run env:lan               # fija las IPs LAN en apps/lookify-app/.env
 npm run dev:app               # Expo: web + QR para móvil
 ```
 

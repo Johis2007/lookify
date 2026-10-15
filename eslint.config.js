@@ -7,7 +7,7 @@ module.exports = defineConfig([
   {
     // .kilo contiene worktrees de git (copias duplicadas del repo):
     // si se escanean, eslint reporta cientos de errores fantasma.
-    // El lint real de la app corre desde apps/mobile-web (`npm run lint`).
+    // El lint de cada app corre desde su workspace.
     ignores: ["dist/*", ".kilo/**", "apps/*/dist/**", "directus/**", ".expo/**"],
   }
 ]);
