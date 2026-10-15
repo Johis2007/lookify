@@ -50,6 +50,7 @@ export default function AdminLoginScreen({ navigation }: Props) {
       </View>
       <View style={styles.body}>
         <ScrollView
+          style={styles.loginScroll}
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -105,6 +106,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   scrollContent: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, paddingBottom: spacing.xl },
+  loginScroll: { flex: 1 },
   loginError: { fontSize: 13, color: colors.error, textAlign: 'center', marginBottom: spacing.md },
   submitButton: { marginBottom: 0 },
 });

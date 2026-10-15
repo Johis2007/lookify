@@ -121,7 +121,14 @@ export default function AdminVerificationScreen({ navigation }: Props) {
         <BackHeader variant="dark" title="Validar profesionales" />
       </View>
       <View style={styles.body}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+        {/* flexGrow:0 evita que en web el ScrollView horizontal se estire a
+            lo alto y deforme las pills (mide contenido, como en nativo). */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.pillsScroll}
+          contentContainerStyle={styles.pills}
+        >
           {FILTERS.map((f) => (
             <Pressable
               key={f.key}
@@ -139,7 +146,11 @@ export default function AdminVerificationScreen({ navigation }: Props) {
         {loading ? (
           <ActivityIndicator style={styles.loader} />
         ) : (
-          <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <ScrollView
+            style={styles.contentScroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={wide ? styles.rowWide : styles.col}>
               <View style={[styles.card, wide && styles.queueCol]}>
                 <View style={styles.rowBetween}>
@@ -275,6 +286,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
   body: { flex: 1, backgroundColor: colors.surface },
   pills: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  pillsScroll: { flexGrow: 0, flexShrink: 0 },
   pill: {
     borderRadius: radius.full,
     paddingVertical: 9,
@@ -287,6 +299,7 @@ const styles = StyleSheet.create({
   pillT: { fontSize: 12, fontWeight: '700', color: colors.onSurface },
   pillTOn: { color: colors.white },
   loader: { marginTop: 40 },
+  contentScroll: { flex: 1 },
   scrollContent: { padding: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.xl },
   rowWide: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   col: { gap: spacing.md },

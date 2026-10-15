@@ -139,7 +139,14 @@ export default function AdminUsersScreen({ navigation }: Props) {
         <BackHeader variant="dark" title="Validar usuarios" />
       </View>
       <View style={styles.body}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.pills}>
+        {/* flexGrow:0 evita que en web el ScrollView horizontal se estire a
+            lo alto y deforme las pills (mide contenido, como en nativo). */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.pillsScroll}
+          contentContainerStyle={styles.pills}
+        >
           {TABS.map((f) => (
             <Pressable
               key={f.key}
@@ -168,6 +175,7 @@ export default function AdminUsersScreen({ navigation }: Props) {
           <ActivityIndicator style={styles.loader} />
         ) : (
           <ScrollView
+            style={styles.contentScroll}
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={false}
             refreshControl={
@@ -291,6 +299,7 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.md },
   body: { flex: 1, backgroundColor: colors.surface },
   pills: { gap: spacing.sm, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm },
+  pillsScroll: { flexGrow: 0, flexShrink: 0 },
   pill: {
     borderRadius: radius.full,
     paddingVertical: 9,
@@ -314,6 +323,7 @@ const styles = StyleSheet.create({
   msg: { color: colors.secondary, fontWeight: '700', fontSize: 12, marginTop: 6, paddingHorizontal: spacing.lg },
   loader: { marginTop: 40 },
   scrollContent: { padding: spacing.lg, paddingBottom: spacing.xl },
+  contentScroll: { flex: 1 },
   rowWide: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
   col: { gap: spacing.md },
   listCol: { flex: 3 },
