@@ -18,6 +18,7 @@ import { colors, radius, spacing, typography } from '../../theme/colors';
 import Button from '../../components/Button';
 import StarRating from '../../components/StarRating';
 import BackHeader from '../../components/BackHeader';
+import { BACKEND } from '../../lib/backend/config';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
 import { getProfessionalIncomingRequestService } from '../../services/professionalIncomingRequestService';
@@ -433,7 +434,8 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
             </>
           ) : null}
 
-          {__DEV__ && esEsperaCliente ? (
+          {/* DEMO solo en mocks: en backend no hay actor cliente simulado. */}
+          {__DEV__ && !BACKEND.enabled && esEsperaCliente ? (
             <View style={styles.demoBlock}>
               <Text style={styles.demoTitle}>DEMO — respuesta del cliente</Text>
               <Button label="Cliente acepta" onPress={demoClienteAcepta} variant="outline" />

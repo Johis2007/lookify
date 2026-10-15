@@ -23,6 +23,7 @@ import * as Location from 'expo-location';
 import { colors, radius, spacing, typography } from '../../theme/colors';
 import Button from '../../components/Button';
 import StarRating from '../../components/StarRating';
+import { BACKEND } from '../../lib/backend/config';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
 import { getProfessionalDashboardService } from '../../services/professionalDashboardService';
@@ -584,7 +585,8 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
             )}
           </View>
 
-          {__DEV__ ? (
+          {/* DEMO solo en mocks: en backend la solicitud llega por socket. */}
+          {__DEV__ && !BACKEND.enabled ? (
             <Button
               label="DEMO — simular solicitud entrante"
               variant="outline"

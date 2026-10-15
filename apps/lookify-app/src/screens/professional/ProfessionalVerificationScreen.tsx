@@ -26,6 +26,7 @@ import {
 } from '../../constants/verificationMessages';
 import Button from '../../components/Button';
 import TextField from '../../components/TextField';
+import { BACKEND } from '../../lib/backend/config';
 import { colors, radius, spacing, typography } from '../../theme/colors';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
@@ -454,7 +455,8 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
 
             {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
-            {__DEV__ ? (
+            {/* DEMO solo en mocks: en backend decide el admin real. */}
+            {__DEV__ && !BACKEND.enabled ? (
               <View style={styles.demoPanel}>
                 <Text style={styles.demoBadge}>DEMO — simular admin</Text>
                 <View style={styles.demoRow}>
