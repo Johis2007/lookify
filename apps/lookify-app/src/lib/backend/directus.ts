@@ -35,8 +35,7 @@ function toServiceError(status: number, body: any, fallback: ServiceErrorCode): 
   return new ServiceError('VALIDATION', body?.errors?.[0]?.message);
 }
 
-export async function loginDirectus(email: string, password: string): Promise<{ accessToken: string; refreshToken?: string }> {
-  let res: Response;
+export async function loginDirectus(email: string, password: string): Promise<{ accessToken: string; refreshToken?: string }> {  let res: Response;
   try {
     res = await fetch(`${BACKEND.directusUrl}/auth/login`, {
       method: 'POST',
@@ -49,6 +48,25 @@ export async function loginDirectus(email: string, password: string): Promise<{ 
   const body = await readJsonSafe(res);
   if (!res.ok || !body?.data?.access_token) {
     throw toServiceError(res.status, body, 'INVALID_CREDENTIALS');
+  }
+  return { accessToken: body.data.access_token, refreshToken: body.data?.refresh_token };
+}
+
+/** Renueva el access token con el refresh token (sesiones largas en panel). */
+export async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken?: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`${BACKEND.directusUrl}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken, mode: 'json' }),
+    });
+  } catch {
+    throw new ServiceError('NETWORK', 'Sin conexión con el backend.');
+  }
+  const body = await readJsonSafe(res);
+  if (!res.ok || !body?.data?.access_token) {
+    throw new ServiceError('INVALID_CREDENTIALS', 'Sesión vencida.');
   }
   return { accessToken: body.data.access_token, refreshToken: body.data?.refresh_token };
 }

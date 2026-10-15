@@ -9,6 +9,7 @@ import { api, loginDirectus } from './directus';
 
 export type ClientSession = {
   token: string;
+  refreshToken?: string;
   userId: string;
   email: string;
   nombre: string;
@@ -79,7 +80,7 @@ async function ensureClientProfile(token: string, userId: string, nombre: string
 export async function loginClient(email: string, password: string): Promise<ClientSession> {
   const cleanEmail = email.trim();
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
-  const { accessToken } = await loginDirectus(cleanEmail, password);
+  const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
   const me = await api<{ id: string; first_name?: string; last_name?: string; email?: string }>(
     'GET',
     '/users/me?fields=id,first_name,last_name,email',
@@ -87,7 +88,13 @@ export async function loginClient(email: string, password: string): Promise<Clie
   );
   const nombre = toDisplayName(me);
   await ensureClientProfile(accessToken, me.id, nombre);
-  const session: ClientSession = { token: accessToken, userId: me.id, email: cleanEmail, nombre };
+  const session: ClientSession = {
+    token: accessToken,
+    ...(refreshToken ? { refreshToken } : {}),
+    userId: me.id,
+    email: cleanEmail,
+    nombre,
+  };
   await saveClientSession(session);
   return session;
 }
@@ -109,10 +116,16 @@ export async function registerClient(input: {
     // Rol directo: el flow de asignación no se ejecuta en esta instancia.
     role: BACKEND.appRoleId,
   });
-  const { accessToken } = await loginDirectus(cleanEmail, input.password);
+  const { accessToken, refreshToken } = await loginDirectus(cleanEmail, input.password);
   const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);
   await ensureClientProfile(accessToken, me.id, nombre, input.telefono);
-  const session: ClientSession = { token: accessToken, userId: me.id, email: cleanEmail, nombre };
+  const session: ClientSession = {
+    token: accessToken,
+    ...(refreshToken ? { refreshToken } : {}),
+    userId: me.id,
+    email: cleanEmail,
+    nombre,
+  };
   await saveClientSession(session);
   return session;
 }

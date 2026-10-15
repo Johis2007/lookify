@@ -6,10 +6,11 @@
 import * as SecureStore from 'expo-secure-store';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
-import { api, loginDirectus } from './directus';
+import { api, loginDirectus, refreshAccessToken } from './directus';
 
 export type AdminSession = {
   token: string;
+  refreshToken?: string;
   userId: string;
   email: string;
   nombre: string;
@@ -52,7 +53,7 @@ export async function clearAdminSession(): Promise<void> {
 export async function loginAdmin(email: string, password: string): Promise<AdminSession> {
   const cleanEmail = email.trim();
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
-  const { accessToken } = await loginDirectus(cleanEmail, password);
+  const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
   // Solo admin puede listar usuarios: 403 = no es administrador.
   try {
     await api<unknown[]>('GET', '/users?limit=1&fields=id', accessToken);
@@ -69,7 +70,13 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
   );
   const nombre =
     [me.first_name, me.last_name].filter(Boolean).join(' ').trim() || me.email || 'Admin';
-  const session: AdminSession = { token: accessToken, userId: me.id, email: cleanEmail, nombre };
+  const session: AdminSession = {
+    token: accessToken,
+    ...(refreshToken ? { refreshToken } : {}),
+    userId: me.id,
+    email: cleanEmail,
+    nombre,
+  };
   await saveAdminSession(session);
   return session;
 }
@@ -90,10 +97,30 @@ export async function adminApi<T = any>(
   try {
     return await api<T>(method, path, token, body);
   } catch (e) {
+    // Token vencido (15 min): un intento de refresh antes de rendirse.
     if (e instanceof ServiceError && e.code === 'INVALID_CREDENTIALS') {
+      const renewed = await tryRefreshAdminToken();
+      if (renewed) return api<T>(method, path, renewed, body);
       await clearAdminSession();
     }
     throw e;
+  }
+}
+
+/** Renueva el token admin guardado. null si no hay refresh posible. */
+async function tryRefreshAdminToken(): Promise<string | null> {
+  const s = await loadAdminSession();
+  if (!s?.refreshToken) return null;
+  try {
+    const { accessToken, refreshToken } = await refreshAccessToken(s.refreshToken);
+    await saveAdminSession({
+      ...s,
+      token: accessToken,
+      refreshToken: refreshToken ?? s.refreshToken,
+    });
+    return accessToken;
+  } catch {
+    return null;
   }
 }
 

@@ -34,7 +34,7 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
         first_name: datos.nombre.trim(),
         role: BACKEND.appRoleId,
       });
-      const { accessToken } = await loginDirectus(datos.email.trim(), datos.password);
+      const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);
       const created = await api<{ id: number }>('POST', '/items/beauty_professionals', accessToken, {
         user: me.id,
@@ -49,6 +49,7 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
       }
       await saveBackendSession({
         token: accessToken,
+        ...(refreshToken ? { refreshToken } : {}),
         userId: me.id,
         professionalId,
         email: datos.email.trim(),

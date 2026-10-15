@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 
 export type BackendSession = {
   token: string;
+  refreshToken?: string;
   userId: string;
   professionalId: number;
   email: string;

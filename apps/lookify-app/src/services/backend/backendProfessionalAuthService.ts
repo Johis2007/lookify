@@ -42,7 +42,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
     async iniciarSesion(email: string, password: string): Promise<SesionProfesional> {
       const cleanEmail = email.trim();
       if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
-      const { accessToken } = await loginDirectus(cleanEmail, password);
+      const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
       const me = await api<{ id: string; first_name?: string; last_name?: string; email?: string }>(
         'GET',
         '/users/me?fields=id,first_name,last_name,email',
@@ -59,6 +59,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
       const { estado, onboarding } = await estadoDesdePro(accessToken, pro);
       await saveBackendSession({
         token: accessToken,
+        ...(refreshToken ? { refreshToken } : {}),
         userId: me.id,
         professionalId: pro.id,
         email: cleanEmail,
