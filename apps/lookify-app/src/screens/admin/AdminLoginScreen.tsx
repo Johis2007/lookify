@@ -44,7 +44,7 @@ export default function AdminLoginScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <BackHeader variant="dark" />
-        <Image source={require('../../assets/logo-lookify.png')} style={styles.logo} />
+        <Image source={require('../../../assets/logo-lookify.png')} style={styles.logo} />
         <Text style={styles.title}>Panel administrador</Text>
         <Text style={styles.subtitle}>Solo cuentas con rol admin de Directus</Text>
       </View>
