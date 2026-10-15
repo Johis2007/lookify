@@ -52,6 +52,18 @@ export async function loginDirectus(email: string, password: string): Promise<{ 
   return { accessToken: body.data.access_token, refreshToken: body.data?.refresh_token };
 }
 
+/** Revoca un refresh token en el servidor (un solo login válido). Best-effort. */
+export async function revokeRefreshToken(refreshToken: string): Promise<void> {
+  try {
+    await fetch(`${BACKEND.directusUrl}/auth/logout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken, mode: 'json' }),
+    });
+  } catch {
+    /* si no hay red, el token viejo expira solo */
+  }
+}
 /** Renueva el access token con el refresh token (sesiones largas en panel). */
 export async function refreshAccessToken(refreshToken: string): Promise<{ accessToken: string; refreshToken?: string }> {
   let res: Response;

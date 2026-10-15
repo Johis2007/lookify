@@ -56,9 +56,26 @@ Activar: `npm run db:fresh` (o infra + setup + seed), luego
 9. **`PUT me/ubicacion`**: no implementado en app (igual que el contrato MVP).
 10. **Push tokens / auditoría / rate-limit**: responsabilidad del servidor (TBD).
 
+## Sesiones (cliente / profesional / admin)
+
+- **Un solo login válido**: al iniciar sesión se revoca el refresh anterior
+  (`POST /auth/logout`) en este dispositivo. Multidispositivo simultáneo
+  requiere hook de servidor (los flows por evento no se ejecutan en esta
+  instancia): pendiente.
+- **Persistencia**: nativo en SecureStore (cifrado del SO); web en cookie
+  `lookify_<rol>_v1` (30 días, `SameSite=Lax`, `Secure` en HTTPS) con el JSON
+  cifrado en AES-GCM-256. Clave derivada PBKDF2 de huella del navegador +
+  usuario: no se guarda en ningún lado (si cambias de navegador, reingresas).
+- **Límite honesto**: el cifrado web protege contra robo casual del storage,
+  no contra XSS decidido. La defensa real es el access token de 15 min con
+  refresh rotado (el panel renueva solo; si falla, vuelve al login).
+
 ## Archivos
 
 - `src/lib/backend/`: `config.ts`, `directus.ts` (REST+upload), `session.ts` (SecureStore), `realtime.ts` (socket.io + heartbeat 25s), `mapping.ts` (comisión, PIN, desglose, pagos).
+- `src/lib/backend/sessionCrypto.ts` + `secureSession.ts`: bóveda de sesiones
+  (nativo SecureStore; web cookie 30d SameSite=Lax con JSON cifrado AES-GCM;
+  clave derivada del navegador+usuario, nunca almacenada).
 - `src/services/backend/`: 1 implementación por dominio + `initBackend.ts` (swap vía los `set…ForTesting` existentes).
 - `src/services/incomingActive.ts`: el listener ya no importa el store mock directo.
 - `.env.example`: `EXPO_PUBLIC_USE_BACKEND`, URLs, Maps key.

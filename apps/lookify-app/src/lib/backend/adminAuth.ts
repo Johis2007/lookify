@@ -3,7 +3,8 @@
 // acceso real (GET /users): solo administradores pueden listar usuarios.
 // Sesión propia en SecureStore, separada de cliente/profesional.
 
-import * as SecureStore from 'expo-secure-store';
+import { revokeRefreshToken } from './directus';
+import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
 import { api, loginDirectus, refreshAccessToken } from './directus';
@@ -21,32 +22,24 @@ const KEY = 'lookify_admin_session_v1';
 let memory: AdminSession | null = null;
 
 export async function saveAdminSession(s: AdminSession): Promise<void> {
+  // Un solo login válido: revoca la sesión anterior si traía otro refresh.
+  const prev = memory ?? (await vaultLoad<AdminSession>('admin', KEY));
   memory = s;
-  try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(s));
-  } catch {
-    /* solo memoria */
+  await vaultSave('admin', KEY, s);
+  if (prev?.refreshToken && prev.refreshToken !== s.refreshToken) {
+    await revokeRefreshToken(prev.refreshToken);
   }
 }
 
 export async function loadAdminSession(): Promise<AdminSession | null> {
   if (memory) return memory;
-  try {
-    const raw = await SecureStore.getItemAsync(KEY);
-    if (raw) memory = JSON.parse(raw) as AdminSession;
-  } catch {
-    memory = null;
-  }
+  memory = await vaultLoad<AdminSession>('admin', KEY);
   return memory;
 }
 
 export async function clearAdminSession(): Promise<void> {
   memory = null;
-  try {
-    await SecureStore.deleteItemAsync(KEY);
-  } catch {
-    /* noop */
-  }
+  await vaultClear('admin', KEY);
 }
 
 /** Login admin: credenciales + verificación de capacidad administradora. */

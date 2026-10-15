@@ -2,7 +2,8 @@
 // Auth de cliente contra Directus: login + registro público (igual que
 // mobile-web) + perfil client_profiles. Sesión propia en SecureStore.
 
-import * as SecureStore from 'expo-secure-store';
+import { revokeRefreshToken } from './directus';
+import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
 import { api, loginDirectus } from './directus';
@@ -24,32 +25,24 @@ export function isBackendEnabled(): boolean {
 }
 
 export async function saveClientSession(s: ClientSession): Promise<void> {
+  // Un solo login válido: revoca la sesión anterior si traía otro refresh.
+  const prev = memory ?? (await vaultLoad<ClientSession>('client', KEY));
   memory = s;
-  try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(s));
-  } catch {
-    /* solo memoria */
+  await vaultSave('client', KEY, s);
+  if (prev?.refreshToken && prev.refreshToken !== s.refreshToken) {
+    await revokeRefreshToken(prev.refreshToken);
   }
 }
 
 export async function loadClientSession(): Promise<ClientSession | null> {
   if (memory) return memory;
-  try {
-    const raw = await SecureStore.getItemAsync(KEY);
-    if (raw) memory = JSON.parse(raw) as ClientSession;
-  } catch {
-    memory = null;
-  }
+  memory = await vaultLoad<ClientSession>('client', KEY);
   return memory;
 }
 
 export async function clearClientSession(): Promise<void> {
   memory = null;
-  try {
-    await SecureStore.deleteItemAsync(KEY);
-  } catch {
-    /* noop */
-  }
+  await vaultClear('client', KEY);
 }
 
 /** Cierre de sesión cliente: olvida el token local. Sin backend es noop. */

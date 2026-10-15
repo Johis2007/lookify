@@ -1,10 +1,11 @@
 // src/lib/backend/session.ts
-// Sesión del backend (Directus): token + ids en memoria, persistidos en
-// SecureStore para sobrevivir reinicios. Las pantallas siguen pasando
-// profesionalId/solicitudId por params; los servicios backend resuelven el
-// numérico desde esos strings o desde esta sesión.
+// Sesión del backend (Directus): token + ids en memoria, persistidos en la
+// bóveda (SecureStore en nativo, cookie cifrada en web). Las pantallas siguen
+// pasando profesionalId/solicitudId por params; los servicios backend
+// resuelven el numérico desde esos strings o desde esta sesión.
 
-import * as SecureStore from 'expo-secure-store';
+import { revokeRefreshToken } from './directus';
+import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 
 export type BackendSession = {
   token: string;
@@ -20,32 +21,24 @@ const KEY = 'lookify_backend_session_v1';
 let memory: BackendSession | null = null;
 
 export async function saveBackendSession(s: BackendSession): Promise<void> {
+  // Un solo login válido: revoca la sesión anterior si traía otro refresh.
+  const prev = memory ?? (await vaultLoad<BackendSession>('pro', KEY));
   memory = s;
-  try {
-    await SecureStore.setItemAsync(KEY, JSON.stringify(s));
-  } catch {
-    /* sin storage seguro: queda solo en memoria */
+  await vaultSave('pro', KEY, s);
+  if (prev?.refreshToken && prev.refreshToken !== s.refreshToken) {
+    await revokeRefreshToken(prev.refreshToken);
   }
 }
 
 export async function loadBackendSession(): Promise<BackendSession | null> {
   if (memory) return memory;
-  try {
-    const raw = await SecureStore.getItemAsync(KEY);
-    if (raw) memory = JSON.parse(raw) as BackendSession;
-  } catch {
-    memory = null;
-  }
+  memory = await vaultLoad<BackendSession>('pro', KEY);
   return memory;
 }
 
 export async function clearBackendSession(): Promise<void> {
   memory = null;
-  try {
-    await SecureStore.deleteItemAsync(KEY);
-  } catch {
-    /* noop */
-  }
+  await vaultClear('pro', KEY);
 }
 
 /** professionalId numérico desde un string de ruta ("3", "bk-3") o sesión. */
