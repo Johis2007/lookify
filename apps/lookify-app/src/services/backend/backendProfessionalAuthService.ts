@@ -14,7 +14,7 @@ import {
 import { DProfessional } from '../../lib/backend/mapping';
 import { connectRealtime } from '../../lib/backend/realtime';
 
-async function estadoDesdePro(
+export async function estadoDesdePro(
   token: string,
   pro: DProfessional,
 ): Promise<{ estado: SesionProfesional['estadoSolicitud']; onboarding?: SesionProfesional['onboardingPaso'] }> {

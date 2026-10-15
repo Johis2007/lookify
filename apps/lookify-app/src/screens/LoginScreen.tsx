@@ -4,20 +4,21 @@
 // Cuando el usuario presiona "Crear cuenta", navegamos a AccountTypeScreen
 // (ahí se elige Cliente o Profesional) en vez de mostrar el form aquí mismo.
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing } from '../theme/colors';
 import Button from '../components/Button';
 import TextField from '../components/TextField';
 import { findMockUser } from '../data/mockUsers';
 import { loginValido, validarContrasenaLogin, validarCorreo } from '../utils/validators';
-import { clientErrorMessage, isBackendEnabled, loginClient } from '../lib/backend/clientAuth';
+import { clientErrorMessage, isBackendEnabled } from '../lib/backend/clientAuth';
+import { loginUniversal, proRouteOf, resumeSession } from '../lib/backend/unifiedAuth';
 
 interface LoginScreenProps {
   navigation: {
     navigate: (screen: string, params?: object) => void;
-    reset: (state: { index: number; routes: { name: 'Home' }[] }) => void;
+    reset: (state: { index: number; routes: { name: string; params?: object }[] }) => void;
   };
 }
 
@@ -28,6 +29,42 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   const [loading, setLoading] = useState(false);
   const [touched, setTouched] = useState({ email: false, password: false });
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(isBackendEnabled());
+
+  // Un solo login: si hay sesión guardada válida, entra directo a su vista.
+  useEffect(() => {
+    if (!isBackendEnabled()) {
+      setResuming(false);
+      return;
+    }
+    let alive = true;
+    resumeSession()
+      .then((target) => {
+        if (!alive || !target) return;
+        if (target.kind === 'admin') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'AdminApp', params: { screen: 'AdminDashboard' } }],
+          });
+        } else if (target.kind === 'pro') {
+          const r = proRouteOf(target.session);
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'ProfessionalApp', params: { screen: r.screen, params: r.params } }],
+          });
+        } else {
+          navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        }
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (alive) setResuming(false);
+      });
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const emailError = touched.email ? validarCorreo(email) : null;
   const passwordError = touched.password ? validarContrasenaLogin(password) : null;
@@ -38,19 +75,38 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
     setLoading(true);
     setLoginError(null);
     try {
-      if (isBackendEnabled()) {
-        await loginClient(email, password);
-      } else {
+      // Sin backend: solo mocks de cliente (sin roles).
+      if (!isBackendEnabled()) {
         const user = findMockUser(email, password);
         if (!user) {
           setLoginError('Correo o contraseña incorrectos');
           return;
         }
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+        return;
       }
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
+      // Backend: un solo login, la vista depende del rol.
+      const session = await loginUniversal(email, password);
+      if (session.rol === 'admin') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'AdminApp', params: { screen: 'AdminDashboard' } }],
+        });
+      } else if (session.rol === 'pro' && session.proSession) {
+        const r = proRouteOf(session.proSession);
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'ProfessionalApp', params: { screen: r.screen, params: r.params } }],
+        });
+      } else {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'Home' }],
+        });
+      }
     } catch (error) {
       console.error('Error al iniciar sesión', error);
       setLoginError(clientErrorMessage(error));
@@ -141,12 +197,12 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
               style={styles.submitButton}
             />
 
-            <TouchableOpacity
-              style={styles.adminWrap}
-              onPress={() => navigation.navigate('AdminApp', { screen: 'AdminLogin' })}
-            >
-              <Text style={styles.adminLink}>Soy administrador →</Text>
-            </TouchableOpacity>
+            {resuming ? (
+              <View style={styles.resumingWrap}>
+                <ActivityIndicator size="small" color={colors.honey} />
+                <Text style={styles.resumingText}>Recuperando tu sesión…</Text>
+              </View>
+            ) : null}
           </ScrollView>
         </View>
       </View>
@@ -208,16 +264,16 @@ const styles = StyleSheet.create({
   submitButton: {
     marginBottom: 0,
   },
-  adminWrap: {
-    alignSelf: 'center',
+  resumingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
     marginTop: spacing.md,
-    paddingVertical: spacing.sm,
   },
-  adminLink: {
+  resumingText: {
     fontSize: 13,
     color: colors.textSecondary,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
   },
   tabs: {
     flexDirection: 'row',

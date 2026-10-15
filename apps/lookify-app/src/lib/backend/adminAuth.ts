@@ -1,13 +1,12 @@
 // src/lib/backend/adminAuth.ts
-// Auth de administrador contra Directus. La capacidad admin se verifica por
-// acceso real (GET /users): solo administradores pueden listar usuarios.
-// Sesión propia en SecureStore, separada de cliente/profesional.
+// Auth de administrador contra Directus. Solo entra el rol "Administrator"
+// (verificado por nombre de rol: el rol App también lista usuarios).
+// Sesión propia en la bóveda, separada de cliente/profesional.
 
-import { revokeRefreshToken } from './directus';
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
-import { api, loginDirectus, refreshAccessToken } from './directus';
+import { api, loginDirectus, refreshAccessToken, revokeRefreshToken } from './directus';
 
 export type AdminSession = {
   token: string;
@@ -42,19 +41,28 @@ export async function clearAdminSession(): Promise<void> {
   await vaultClear('admin', KEY);
 }
 
+/** ¿El token es de un administrador? (rol "Administrator" real). */
+export async function isAdminToken(token: string): Promise<boolean> {
+  try {
+    const me = await api<{ role?: string }>('GET', '/users/me?fields=role', token);
+    if (!me?.role) return false;
+    const role = await api<{ name?: string }>('GET', `/roles/${me.role}?fields=name`, token);
+    return role?.name === 'Administrator';
+  } catch {
+    return false;
+  }
+}
+
 /** Login admin: credenciales + verificación de capacidad administradora. */
 export async function loginAdmin(email: string, password: string): Promise<AdminSession> {
   const cleanEmail = email.trim();
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
   const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
-  // Solo admin puede listar usuarios: 403 = no es administrador.
-  try {
-    await api<unknown[]>('GET', '/users?limit=1&fields=id', accessToken);
-  } catch (e) {
-    if (e instanceof ServiceError && e.code === 'PROFESIONAL_NO_HABILITADO') {
-      throw new ServiceError('VALIDATION', 'Esta cuenta no es administradora.');
-    }
-    throw e;
+  // El rol App también lista usuarios: solo el rol Administrator entra.
+  if (!(await isAdminToken(accessToken))) {
+    // No deja sesión colgada: revoca el refresh recién emitido.
+    if (refreshToken) await revokeRefreshToken(refreshToken);
+    throw new ServiceError('VALIDATION', 'Esta cuenta no es administradora.');
   }
   const me = await api<{ id: string; first_name?: string; last_name?: string; email?: string }>(
     'GET',

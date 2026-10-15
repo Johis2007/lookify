@@ -55,7 +55,7 @@ function toDisplayName(me: { first_name?: string; last_name?: string; email?: st
   return full || me.email || 'Cliente';
 }
 
-async function ensureClientProfile(token: string, userId: string, nombre: string, phone?: string): Promise<void> {
+export async function ensureClientProfile(token: string, userId: string, nombre: string, phone?: string): Promise<void> {
   const rows = await api<{ id: number }[]>(
     'GET',
     `/items/client_profiles?filter[user][_eq]=${userId}&fields=id&limit=1`,
