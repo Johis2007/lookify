@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "lookify-app",
+    "slug": "lookify-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Lookify necesita acceder a tus fotos para subir certificados.",
+          "cameraPermission": "Lookify necesita usar la cámara para fotografiar certificados."
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Lookify usa tu ubicación en primer plano para mostrarte como disponible a clientes cercanos."
+        }
+      ],
+      "expo-video",
+      "expo-secure-store"
+    ]
+  }
+}

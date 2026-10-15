@@ -135,9 +135,14 @@ const MATRIX = [
   // Servicios del profesional (precios visibles; vínculo propio).
   ['professional_services', 'create'],
   ['professional_services', 'update'],
+  ['professional_services', 'delete'],
+  // Documentos de verificación: el pro gestiona los suyos.
+  ['professional_documents', 'update'],
+  ['professional_documents', 'delete'],
   // Archivos: subir avatar y ver (URLs del marketplace).
   ['directus_files', 'create'],
   ['directus_files', 'read'],
+  ['directus_files', 'delete'],
   // Usuarios: lectura autenticada (Directus nunca expone password/token).
   // (Sin reglas por fila: cualquier autenticado podría enumerar id/nombre/
   // email. Residual documentado; mitigación real: licencia o endpoint propio.)

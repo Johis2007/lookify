@@ -9,13 +9,14 @@
     "dev:infra": "docker compose up -d postgres redis directus",
     "dev:realtime": "npm --workspace apps/realtime-server run dev",
     "dev:app": "npm --workspace apps/mobile-web run start",
+    "dev:yeison": "npm --workspace apps/lookify-app run start",
     "env:lan": "node scripts/sync-lan-env.mjs",
     "db:setup": "node scripts/db-setup.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:seed": "node directus/seed.mjs",
     "db:fresh": "npm run db:setup && npm run db:migrate && npm run db:seed",
     "lint": "npm --workspace apps/mobile-web run lint",
-    "typecheck": "npx tsc --noEmit -p apps/mobile-web && npx tsc --noEmit -p apps/realtime-server"
+    "typecheck": "npx tsc --noEmit -p apps/mobile-web && npx tsc --noEmit -p apps/realtime-server && npx tsc --noEmit -p apps/lookify-app"
   },
   "dependencies": {
     "express": "^5.2.1"
