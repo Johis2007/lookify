@@ -276,9 +276,8 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       }
       pin.fallidos = 0;
       pin.bloqueadoHasta = null;
-      const ahora = Date.now();
+      // La transición /start registra el evento 'iniciado' en el servidor.
       await bffApi('POST', `/api/bookings/${b.id}/start`, session.token, {});
-      await logEvento(session.token, b.id, 'iniciado', `iniciado:${ahora}`);
       emitBookingStatus(String(b.id), 'in_progress');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);
       const servicio = await mapearEnCurso(session.token, recargado, professionalId);
@@ -305,8 +304,10 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       if (actual.etapa !== 'EN_CAMINO' && actual.etapa !== 'LLEGUE') {
         throw new ServiceError('ETAPA_NO_PERMITE_ACCION');
       }
-      await bffApi('POST', `/api/bookings/${b.id}/cancel`, session.token, {});
-      await logEvento(session.token, b.id, 'cancelado_por_profesional', `motivo:${input.motivo}`);
+      // La transición /cancel registra el evento con el motivo en el note.
+      await bffApi('POST', `/api/bookings/${b.id}/cancel`, session.token, {
+        note: `motivo:${input.motivo}`,
+      });
       emitBookingStatus(String(b.id), 'cancelled');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);
       const servicio = await mapearEnCurso(session.token, recargado, professionalId);
@@ -323,8 +324,8 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
         return { servicio: actual, ahoraServidor: Date.now() };
       }
       if (actual.etapa !== 'INICIADO') throw new ServiceError('ETAPA_NO_PERMITE_ACCION');
+      // La transición /complete registra el evento 'finalizado' en el servidor.
       await bffApi('POST', `/api/bookings/${b.id}/complete`, session.token, {});
-      await logEvento(session.token, b.id, 'finalizado', `finalizado:${Date.now()}`);
       emitBookingStatus(String(b.id), 'completed');
       joinBookingRoom(String(b.id), professionalId);
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);

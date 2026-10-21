@@ -132,10 +132,8 @@ const MATRIX = [
   // Perfil profesional: SOLO lectura directa. Crear/editar el perfil pasa por
   // el BFF (/api/professionals/me), que deriva el user del token y fuerza
   // verification_status='pending'. Así se cierra la auto-verificación.
-  // Reservas (flujos cliente/pro/admin; alcance por fila: residual).
-  ['bookings', 'read'],
-  ['bookings', 'create'],
-  ['bookings', 'update'],
+  // Reservas y eventos: TODO pasa por el BFF (/api/bookings*). El App User no
+  // tiene acceso directo (ver REVOKE). El admin ve reservas con su token.
   // Reseñas: ver y crear.
   ['reviews', 'read'],
   ['reviews', 'create'],
@@ -147,8 +145,6 @@ const MATRIX = [
   ['client_profiles', 'read'],
   ['professional_documents', 'create'],
   ['professional_documents', 'read'],
-  ['booking_events', 'create'],
-  ['booking_events', 'read'],
   // Servicios del profesional (precios visibles; vínculo propio).
   ['professional_services', 'create'],
   ['professional_services', 'update'],
@@ -190,9 +186,18 @@ console.log(`app: ${MATRIX.length} permisos aplicados`);
 // 5b. REVOCACIÓN (idempotente): quitar al App User cualquier permiso directo
 // que el BFF ya cubre. Paso 2B-bis: create/update sobre beauty_professionals
 // (perfil profesional vía /api/professionals/me, sin auto-verificación).
+// Paso 2D: todo acceso a bookings/booking_events pasa por el BFF.
 const REVOKE = [
   ['beauty_professionals', 'create'],
   ['beauty_professionals', 'update'],
+  ['bookings', 'read'],
+  ['bookings', 'create'],
+  ['bookings', 'update'],
+  ['bookings', 'delete'],
+  ['booking_events', 'read'],
+  ['booking_events', 'create'],
+  ['booking_events', 'update'],
+  ['booking_events', 'delete'],
 ];
 for (const [collection, action] of REVOKE) {
   const q = `/permissions?filter[policy][_eq]=${appPolicy}&filter[collection][_eq]=${collection}&filter[action][_eq]=${action}&limit=100&fields=id`;

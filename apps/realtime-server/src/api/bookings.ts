@@ -66,6 +66,13 @@ const EVENT_STATUSES = [
   'cancelado_por_profesional',
   'nota',
 ] as const;
+
+// Estados de evento que solo escribe el servidor (en las transiciones).
+const SERVER_ONLY_EVENT_STATUSES = [
+  'iniciado',
+  'finalizado',
+  'cancelado_por_profesional',
+] as const;
 const EventBody = z.object({
   status: z.enum(EVENT_STATUSES),
   lat: z.number().min(-90).max(90).optional(),
@@ -317,16 +324,35 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
   );
 
   // POST /api/bookings/:id/events — registra un evento (nota) en la reserva.
-  // Solo participantes. El status se acota a un conjunto conocido.
+  // Solo participantes. El status se acota por rol y estado:
+  //  - cliente: solo 'nota'
+  //  - profesional: 'llegada' (solo si status='accepted') y 'nota'
+  //  - 'iniciado'/'finalizado'/'cancelado_por_profesional': solo el servidor
+  //    (dentro de las transiciones), nunca por HTTP.
   router.post(
     '/:id/events',
     asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const user = req.user!;
       const booking = await loadBooking(pool, req.params.id);
       if (!booking) throw new HttpError(404, 'not_found');
-      if (!(await canAccess(pool, req.user!, booking))) throw new HttpError(404, 'not_found');
+      if (!(await canAccess(pool, user, booking))) throw new HttpError(404, 'not_found');
       const parsed = EventBody.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'invalid_body');
       const e = parsed.data;
+      if (SERVER_ONLY_EVENT_STATUSES.includes(e.status as never)) {
+        // 'iniciado'/'finalizado'/'cancelado_por_profesional' los escribe el
+        // servidor dentro de las transiciones; nunca por HTTP.
+        throw new HttpError(403, 'forbidden_event');
+      }
+      if (!user.isAdmin) {
+        const isClient = booking.client !== null && booking.client === user.userId;
+        const ownPro = await resolveOwnProfessionalId(pool, user.userId);
+        const isPro = ownPro !== null && ownPro === booking.professional;
+        const permitido =
+          e.status === 'nota' ||
+          (e.status === 'llegada' && isPro && booking.status === 'accepted');
+        if (!permitido) throw new HttpError(403, 'forbidden_event');
+      }
       const { rows } = await pool.query<BookingEventRow>(
         `INSERT INTO booking_events (booking, status, lat, lng, note, created_at)
          VALUES ($1,$2,$3,$4,$5,NOW())
@@ -479,6 +505,16 @@ async function handleTransition(
     if (!verified) throw new HttpError(403, 'professional_not_verified');
   }
 
+  // Estado semántico del evento (lo que la app lee para etapas del servicio).
+  const eventStatus =
+    to === 'in_progress'
+      ? 'iniciado'
+      : to === 'completed'
+        ? 'finalizado'
+        : to === 'cancelled' && actor === 'professional'
+          ? 'cancelado_por_profesional'
+          : to;
+
   // UPDATE condicional atómico: solo gana quien vea el estado previo esperado.
   const updated = await withTransaction(pool, async (client) => {
     const { rows } = await client.query<BookingRow>(
@@ -495,7 +531,7 @@ async function handleTransition(
     await client.query(
       `INSERT INTO booking_events (booking, status, lat, lng, note, created_at)
        VALUES ($1,$2,$3,$4,$5,NOW())`,
-      [id, to, extra.lat ?? null, extra.lng ?? null, extra.note ?? actor],
+      [id, eventStatus, extra.lat ?? null, extra.lng ?? null, extra.note ?? actor],
     );
     return rows[0];
   });

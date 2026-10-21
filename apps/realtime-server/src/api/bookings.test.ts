@@ -405,3 +405,82 @@ maybe('POST /:id/events con status no permitido -> 400', async () => {
   assert.equal(res.status, 400);
   assert.equal(res.json.error, 'invalid_body');
 });
+
+maybe('POST /:id/events: el cliente solo puede escribir "nota"', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 20',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  // nota permitida para el cliente.
+  const nota = await api('POST', `/api/bookings/${bid}/events`, clientA, { status: 'nota', note: 'hola' });
+  assert.equal(nota.status, 201);
+  // llegada NO permitida para el cliente (aunque esté accepted).
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  const llegada = await api('POST', `/api/bookings/${bid}/events`, clientA, { status: 'llegada' });
+  assert.equal(llegada.status, 403);
+  assert.equal(llegada.json.error, 'forbidden_event');
+});
+
+maybe('POST /:id/events: el pro escribe "llegada" solo si está accepted', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 21',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  // pending: 'llegada' no permitida todavía.
+  const temprano = await api('POST', `/api/bookings/${bid}/events`, proUser, { status: 'llegada' });
+  assert.equal(temprano.status, 403);
+  // accepted: 'llegada' permitida.
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  const ok = await api('POST', `/api/bookings/${bid}/events`, proUser, {
+    status: 'llegada',
+    note: 'llegada:999',
+  });
+  assert.equal(ok.status, 201);
+  assert.equal(ok.json.data.status, 'llegada');
+});
+
+maybe('POST /:id/events: estados de servidor (iniciado/finalizado/cancelado) -> 403', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 22',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  for (const status of ['iniciado', 'finalizado', 'cancelado_por_profesional']) {
+    const res = await api('POST', `/api/bookings/${bid}/events`, proUser, { status });
+    assert.equal(res.status, 403, `pro no puede escribir ${status}`);
+    assert.equal(res.json.error, 'forbidden_event');
+  }
+});
+
+maybe('las transiciones escriben eventos semánticos (iniciado/finalizado)', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 23',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  await api('POST', `/api/bookings/${bid}/start`, proUser);
+  await api('POST', `/api/bookings/${bid}/complete`, proUser);
+  const list = await api('GET', `/api/bookings/${bid}/events`, clientA);
+  const statuses = list.json.data.map((e: any) => e.status);
+  assert.ok(statuses.includes('accepted'), 'evento accepted');
+  assert.ok(statuses.includes('iniciado'), 'evento iniciado (no in_progress)');
+  assert.ok(statuses.includes('finalizado'), 'evento finalizado (no completed)');
+  assert.ok(!statuses.includes('in_progress'), 'sin evento crudo in_progress');
+  assert.ok(!statuses.includes('completed'), 'sin evento crudo completed');
+});
