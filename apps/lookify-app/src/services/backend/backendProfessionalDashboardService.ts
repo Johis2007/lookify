@@ -31,13 +31,8 @@ import { resumenDiaBackend } from './backendProfessionalEarningsHistoryService';
 import { validarArchivoFotoPerfil } from '../../utils/profilePhotoFile';
 import { FotoPerfilMimePermitido } from '../../constants/professionalProfilePhoto';
 
-async function servicioActivo(token: string, professionalId: number): Promise<boolean> {
-  const rows = await api<unknown[]>(
-    'GET',
-    `/items/bookings?filter[professional][_eq]=${professionalId}` +
-      `&filter[status][_in]=accepted,in_progress&fields=id&limit=1`,
-    token,
-  );
+async function servicioActivo(token: string, _professionalId?: number): Promise<boolean> {
+  const rows = await bffApi<unknown[]>('GET', '/api/bookings/pro/mine?status=accepted,in_progress', token);
   return rows.length > 0;
 }
 

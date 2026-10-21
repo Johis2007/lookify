@@ -13,7 +13,9 @@ import { setProfessionalServiceInProgressServiceForTesting } from '../profession
 import { setProfessionalVerificationServiceForTesting } from '../professionalVerificationService';
 import { setProfessionalCertificateServiceForTesting } from '../professionalCertificateService';
 import { setCatalogServiceForTesting } from '../catalogService';
+import { setBookingServiceForTesting } from '../bookingService';
 import { createBackendCatalogService } from './backendCatalogService';
+import { createBackendBookingService } from './backendBookingService';
 import { setActiveSolicitudProvider } from '../incomingActive';
 import { createBackendProfessionalAuthService } from './backendProfessionalAuthService';
 import { createBackendProfessionalRegistrationService } from './backendProfessionalRegistrationService';
@@ -51,4 +53,5 @@ export function initBackend(): void {
   setProfessionalCertificateServiceForTesting(createBackendProfessionalCertificateService());
   setActiveSolicitudProvider(getActiveSolicitudBackend);
   setCatalogServiceForTesting(createBackendCatalogService());
+  setBookingServiceForTesting(createBackendBookingService());
 }

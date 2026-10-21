@@ -20,6 +20,7 @@ import {
 } from '../../types/professionalIncomingRequest';
 import { ServiceError } from '../errors';
 import { api } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import { loadBackendSession, resolveProfessionalId } from '../../lib/backend/session';
 import {
   DBooking,
@@ -60,13 +61,12 @@ async function mapearSolicitud(
   professionalId: number,
 ): Promise<SolicitudEntrante> {
   const svc = typeof b.service === 'object' && b.service !== null ? b.service : null;
-  const [pro, clientUser, clientReviews] = await Promise.all([
+  const [pro, clientReviews] = await Promise.all([
     api<DProfessional>(
       'GET',
       `/items/beauty_professionals/${professionalId}?fields=current_lat,current_lng`,
       token,
     ).catch(() => null),
-    api<{ first_name?: string }>('GET', `/users/${b.client}?fields=first_name`, token).catch(() => null),
     api<DReview[]>(
       'GET',
       `/items/reviews?filter[client][_eq]=${b.client}&fields=rating&limit=100`,
@@ -86,7 +86,7 @@ async function mapearSolicitud(
     duracionMin: svc?.duration_min ?? 60,
     distanciaKmAprox: dist ?? 0,
     desglose: d,
-    clientePrimerNombre: primerNombre(clientUser?.first_name),
+    clientePrimerNombre: primerNombre(b.clientFirstName),
     clienteCalificacionPromedio: prom !== null ? Math.round(prom * 10) / 10 : null,
     clienteTotalResenas: total,
     expiraEn: expiraEnDesdeCreada(b.created_at),
@@ -94,6 +94,7 @@ async function mapearSolicitud(
   };
 }
 
+// Reserva propia del profesional vía BFF (valida participación en el servidor).
 async function bookingPropio(
   token: string,
   bookingId: string,
@@ -101,13 +102,16 @@ async function bookingPropio(
 ): Promise<DBooking> {
   const id = Number(bookingId);
   if (!Number.isInteger(id) || id <= 0) throw new ServiceError('VALIDATION');
-  const b = await api<DBooking>(
+  const b = await bffApi<DBooking>(
     'GET',
-    `/items/bookings/${id}?fields=*,service.id,service.name,service.price_base,service.duration_min`,
+    `/api/bookings/${id}`,
     token,
+    undefined,
     'SOLICITUD_ENTRANTE_NO_ENCONTRADA',
   );
-  if (Number(b.professional) !== professionalId) throw new ServiceError('SOLICITUD_ENTRANTE_NO_ENCONTRADA');
+  if (b.professional !== null && Number(b.professional) !== professionalId) {
+    throw new ServiceError('SOLICITUD_ENTRANTE_NO_ENCONTRADA');
+  }
   return b;
 }
 
@@ -117,11 +121,9 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      const rows = await api<DBooking[]>(
+      const rows = await bffApi<DBooking[]>(
         'GET',
-        `/items/bookings?filter[professional][_eq]=${professionalId}` +
-          `&filter[status][_eq]=pending&fields=*,service.id,service.name,service.price_base,service.duration_min` +
-          `&sort=-created_at&limit=1`,
+        '/api/bookings/pro/mine?status=pending',
         session.token,
       );
       const b = rows[0];
@@ -179,7 +181,7 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
         olvidar(String(professionalId));
         return { resultado: b.status === 'accepted' ? 'ACEPTADA' : 'YA_ASIGNADA', solicitud: null };
       }
-      await api('PATCH', `/items/bookings/${b.id}`, session.token, { status: 'accepted' });
+      await bffApi('POST', `/api/bookings/${b.id}/accept`, session.token, {});
       joinBookingRoom(String(b.id), professionalId);
       emitBookingStatus(String(b.id), 'accepted');
       const actualizada = await bookingPropio(session.token, String(b.id), professionalId);
@@ -198,7 +200,7 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
         olvidar(String(professionalId));
         return { resultado: 'YA_ASIGNADA', solicitud: null };
       }
-      await api('PATCH', `/items/bookings/${b.id}`, session.token, { status: 'rejected' });
+      await bffApi('POST', `/api/bookings/${b.id}/reject`, session.token, {});
       emitBookingStatus(String(b.id), 'rejected');
       olvidar(String(professionalId));
       return { resultado: 'RECHAZADA', solicitud: null };

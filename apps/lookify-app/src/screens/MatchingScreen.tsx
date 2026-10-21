@@ -169,6 +169,7 @@ export default function MatchingScreen({ navigation, route }: Props) {
       radioKm: 6,
       rejectionCount: 0,
       rejectedIds,
+      ...(params.bookingId ? { bookingId: params.bookingId } : {}),
     });
   };
 

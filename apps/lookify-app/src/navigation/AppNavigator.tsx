@@ -34,6 +34,8 @@ export type MatchingRouteParams = {
   radioKm: 3 | 6;
   rejectionCount: number;
   rejectedIds: string[];
+  /** id de la reserva real (BFF); ausente en modo demo. */
+  bookingId?: string;
 };
 
 export type ProfessionalOfferRouteParams = MatchingRouteParams & {
@@ -49,6 +51,8 @@ export type TrackingRouteParams = {
   precioServicio: number;
   precioDomicilio: number;
   precioTotal: number;
+  /** id de la reserva real (BFF); ausente en modo demo. */
+  bookingId?: string;
 };
 
 export type ServiceInProgressRouteParams = TrackingRouteParams;

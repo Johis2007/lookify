@@ -24,7 +24,7 @@ import {
   esEtapaServicioActiva,
 } from '../../types/professionalServiceInProgress';
 import { ServiceError } from '../errors';
-import { api } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import { loadBackendSession, resolveProfessionalId } from '../../lib/backend/session';
 import {
   DBooking,
@@ -34,6 +34,13 @@ import {
   primerNombre,
 } from '../../lib/backend/mapping';
 import { emitBookingStatus, joinBookingRoom } from '../../lib/backend/realtime';
+
+type EventStatus =
+  | 'llegada'
+  | 'iniciado'
+  | 'finalizado'
+  | 'cancelado_por_profesional'
+  | 'nota';
 
 const MAX_INTENTOS_PIN = 3;
 const BLOQUEO_PIN_MS = 5 * 60_000;
@@ -54,22 +61,27 @@ function estadoPin(bookingId: number): PinState {
   return s;
 }
 
-async function logEvento(token: string, bookingId: number, status: string, note?: string): Promise<void> {
-  await api('POST', '/items/booking_events', token, {
-    booking: bookingId,
+async function logEvento(
+  token: string,
+  bookingId: number,
+  status: EventStatus,
+  note?: string,
+): Promise<void> {
+  await bffApi('POST', `/api/bookings/${bookingId}/events`, token, {
     status,
     ...(note ? { note } : {}),
   }).catch(() => undefined);
 }
 
+async function eventosDe(token: string, bookingId: number): Promise<DBookingEvent[]> {
+  return bffApi<DBookingEvent[]>('GET', `/api/bookings/${bookingId}/events`, token).catch(() => []);
+}
+
 async function momentoEvento(token: string, bookingId: number, status: string): Promise<number | null> {
-  const events = await api<DBookingEvent[]>(
-    'GET',
-    `/items/booking_events?filter[booking][_eq]=${bookingId}` +
-      `&filter[status][_eq]=${status}&fields=created_at,note&sort=-created_at&limit=1`,
-    token,
-  ).catch(() => []);
-  const e = events[0];
+  const events = await eventosDe(token, bookingId);
+  const e = events
+    .filter((ev) => ev.status === status)
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))[0];
   if (!e) return null;
   const m = /:(\d+)$/.exec(e.note ?? '');
   if (m) return Number(m[1]);
@@ -80,19 +92,14 @@ async function llegadaEn(token: string, bookingId: number): Promise<number | nul
 }
 
 async function motivoDeEventos(token: string, bookingId: number): Promise<MotivoCancelacionProfesional | null> {
-  const events = await api<DBookingEvent[]>(
-    'GET',
-    `/items/booking_events?filter[booking][_eq]=${bookingId}` +
-      `&fields=note&sort=-created_at&limit=10`,
-    token,
-  ).catch(() => []);
+  const events = await eventosDe(token, bookingId);
   const validos: MotivoCancelacionProfesional[] = [
     'CLIENTE_AUSENTE',
     'DIRECCION_INCORRECTA',
     'CLIENTE_CANCELO_EN_PERSONA',
     'NO_PUEDO_CONTINUAR',
   ];
-  for (const e of events) {
+  for (const e of [...events].sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))) {
     const m = /^motivo:([A-Z_]+)/.exec(e.note ?? '');
     if (m && (validos as string[]).includes(m[1])) return m[1] as MotivoCancelacionProfesional;
   }
@@ -117,8 +124,7 @@ async function mapearEnCurso(
   }
   let cliente = 'Cliente';
   try {
-    const u = await api<{ first_name?: string }>('GET', `/users/${b.client}?fields=first_name`, token);
-    cliente = primerNombre(u?.first_name);
+    cliente = primerNombre(b.clientFirstName);
   } catch {
     /* noop */
   }
@@ -171,13 +177,16 @@ async function bookingDelFlujo(
 ): Promise<DBooking> {
   const id = Number(servicioId);
   if (!Number.isInteger(id) || id <= 0) throw new ServiceError('VALIDATION');
-  const b = await api<DBooking>(
+  const b = await bffApi<DBooking>(
     'GET',
-    `/items/bookings/${id}?fields=*,service.id,service.name,service.price_base,service.duration_min`,
+    `/api/bookings/${id}`,
     token,
+    undefined,
     'SERVICIO_EN_CURSO_NO_ENCONTRADO',
   );
-  if (Number(b.professional) !== professionalId) throw new ServiceError('SERVICIO_EN_CURSO_NO_ENCONTRADO');
+  if (b.professional !== null && Number(b.professional) !== professionalId) {
+    throw new ServiceError('SERVICIO_EN_CURSO_NO_ENCONTRADO');
+  }
   return b;
 }
 
@@ -187,12 +196,9 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      const rows = await api<DBooking[]>(
+      const rows = await bffApi<DBooking[]>(
         'GET',
-        `/items/bookings?filter[professional][_eq]=${professionalId}` +
-          `&filter[status][_in]=accepted,in_progress` +
-          `&fields=*,service.id,service.name,service.price_base,service.duration_min` +
-          `&sort=-created_at&limit=1`,
+        '/api/bookings/pro/mine?status=accepted,in_progress',
         session.token,
       );
       const b = rows[0];
@@ -271,7 +277,7 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       pin.fallidos = 0;
       pin.bloqueadoHasta = null;
       const ahora = Date.now();
-      await api('PATCH', `/items/bookings/${b.id}`, session.token, { status: 'in_progress' });
+      await bffApi('POST', `/api/bookings/${b.id}/start`, session.token, {});
       await logEvento(session.token, b.id, 'iniciado', `iniciado:${ahora}`);
       emitBookingStatus(String(b.id), 'in_progress');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);
@@ -299,7 +305,7 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       if (actual.etapa !== 'EN_CAMINO' && actual.etapa !== 'LLEGUE') {
         throw new ServiceError('ETAPA_NO_PERMITE_ACCION');
       }
-      await api('PATCH', `/items/bookings/${b.id}`, session.token, { status: 'cancelled' });
+      await bffApi('POST', `/api/bookings/${b.id}/cancel`, session.token, {});
       await logEvento(session.token, b.id, 'cancelado_por_profesional', `motivo:${input.motivo}`);
       emitBookingStatus(String(b.id), 'cancelled');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);
@@ -317,7 +323,7 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
         return { servicio: actual, ahoraServidor: Date.now() };
       }
       if (actual.etapa !== 'INICIADO') throw new ServiceError('ETAPA_NO_PERMITE_ACCION');
-      await api('PATCH', `/items/bookings/${b.id}`, session.token, { status: 'completed' });
+      await bffApi('POST', `/api/bookings/${b.id}/complete`, session.token, {});
       await logEvento(session.token, b.id, 'finalizado', `finalizado:${Date.now()}`);
       emitBookingStatus(String(b.id), 'completed');
       joinBookingRoom(String(b.id), professionalId);

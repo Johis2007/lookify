@@ -57,6 +57,22 @@ const StatusEventBody = z
   .optional()
   .default({});
 
+// Eventos que la app puede registrar (notas de seguimiento). Se excluyen los
+// estados del ciclo de vida (se escriben solo por las transiciones del router).
+const EVENT_STATUSES = [
+  'llegada',
+  'iniciado',
+  'finalizado',
+  'cancelado_por_profesional',
+  'nota',
+] as const;
+const EventBody = z.object({
+  status: z.enum(EVENT_STATUSES),
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
+  note: z.string().trim().max(500).optional(),
+});
+
 // ---------------------------------------------------------------------------
 // Tipos de fila
 // ---------------------------------------------------------------------------
@@ -76,6 +92,60 @@ type BookingRow = {
 
 const BOOKING_FIELDS =
   'id, client, professional, service, status, price_snapshot, address_text, lat, lng, scheduled_at, created_at';
+
+// Fila de reserva con servicio embebido y nombre del cliente (rutas del pro).
+type ProBookingRow = BookingRow & {
+  completed_at: Date | null;
+  rating: number | null;
+  payment_method: string | null;
+  cancel_reason: string | null;
+  s_id: number | null;
+  s_name: string | null;
+  s_price: string | null;
+  s_duration: number | null;
+  client_first_name: string | null;
+};
+
+type BookingEventRow = {
+  id: number;
+  booking: number;
+  status: string | null;
+  lat: number | null;
+  lng: number | null;
+  note: string | null;
+  created_at: Date | null;
+};
+
+// Forma compatible con DBooking del frontend (snake_case, service embebido),
+// para que el mapeo existente siga funcionando sin tocar la app.
+function toProBookingDto(row: ProBookingRow) {
+  return {
+    id: row.id,
+    client: row.client,
+    professional: row.professional,
+    service:
+      row.s_id === null
+        ? row.service
+        : {
+            id: row.s_id,
+            name: row.s_name,
+            price_base: row.s_price === null ? null : Number(row.s_price),
+            duration_min: row.s_duration,
+          },
+    status: row.status,
+    price_snapshot: row.price_snapshot === null ? null : Number(row.price_snapshot),
+    address_text: row.address_text,
+    lat: row.lat,
+    lng: row.lng,
+    scheduled_at: row.scheduled_at,
+    created_at: row.created_at,
+    completed_at: row.completed_at,
+    rating: row.rating,
+    payment_method: row.payment_method,
+    cancel_reason: row.cancel_reason,
+    clientFirstName: row.client_first_name,
+  };
+}
 
 // Convierte una fila a la forma que consume la app (camelCase, precio numérico).
 function toBookingDto(row: BookingRow) {
@@ -181,7 +251,42 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
     }),
   );
 
+  // GET /api/bookings/pro/mine — reservas del profesional del token.
+  // Query: ?status=pending  o  ?status=accepted,in_progress (coma). Opcional.
+  // Devuelve filas con el servicio embebido y el primer nombre del cliente,
+  // para que la app no necesite leer bookings directo en Directus.
+  router.get(
+    '/pro/mine',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const user = req.user!;
+      const ownPro = await resolveOwnProfessionalId(pool, user.userId);
+      if (ownPro === null) throw new HttpError(404, 'not_found');
+
+      const allowed = BOOKING_STATUSES as readonly string[];
+      const raw = typeof req.query.status === 'string' ? req.query.status : '';
+      const statuses = raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => allowed.includes(s));
+      if (raw && statuses.length === 0) throw new HttpError(400, 'invalid_status');
+
+      const params: unknown[] = [ownPro];
+      let where = 'b.professional = $1';
+      if (statuses.length > 0) {
+        params.push(statuses);
+        where += ` AND b.status = ANY($${params.length}::text[])`;
+      }
+
+      const { rows } = await pool.query<ProBookingRow>(
+        `${PRO_BOOKING_SELECT} WHERE ${where} ORDER BY b.created_at DESC LIMIT 200`,
+        params,
+      );
+      res.json({ data: rows.map(toProBookingDto) });
+    }),
+  );
+
   // GET /api/bookings/:id — solo participantes (cliente/pro/admin); si no, 404.
+  // Devuelve la forma enriquecida (servicio embebido + primer nombre cliente).
   router.get(
     '/:id',
     asyncHandler(async (req: AuthedRequest, res: Response) => {
@@ -189,7 +294,46 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       if (!booking) throw new HttpError(404, 'not_found');
       const allowed = await canAccess(pool, req.user!, booking);
       if (!allowed) throw new HttpError(404, 'not_found');
-      res.json({ data: toBookingDto(booking) });
+      const full = await loadBookingFull(pool, booking.id);
+      res.json({ data: full ? toProBookingDto(full) : toBookingDto(booking) });
+    }),
+  );
+
+  // GET /api/bookings/:id/events — eventos de la reserva (solo participantes).
+  // Reemplaza la lectura directa de booking_events en Directus.
+  router.get(
+    '/:id/events',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const booking = await loadBooking(pool, req.params.id);
+      if (!booking) throw new HttpError(404, 'not_found');
+      if (!(await canAccess(pool, req.user!, booking))) throw new HttpError(404, 'not_found');
+      const { rows } = await pool.query<BookingEventRow>(
+        `SELECT id, booking, status, lat, lng, note, created_at
+           FROM booking_events WHERE booking = $1 ORDER BY created_at ASC LIMIT 500`,
+        [booking.id],
+      );
+      res.json({ data: rows });
+    }),
+  );
+
+  // POST /api/bookings/:id/events — registra un evento (nota) en la reserva.
+  // Solo participantes. El status se acota a un conjunto conocido.
+  router.post(
+    '/:id/events',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const booking = await loadBooking(pool, req.params.id);
+      if (!booking) throw new HttpError(404, 'not_found');
+      if (!(await canAccess(pool, req.user!, booking))) throw new HttpError(404, 'not_found');
+      const parsed = EventBody.safeParse(req.body);
+      if (!parsed.success) throw new HttpError(400, 'invalid_body');
+      const e = parsed.data;
+      const { rows } = await pool.query<BookingEventRow>(
+        `INSERT INTO booking_events (booking, status, lat, lng, note, created_at)
+         VALUES ($1,$2,$3,$4,$5,NOW())
+         RETURNING id, booking, status, lat, lng, note, created_at`,
+        [booking.id, e.status, e.lat ?? null, e.lng ?? null, e.note ?? null],
+      );
+      res.status(201).json({ data: rows[0] });
     }),
   );
 
@@ -244,6 +388,22 @@ async function loadBooking(pool: pg.Pool, rawId: string | undefined | string[]):
     `SELECT ${BOOKING_FIELDS} FROM bookings WHERE id = $1`,
     [id],
   );
+  return rows[0] ?? null;
+}
+
+// Reserva con servicio embebido + primer nombre del cliente (para el pro).
+const PRO_BOOKING_SELECT = `
+  SELECT b.id, b.client, b.professional, b.service, b.status, b.price_snapshot,
+         b.address_text, b.lat, b.lng, b.scheduled_at, b.created_at, b.completed_at,
+         b.rating, b.payment_method, b.cancel_reason,
+         s.id AS s_id, s.name AS s_name, s.price_base AS s_price, s.duration_min AS s_duration,
+         u.first_name AS client_first_name
+    FROM bookings b
+    LEFT JOIN beauty_services s ON s.id = b.service
+    LEFT JOIN directus_users u ON u.id = b.client`;
+
+async function loadBookingFull(pool: pg.Pool, id: number): Promise<ProBookingRow | null> {
+  const { rows } = await pool.query<ProBookingRow>(`${PRO_BOOKING_SELECT} WHERE b.id = $1`, [id]);
   return rows[0] ?? null;
 }
 

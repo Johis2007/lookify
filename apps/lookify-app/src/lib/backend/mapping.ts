@@ -47,6 +47,8 @@ export type DBooking = {
   created_at?: string;
   completed_at?: string | null;
   cancel_reason?: string | null;
+  /** Primer nombre del cliente, provisto por el BFF (pro) — opcional. */
+  clientFirstName?: string | null;
 };
 
 export type DReview = {

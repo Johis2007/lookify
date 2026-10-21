@@ -19,7 +19,7 @@ import {
 } from '../../types/professionalEarningsHistory';
 import { MotivoCancelacionProfesional } from '../../types/professionalServiceInProgress';
 import { ServiceError } from '../errors';
-import { api } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import { loadBackendSession, resolveProfessionalId } from '../../lib/backend/session';
 import {
   DBooking,
@@ -27,6 +27,7 @@ import {
   comisionCop,
   desglose,
   metodoPago,
+  primerNombre,
 } from '../../lib/backend/mapping';
 import {
   endOfDayBogotaUtcMs,
@@ -81,29 +82,31 @@ type BookingCerrado = {
 
 async function bookingsCerrados(
   token: string,
-  professionalId: number,
+  _professionalId: number,
   periodo: PeriodoHistorialIngresos,
 ): Promise<BookingCerrado[]> {
   const ahora = Date.now();
   const { from, to } = rangoPeriodo(periodo, ahora);
-  const rows = await api<DBooking[]>(
+  const fromMs = Date.parse(from);
+  const toMs = Date.parse(to);
+  const rows = await bffApi<DBooking[]>(
     'GET',
-    `/items/bookings?filter[professional][_eq]=${professionalId}` +
-      `&filter[status][_in]=completed,cancelled` +
-      `&filter[created_at][_gte]=${encodeURIComponent(from)}` +
-      `&filter[created_at][_lte]=${encodeURIComponent(to)}` +
-      `&fields=id,client,professional,service.id,service.name,service.price_base,status,price_snapshot,rating,payment_method,created_at,completed_at,cancel_reason` +
-      `&sort=-created_at,-id&limit=500`,
+    '/api/bookings/pro/mine?status=completed,cancelled',
     token,
   );
-  return rows.map((b) => {
-    const svc = typeof b.service === 'object' && b.service !== null ? b.service : null;
-    return {
-      b,
-      base: svc?.price_base ?? b.price_snapshot,
-      servicioNombre: svc?.name ?? 'Servicio',
-    };
-  });
+  return rows
+    .filter((b) => {
+      const t = b.created_at ? Date.parse(b.created_at) : NaN;
+      return !Number.isNaN(t) && t >= fromMs && t <= toMs;
+    })
+    .map((b) => {
+      const svc = typeof b.service === 'object' && b.service !== null ? b.service : null;
+      return {
+        b,
+        base: svc?.price_base ?? b.price_snapshot,
+        servicioNombre: svc?.name ?? 'Servicio',
+      };
+    });
 }
 
 async function motivosPorBooking(
@@ -112,18 +115,24 @@ async function motivosPorBooking(
 ): Promise<Map<number, MotivoCancelacionProfesional>> {
   const map = new Map<number, MotivoCancelacionProfesional>();
   if (bookingIds.length === 0) return map;
-  const events = await api<DBookingEvent[]>(
-    'GET',
-    `/items/booking_events?filter[booking][_in]=${bookingIds.join(',')}` +
-      `&fields=booking,note,created_at&sort=-created_at&limit=500`,
-    token,
+  const listas = await Promise.all(
+    bookingIds.map((id) =>
+      bffApi<DBookingEvent[]>('GET', `/api/bookings/${id}/events`, token).catch(() => []),
+    ),
   );
-  for (const e of events) {
-    if (map.has(e.booking)) continue;
-    const m = /^motivo:([A-Z_]+)/.exec(e.note ?? '');
-    const motivo = motivoValido(m?.[1]);
-    if (motivo) map.set(e.booking, motivo);
-  }
+  bookingIds.forEach((bookingId, i) => {
+    const eventos = [...listas[i]].sort((a, b) =>
+      (b.created_at ?? '').localeCompare(a.created_at ?? ''),
+    );
+    for (const e of eventos) {
+      const m = /^motivo:([A-Z_]+)/.exec(e.note ?? '');
+      const motivo = motivoValido(m?.[1]);
+      if (motivo) {
+        map.set(bookingId, motivo);
+        break;
+      }
+    }
+  });
   return map;
 }
 
@@ -155,23 +164,13 @@ function aItem(
   };
 }
 
-async function nombresClientes(token: string, clientIds: string[]): Promise<Map<string, string>> {
+// A partir de las reservas (que ya traen clientFirstName del BFF), mapea
+// clientId -> primer nombre. Evita leer /users directamente (PII).
+function nombresClientesDe(rows: DBooking[]): Map<string, string> {
   const map = new Map<string, string>();
-  const únicos = [...new Set(clientIds)];
-  await Promise.all(
-    únicos.map(async (id) => {
-      try {
-        const u = await api<{ first_name?: string }>(
-          'GET',
-          `/users/${id}?fields=first_name`,
-          token,
-        );
-        map.set(id, (u?.first_name ?? '').trim() || 'Cliente');
-      } catch {
-        map.set(id, 'Cliente');
-      }
-    }),
-  );
+  for (const b of rows) {
+    if (!map.has(b.client)) map.set(b.client, primerNombre(b.clientFirstName));
+  }
   return map;
 }
 
@@ -236,10 +235,7 @@ export function createBackendProfessionalEarningsHistoryService(): ProfessionalE
         session.token,
         page.filter((r) => r.b.status !== 'completed').map((r) => r.b.id),
       );
-      const nombres = await nombresClientes(
-        session.token,
-        page.map((r) => r.b.client),
-      );
+      const nombres = nombresClientesDe(page.map((r) => r.b));
       const items = page.map((r) =>
         aItem(r, motivos.get(r.b.id) ?? null, nombres.get(r.b.client) ?? 'Cliente'),
       );

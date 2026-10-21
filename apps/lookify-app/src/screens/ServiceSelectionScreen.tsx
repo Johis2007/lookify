@@ -3,14 +3,19 @@
 // que venía seleccionada en Inicio. Al continuar pasamos a la búsqueda de
 // profesional (Pantalla 6).
 
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
 import BackHeader from '../components/BackHeader';
 import { CategoriaId } from '../data/mockProfessionals';
-import { SERVICIOS_POR_CATEGORIA, MockService, formatPrecio } from '../data/mockServices';
+import { MockService, formatPrecio } from '../data/mockServices';
+import { getCatalogService } from '../services/catalogService';
+import { getBookingService } from '../services/bookingService';
+import { isBackendEnabled } from '../services/backend/initBackend';
+import { MOCK_CLIENT_LOCATION } from '../constants/geo';
+import { ServiceError } from '../services/errors';
 
 interface ServiceSelectionScreenProps {
   navigation: {
@@ -29,19 +34,86 @@ export default function ServiceSelectionScreen({
   route,
 }: ServiceSelectionScreenProps) {
   const { categoriaId, categoriaNombre } = route.params;
-  const servicios = SERVICIOS_POR_CATEGORIA[categoriaId];
+  const [servicios, setServicios] = useState<MockService[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [creando, setCreando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [servicioSeleccionado, setServicioSeleccionado] = useState<string | null>(null);
 
-  const handleContinuar = () => {
-    if (!servicioSeleccionado) return;
-    navigation.navigate('Matching', {
-      categoriaId,
-      categoriaNombre,
-      servicioId: servicioSeleccionado,
-      radioKm: 3,
-      rejectionCount: 0,
-      rejectedIds: [],
-    });
+  useEffect(() => {
+    let activo = true;
+    setCargando(true);
+    getCatalogService()
+      .listarServiciosPorCategoria()
+      .then((categorias) => {
+        if (!activo) return;
+        const cat = categorias.find((c) => c.categoriaId === categoriaId);
+        setServicios(
+          (cat?.servicios ?? []).map((s) => ({
+            id: s.id,
+            nombre: s.nombre,
+            duracionMin: s.duracionMin,
+            precio: s.precio,
+          })),
+        );
+      })
+      .catch(() => {
+        if (activo) setError('No pudimos cargar los servicios.');
+      })
+      .finally(() => {
+        if (activo) setCargando(false);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [categoriaId]);
+
+  const handleContinuar = async () => {
+    if (!servicioSeleccionado || creando) return;
+    setError(null);
+
+    // En modo demo no se crea reserva real: se pasa el flag sin bookingId.
+    if (!isBackendEnabled()) {
+      navigation.navigate('Matching', {
+        categoriaId,
+        categoriaNombre,
+        servicioId: servicioSeleccionado,
+        radioKm: 3,
+        rejectionCount: 0,
+        rejectedIds: [],
+      });
+      return;
+    }
+
+    const servicio = servicios.find((s) => s.id === servicioSeleccionado);
+    if (!servicio) return;
+    setCreando(true);
+    try {
+      const reserva = await getBookingService().crearReserva({
+        serviceId: servicioSeleccionado,
+        addressText: 'Dirección a confirmar',
+        lat: MOCK_CLIENT_LOCATION.latitude,
+        lng: MOCK_CLIENT_LOCATION.longitude,
+      });
+      navigation.navigate('Matching', {
+        categoriaId,
+        categoriaNombre,
+        servicioId: servicioSeleccionado,
+        radioKm: 3,
+        rejectionCount: 0,
+        rejectedIds: [],
+        bookingId: reserva.bookingId,
+      });
+    } catch (e) {
+      const code = e instanceof ServiceError ? e.code : 'UNKNOWN';
+      setError(
+        code === 'VALIDATION'
+          ? 'Ese servicio ya no está disponible.'
+          : 'No pudimos crear tu reserva. Intenta de nuevo.',
+      );
+    } finally {
+      setCreando(false);
+    }
   };
 
   return (
@@ -52,26 +124,37 @@ export default function ServiceSelectionScreen({
       </View>
 
       <View style={styles.body}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
-          {servicios.map((servicio) => (
-            <ServiceRow
-              key={servicio.id}
-              servicio={servicio}
-              selected={servicio.id === servicioSeleccionado}
-              onPress={() => setServicioSeleccionado(servicio.id)}
-            />
-          ))}
-        </ScrollView>
+        {cargando ? (
+          <View style={styles.center}>
+            <ActivityIndicator color={colors.navy} />
+          </View>
+        ) : servicios.length === 0 ? (
+          <View style={styles.center}>
+            <Text style={styles.emptyText}>No hay servicios disponibles por ahora.</Text>
+          </View>
+        ) : (
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+          >
+            {servicios.map((servicio) => (
+              <ServiceRow
+                key={servicio.id}
+                servicio={servicio}
+                selected={servicio.id === servicioSeleccionado}
+                onPress={() => setServicioSeleccionado(servicio.id)}
+              />
+            ))}
+          </ScrollView>
+        )}
 
         <View style={styles.footer}>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <Button
-            label="Continuar"
+            label={creando ? 'Creando reserva…' : 'Continuar'}
             onPress={handleContinuar}
-            disabled={!servicioSeleccionado}
+            disabled={!servicioSeleccionado || creando}
             style={styles.submitButton}
           />
         </View>
@@ -137,6 +220,22 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  center: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  emptyText: {
+    ...typography.caption,
+    textAlign: 'center',
+  },
+  errorText: {
+    ...typography.caption,
+    color: colors.error,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   scrollContent: {
     flexGrow: 1,

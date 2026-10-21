@@ -123,6 +123,7 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
       precioServicio: desglose.precioServicio,
       precioDomicilio: desglose.precioDomicilio,
       precioTotal: desglose.precioTotal,
+      ...(params.bookingId ? { bookingId: params.bookingId } : {}),
     });
   };
 
@@ -135,6 +136,7 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
       radioKm,
       rejectionCount: rejectionCount + 1,
       rejectedIds: [...rejectedIds, professionalId],
+      ...(params.bookingId ? { bookingId: params.bookingId } : {}),
     });
   };
 

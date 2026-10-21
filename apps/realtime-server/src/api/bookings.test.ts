@@ -334,3 +334,74 @@ maybe('GET /mine solo devuelve las reservas del cliente del token', async () => 
   assert.ok(Array.isArray(res.json.data));
   assert.ok(res.json.data.every((b: any) => b.clientId === clientA));
 });
+
+maybe('GET /pro/mine devuelve reservas del pro del token (con servicio embebido)', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 11',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const res = await api('GET', '/api/bookings/pro/mine?status=pending', proUser);
+  assert.equal(res.status, 200);
+  const found = res.json.data.find((b: any) => b.id === created.json.data.id);
+  assert.ok(found, 'la reserva del pro debe aparecer');
+  assert.equal(found.professional, proId);
+  assert.equal(typeof found.service, 'object');
+  assert.equal(found.service.id, serviceId);
+  assert.equal(typeof found.clientFirstName, 'string');
+});
+
+maybe('GET /pro/mine no expone reservas de otro profesional', async () => {
+  const res = await api('GET', '/api/bookings/pro/mine', foreignProUser);
+  assert.equal(res.status, 200);
+  assert.ok(res.json.data.every((b: any) => b.professional === foreignProId));
+});
+
+maybe('GET /pro/mine sin perfil profesional -> 404', async () => {
+  const res = await api('GET', '/api/bookings/pro/mine', clientB);
+  assert.equal(res.status, 404);
+});
+
+maybe('GET /pro/mine con status inválido -> 400', async () => {
+  const res = await api('GET', '/api/bookings/pro/mine?status=lol', proUser);
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'invalid_status');
+});
+
+maybe('GET /:id/events solo para participantes (ajeno -> 404)', async () => {
+  const res = await api('GET', `/api/bookings/${pendingBookingId}/events`, clientB);
+  assert.equal(res.status, 404);
+});
+
+maybe('POST /:id/events registra un evento (participante pro)', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 12',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  const res = await api('POST', `/api/bookings/${bid}/events`, proUser, {
+    status: 'llegada',
+    note: 'llegada:123',
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.json.data.status, 'llegada');
+  assert.equal(res.json.data.note, 'llegada:123');
+  // El evento es visible para el pro participante.
+  const list = await api('GET', `/api/bookings/${bid}/events`, proUser);
+  assert.equal(list.status, 200);
+  assert.ok(list.json.data.some((e: any) => e.status === 'llegada'));
+});
+
+maybe('POST /:id/events con status no permitido -> 400', async () => {
+  const res = await api('POST', `/api/bookings/${pendingBookingId}/events`, proUser, {
+    status: 'hacked',
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'invalid_body');
+});
