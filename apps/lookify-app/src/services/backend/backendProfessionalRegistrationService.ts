@@ -14,6 +14,7 @@ import {
 } from '../../types/professionalRegistration';
 import { ServiceError } from '../errors';
 import { api, loginDirectus } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import { BACKEND } from '../../lib/backend/config';
 import {
   backendSolicitudId,
@@ -36,12 +37,11 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
       });
       const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);
-      const created = await api<{ id: number }>('POST', '/items/beauty_professionals', accessToken, {
-        user: me.id,
-        display_name: datos.nombre.trim(),
+      // El perfil se crea por el BFF: deriva el user del token y fuerza
+      // verification_status='pending' (no auto-verificación).
+      const created = await bffApi<{ id: number }>('POST', '/api/professionals/me', accessToken, {
+        displayName: datos.nombre.trim(),
         phone: datos.telefono,
-        is_online: false,
-        verification_status: 'pending',
       });
       const professionalId = Number(created?.id);
       if (!Number.isInteger(professionalId) || professionalId <= 0) {

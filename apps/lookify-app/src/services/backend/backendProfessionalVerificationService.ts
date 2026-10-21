@@ -23,6 +23,7 @@ import {
 } from '../../types/professionalVerification';
 import { ServiceError } from '../errors';
 import { api } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
   loadBackendSession,
@@ -128,8 +129,8 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
       const pro = await leerPro(session.token, professionalId);
       if (pro.verification_status !== 'rejected') throw new ServiceError('VALIDATION');
-      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-        verification_status: 'pending',
+      await bffApi('PATCH', '/api/professionals/me', session.token, {
+        verificationStatus: 'pending',
       });
       const servicios = await api<{ service_id: number }[]>(
         'GET',

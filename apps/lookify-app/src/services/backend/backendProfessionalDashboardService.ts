@@ -19,6 +19,7 @@ import {
 import { ResenaProfesional } from '../../types/professionalReview';
 import { ServiceError } from '../errors';
 import { api, assetUrl, uploadFile } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import {
   clearBackendSession,
   loadBackendSession,
@@ -138,14 +139,10 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
         if (await servicioActivo(session.token, professionalId)) {
           throw new ServiceError('SERVICIO_EN_CURSO_ACTIVO');
         }
-        await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-          is_online: true,
-        });
+        await bffApi('PATCH', '/api/professionals/me', session.token, { isOnline: true });
         ensureProOnline();
       } else {
-        await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-          is_online: false,
-        });
+        await bffApi('PATCH', '/api/professionals/me', session.token, { isOnline: false });
         emitProOffline();
       }
       return { disponibilidad: input.disponibilidad };
@@ -161,9 +158,7 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       if (tam === 'invalido') throw new ServiceError('ARCHIVO_INVALIDO');
       const mimeType = input.archivo.mimeType as FotoPerfilMimePermitido;
       const fileId = await uploadFile(session.token, input.archivo.uri, `perfil-${professionalId}.jpg`, mimeType);
-      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-        avatar: fileId,
-      });
+      await bffApi('PATCH', '/api/professionals/me', session.token, { avatar: fileId });
       // Directus no tiene revisión de foto (ver docs/adaptacion-backend.md).
       return { fotoPerfil: { uri: assetUrl(fileId) ?? input.archivo.uri, mimeType } };
     },
@@ -175,9 +170,7 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       if (await servicioActivo(session.token, professionalId)) {
         throw new ServiceError('SERVICIO_EN_CURSO_ACTIVO');
       }
-      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-        is_online: false,
-      }).catch(() => undefined);
+      await bffApi('PATCH', '/api/professionals/me', session.token, { isOnline: false }).catch(() => undefined);
       disconnectRealtime();
       await clearBackendSession();
     },

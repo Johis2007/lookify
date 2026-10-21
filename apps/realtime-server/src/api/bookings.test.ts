@@ -24,6 +24,8 @@ let clientA: string;
 let clientB: string;
 let proUser: string;
 let proId: number;
+let foreignProUser: string;
+let foreignProId: number;
 let serviceId: number;
 let pendingBookingId: number;
 
@@ -100,20 +102,37 @@ before(async () => {
     [proUser],
   );
   proId = p.rows[0].id;
+  const foreign = await pool.query<{ id: string }>(
+    `INSERT INTO directus_users (id, first_name, email, status)
+     VALUES (gen_random_uuid(), 'Test Pro 2', 'test-pro2@lookify.app', 'active') RETURNING id`,
+  );
+  foreignProUser = foreign.rows[0].id;
+  const fp = await pool.query<{ id: number }>(
+    `INSERT INTO beauty_professionals (\"user\", display_name, verification_status, is_online)
+     VALUES ($1, 'Test Pro 2', 'verified', false) RETURNING id`,
+    [foreignProUser],
+  );
+  foreignProId = fp.rows[0].id;
   const s = await pool.query<{ id: number }>(
     `INSERT INTO beauty_services (name, price_base, duration_min, is_active)
      VALUES ('Test Service', 42000, 40, true) RETURNING id`,
   );
   serviceId = s.rows[0].id;
+  // El pro debe ofrecer el servicio para poder asignársele reservas.
+  await pool.query(
+    `INSERT INTO professional_services (professional_id, service_id) VALUES ($1, $2), ($3, $2)`,
+    [proId, serviceId, foreignProId],
+  );
 });
 
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
   await pool.query('DELETE FROM booking_events WHERE booking IN (SELECT id FROM bookings WHERE client = ANY($1))', [[clientA, clientB]]);
   await pool.query('DELETE FROM bookings WHERE client = ANY($1)', [[clientA, clientB]]);
+  await pool.query('DELETE FROM professional_services WHERE service_id = $1', [serviceId]);
   await pool.query('DELETE FROM beauty_services WHERE id = $1', [serviceId]);
-  await pool.query('DELETE FROM beauty_professionals WHERE id = $1', [proId]);
-  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [[clientA, clientB, proUser]]);
+  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [[proId, foreignProId]]);
+  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [[clientA, clientB, proUser, foreignProUser]]);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.end();
 });
@@ -192,8 +211,7 @@ maybe('cliente 2 no puede aceptar la reserva del cliente 1 (404)', async () => {
 });
 
 maybe('profesional no verificado no puede aceptar (403)', async () => {
-  // Poner el pro en 'pending' temporalmente.
-  await pool.query(`UPDATE beauty_professionals SET verification_status = 'pending' WHERE id = $1`, [proId]);
+  // Crear mientras está verificado, luego pasar a pending y rechazar el accept.
   const created = await api('POST', '/api/bookings', clientA, {
     serviceId,
     addressText: 'Calle 4',
@@ -202,10 +220,107 @@ maybe('profesional no verificado no puede aceptar (403)', async () => {
     professionalId: proId,
   });
   const bid = created.json.data.id;
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'pending' WHERE id = $1`, [proId]);
   const res = await api('POST', `/api/bookings/${bid}/accept`, proUser);
   assert.equal(res.status, 403);
   assert.equal(res.json.error, 'professional_not_verified');
   await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+});
+
+maybe('crear reserva con profesional no verificado -> 400', async () => {
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'pending' WHERE id = $1`, [proId]);
+  const res = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 5',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'professional_not_verified');
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+});
+
+maybe('crear reserva con profesional que no ofrece el servicio -> 400', async () => {
+  const other = await pool.query<{ id: number }>(
+    `INSERT INTO beauty_services (name, price_base, duration_min, is_active)
+     VALUES ('Otro servicio', 1000, 10, true) RETURNING id`,
+  );
+  const otherServiceId = other.rows[0].id;
+  try {
+    const res = await api('POST', '/api/bookings', clientA, {
+      serviceId: otherServiceId, // el pro no lo ofrece
+      addressText: 'Calle 6',
+      lat: 4.7,
+      lng: -74.0,
+      professionalId: proId,
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'professional_does_not_offer_service');
+  } finally {
+    await pool.query('DELETE FROM beauty_services WHERE id = $1', [otherServiceId]);
+  }
+});
+
+maybe('cliente no puede accept/start/complete una reserva ajena (suya) -> 403/404', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 7',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  for (const action of ['accept', 'start', 'complete']) {
+    const res = await api('POST', `/api/bookings/${bid}/${action}`, clientA);
+    // El cliente es dueño pero no profesional -> 404 (no es participante pro).
+    assert.equal(res.status, 404, `cliente no debería poder ${action}`);
+  }
+});
+
+maybe('profesional ajeno no puede accept/start/complete -> 404', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 8',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  for (const action of ['accept', 'start', 'complete']) {
+    const res = await api('POST', `/api/bookings/${bid}/${action}`, foreignProUser);
+    assert.equal(res.status, 404, `pro ajeno no debería poder ${action}`);
+  }
+});
+
+maybe('el cliente cancela desde pending (válido)', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 9',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  const res = await api('POST', `/api/bookings/${bid}/cancel`, clientA);
+  assert.equal(res.status, 200);
+  assert.equal(res.json.data.status, 'cancelled');
+});
+
+maybe('no se puede cancelar una reserva completed -> 409', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 10',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  await api('POST', `/api/bookings/${bid}/start`, proUser);
+  await api('POST', `/api/bookings/${bid}/complete`, proUser);
+  const res = await api('POST', `/api/bookings/${bid}/cancel`, clientA);
+  assert.equal(res.status, 409);
 });
 
 maybe('sin token -> 401', async () => {

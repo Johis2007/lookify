@@ -19,6 +19,7 @@ import {
   type AuthedUser,
 } from './auth.js';
 import { createBookingsRouter } from './api/bookings.js';
+import { createProfessionalsRouter } from './api/professionals.js';
 import { errorHandler } from './api/http.js';
 
 // Carga de entorno: primero apps/realtime-server/.env (si existe) y, como
@@ -236,6 +237,7 @@ app.use(
     },
   }),
 );
+app.use('/api/professionals', createProfessionalsRouter(pool));
 app.use(errorHandler);
 
 // Anti-saturación (Fase 3/5/6): 1 msg / 5s por socket + ban temporal si abusa.

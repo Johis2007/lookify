@@ -42,6 +42,34 @@ export function asyncHandler(
   };
 }
 
+// Rate limit HTTP en memoria (por usuario del token) para las rutas /api.
+// Complementa el límite por socket: evita que un token válido sature el BFF.
+// Ventana deslizante simple de 60s; configurable por env.
+type Bucket = { count: number; windowStart: number };
+const httpBuckets = new Map<string, Bucket>();
+
+export function rateLimit(
+  maxPerWindow = Number(process.env.BFF_RATE_MAX || 120),
+  windowMs = Number(process.env.BFF_RATE_WINDOW_MS || 60_000),
+) {
+  return (req: AuthedRequest, res: Response, next: NextFunction): void => {
+    const key = req.user?.userId || (req.ip ?? 'anonymous');
+    const now = Date.now();
+    const b = httpBuckets.get(key);
+    if (!b || now - b.windowStart > windowMs) {
+      httpBuckets.set(key, { count: 1, windowStart: now });
+      next();
+      return;
+    }
+    b.count += 1;
+    if (b.count > maxPerWindow) {
+      res.status(429).json({ error: 'rate_limited' });
+      return;
+    }
+    next();
+  };
+}
+
 // Handler de errores final: HttpError -> su status; el resto, 500.
 export function errorHandler(
   err: unknown,

@@ -20,6 +20,7 @@ import {
 } from '../../types/professionalCertificates';
 import { ServiceError } from '../errors';
 import { api, assetUrl, uploadFile } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
   loadBackendSession,
@@ -258,8 +259,8 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
         if (n < 1) throw new ServiceError('SERVICIO_SIN_CERTIFICADO');
         if (n > CERTIFICADO_MAX_POR_SERVICIO) throw new ServiceError('LIMITE_CERTIFICADOS_SERVICIO');
       }
-      await api('PATCH', `/items/beauty_professionals/${professionalId}`, session.token, {
-        verification_status: 'pending',
+      await bffApi('PATCH', '/api/professionals/me', session.token, {
+        verificationStatus: 'pending',
       });
       return {
         solicitudId: backendSolicitudId(professionalId),

@@ -15,7 +15,7 @@ async function readJsonSafe(res: Response): Promise<any> {
   }
 }
 
-function toServiceError(status: number, body: any, fallback: ServiceErrorCode): ServiceError {
+export function toServiceError(status: number, body: any, fallback: ServiceErrorCode): ServiceError {
   const raw = JSON.stringify(body ?? '');
   if (status === 401) return new ServiceError('INVALID_CREDENTIALS');
   if (status === 403) return new ServiceError('PROFESIONAL_NO_HABILITADO');

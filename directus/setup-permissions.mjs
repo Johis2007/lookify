@@ -129,9 +129,9 @@ const MATRIX = [
   ['service_categories', 'read'],
   ['beauty_professionals', 'read'],
   ['professional_services', 'read'],
-  // Perfil profesional (flujos propios; alcance por fila: residual).
-  ['beauty_professionals', 'create'],
-  ['beauty_professionals', 'update'],
+  // Perfil profesional: SOLO lectura directa. Crear/editar el perfil pasa por
+  // el BFF (/api/professionals/me), que deriva el user del token y fuerza
+  // verification_status='pending'. Así se cierra la auto-verificación.
   // Reservas (flujos cliente/pro/admin; alcance por fila: residual).
   ['bookings', 'read'],
   ['bookings', 'create'],
@@ -186,6 +186,24 @@ for (const [collection, action] of MATRIX) {
   }
 }
 console.log(`app: ${MATRIX.length} permisos aplicados`);
+
+// 5b. REVOCACIÓN (idempotente): quitar al App User cualquier permiso directo
+// que el BFF ya cubre. Paso 2B-bis: create/update sobre beauty_professionals
+// (perfil profesional vía /api/professionals/me, sin auto-verificación).
+const REVOKE = [
+  ['beauty_professionals', 'create'],
+  ['beauty_professionals', 'update'],
+];
+for (const [collection, action] of REVOKE) {
+  const q = `/permissions?filter[policy][_eq]=${appPolicy}&filter[collection][_eq]=${collection}&filter[action][_eq]=${action}&limit=100&fields=id`;
+  const ex = await api('GET', q);
+  if (ex.status !== 200) fail(`GET revoke ${collection} ${action}`, ex);
+  for (const row of ex.data?.data ?? []) {
+    const d = await api('DELETE', `/permissions/${row.id}`);
+    if (![200, 204].includes(d.status)) fail(`DELETE revoke ${collection} ${action}`, d);
+    console.log(`revocado: ${collection} ${action} (${row.id})`);
+  }
+}
 
 // 6. Registro público asigna el rol + migrar usuarios sin rol.
 // NOTA seats: esta instancia limita usuarios por licencia; si el API responde

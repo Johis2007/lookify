@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 import { resolveOwnProfessionalId } from '../auth.js';
 import { withTransaction } from '../db.js';
-import { asyncHandler, HttpError, requireAuth, type AuthedRequest } from './http.js';
+import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } from './http.js';
 
 // BFF de reservas (Paso 2B). Todo el acceso a bookings/booking_events pasa por
 // aquí; el App User deja de tener permisos directos en 2D. El servidor valida
@@ -109,6 +109,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
   const router = Router();
 
   router.use(requireAuth);
+  router.use(rateLimit());
 
   // POST /api/bookings — crea una reserva para el cliente del token.
   // - Valida que el servicio exista y esté activo.
@@ -134,7 +135,9 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       // Precio SIEMPRE del servidor. Nunca del payload.
       const price = service.price_base === null ? 0 : Number(service.price_base);
 
-      const professional = await resolveRequestedProfessional(pool, req.body?.professionalId);
+      // El profesional declarado, si viene, debe existir, estar verificado y
+      // ofrecer el servicio solicitado. Si no cumple -> 400 (no se crea).
+      const professional = await resolveRequestedProfessional(pool, req.body?.professionalId, body.serviceId);
 
       const inserted = await withTransaction(pool, async (client) => {
         const { rows } = await client.query<BookingRow>(
@@ -208,12 +211,30 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
 // Helpers
 // ---------------------------------------------------------------------------
 
-// El professional declarado en el body solo se acepta si existe; si no, null.
-async function resolveRequestedProfessional(pool: pg.Pool, raw: unknown): Promise<number | null> {
+// El professional declarado en el body, si viene, debe existir, estar
+// verificado y ofrecer el servicio. Si no cumple, 400 (no se crea la reserva).
+// Si no viene profesional, se permite (reserva sin asignar).
+async function resolveRequestedProfessional(
+  pool: pg.Pool,
+  raw: unknown,
+  serviceId: number,
+): Promise<number | null> {
+  if (raw === undefined || raw === null) return null;
   const id = Number(raw);
-  if (!Number.isInteger(id) || id <= 0) return null;
-  const { rows } = await pool.query('SELECT id FROM beauty_professionals WHERE id = $1', [id]);
-  return rows[0] ? id : null;
+  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'invalid_professional');
+  const { rows } = await pool.query<{ verification_status: string | null }>(
+    'SELECT verification_status FROM beauty_professionals WHERE id = $1',
+    [id],
+  );
+  const pro = rows[0];
+  if (!pro) throw new HttpError(400, 'invalid_professional');
+  if (pro.verification_status !== 'verified') throw new HttpError(400, 'professional_not_verified');
+  const offers = await pool.query(
+    'SELECT 1 FROM professional_services WHERE professional_id = $1 AND service_id = $2 LIMIT 1',
+    [id, serviceId],
+  );
+  if (offers.rowCount === 0) throw new HttpError(400, 'professional_does_not_offer_service');
+  return id;
 }
 
 async function loadBooking(pool: pg.Pool, rawId: string | undefined | string[]): Promise<BookingRow | null> {
