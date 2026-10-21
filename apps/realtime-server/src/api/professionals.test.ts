@@ -83,6 +83,16 @@ maybe('POST /me crea el perfil: user del token, pending, rating 0, offline', asy
   assert.equal(row.rows[0].user, newProUser);
 });
 
+maybe('POST /me por segunda vez -> 409 (sin duplicados)', async () => {
+  const res = await api('POST', '/api/professionals/me', newProUser, { displayName: 'Duplicado' });
+  assert.equal(res.status, 409);
+  assert.equal(res.json.error, 'profile_exists');
+  const count = await pool.query(`SELECT COUNT(*)::int AS n FROM beauty_professionals WHERE "user" = $1`, [
+    newProUser,
+  ]);
+  assert.equal(count.rows[0].n, 1);
+});
+
 maybe('PATCH /me ignora verification_status=verified en create (no existe tal campo)', async () => {
   // El POST no acepta verification_status: pasar campos extra no rompe, pero
   // si se envía por PATCH debe dar 400.
@@ -112,25 +122,66 @@ maybe('PATCH /me con verification_status en el body -> 400 forbidden_field', asy
   assert.equal(res.json.error, 'forbidden_field');
 });
 
-maybe('PATCH /me permite campos de la lista blanca', async () => {
+maybe('PATCH /me isOnline=true con perfil NO verificado -> 403', async () => {
+  // El pro recién creado está en 'pending': no puede anunciarse online.
+  const res = await api('PATCH', '/api/professionals/me', newProUser, { isOnline: true });
+  assert.equal(res.status, 403);
+  assert.equal(res.json.error, 'professional_not_verified');
+});
+
+maybe('PATCH /me permite campos de la lista blanca (sin isOnline)', async () => {
   const res = await api('PATCH', '/api/professionals/me', newProUser, {
     displayName: 'Nuevo Pro Editado',
     bio: 'Hola',
-    isOnline: true,
     yearsExp: 3,
+    specialties: 'manicura, pedicura',
   });
   assert.equal(res.status, 200);
   assert.equal(res.json.data.displayName, 'Nuevo Pro Editado');
-  assert.equal(res.json.data.isOnline, true);
   assert.equal(res.json.data.yearsExp, 3);
+  assert.equal(res.json.data.specialties, 'manicura, pedicura');
 });
 
-maybe('PATCH /me solo admite verificationStatus=pending', async () => {
+maybe('PATCH /me rechaza phone con formato inválido -> 400', async () => {
+  const res = await api('PATCH', '/api/professionals/me', newProUser, { phone: 'abc!!' });
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'invalid_body');
+});
+
+maybe('PATCH /me verificationStatus=pending solo desde rejected (409 en pending)', async () => {
+  // El perfil está en 'pending': reenviar a 'pending' no es transición válida.
+  const res = await api('PATCH', '/api/professionals/me', newProUser, {
+    verificationStatus: 'pending',
+  });
+  assert.equal(res.status, 409);
+  assert.equal(res.json.error, 'invalid_transition');
+});
+
+maybe('PATCH /me verificationStatus=pending funciona desde rejected', async () => {
+  await pool.query(
+    `UPDATE beauty_professionals SET verification_status = 'rejected' WHERE "user" = $1`,
+    [newProUser],
+  );
   const res = await api('PATCH', '/api/professionals/me', newProUser, {
     verificationStatus: 'pending',
   });
   assert.equal(res.status, 200);
   assert.equal(res.json.data.verificationStatus, 'pending');
+});
+
+maybe('PATCH /me isOnline=true funciona tras verificar (admin)', async () => {
+  await pool.query(
+    `UPDATE beauty_professionals SET verification_status = 'verified' WHERE "user" = $1`,
+    [newProUser],
+  );
+  const res = await api('PATCH', '/api/professionals/me', newProUser, { isOnline: true });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.data.isOnline, true);
+  // Cleanup para no dejar el fixture online.
+  await pool.query(
+    `UPDATE beauty_professionals SET verification_status = 'pending', is_online = false WHERE "user" = $1`,
+    [newProUser],
+  );
 });
 
 maybe('GET /me devuelve el perfil propio', async () => {

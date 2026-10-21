@@ -15,6 +15,7 @@ import {
   resolveBookingAccess,
   resolveOwnNewBooking,
   resolveOwnProfessionalId,
+  resolveOwnVerifiedProfessionalId,
   verifyAccessToken,
   type AuthedUser,
 } from './auth.js';
@@ -167,6 +168,7 @@ app.get('/realtime/nearby', (req, res) => {
          FROM professional_locations pl
          JOIN beauty_professionals bp ON bp.id = pl.professional_id
          WHERE bp.is_online = true
+           AND bp.verification_status = 'verified'
            AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
          ORDER BY pl.geom::geography <-> ST_SetSRID(ST_MakePoint($2,$1),4326)::geography
          LIMIT $4`,
@@ -307,7 +309,8 @@ io.on('connection', (socket) => {
   };
 
   socket.on('prof:online', async () => {
-    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    // Solo un profesional VERIFICADO puede anunciarse online (gate servidor).
+    const pid = await resolveOwnVerifiedProfessionalId(pool, me.userId);
     if (pid === null) { forbidden('prof:online'); return; }
     socket.join(`prof:${pid}`);
     await redis.set(`online:${pid}`, '1', 'EX', 40);
@@ -325,7 +328,7 @@ io.on('connection', (socket) => {
 
   // Heartbeat explícito (Fase 5): el pro lo llama cada ~25s para no expirar TTL 40s.
   socket.on('prof:heartbeat', async () => {
-    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    const pid = await resolveOwnVerifiedProfessionalId(pool, me.userId);
     if (pid === null) return;
     await redis.expire(`online:${pid}`, 40);
   });
@@ -334,7 +337,8 @@ io.on('connection', (socket) => {
     if (!isValidLatLng(lat, lng)) { stats.locInvalid += 1; return; }
     if (booking_id !== undefined && booking_id !== null && !isValidId(booking_id)) { stats.locInvalid += 1; return; }
     // El GPS siempre se atribuye al perfil propio: el id declarado se ignora.
-    const pid = await resolveOwnProfessionalId(pool, me.userId);
+    // Solo profesionales verificados publican ubicación (gate servidor).
+    const pid = await resolveOwnVerifiedProfessionalId(pool, me.userId);
     if (pid === null) { forbidden('location:update'); return; }
     if (professional_id !== undefined && professional_id !== null
         && String(professional_id) !== String(pid)) {
@@ -479,6 +483,7 @@ io.on('connection', (socket) => {
         FROM beauty_professionals p
         JOIN professional_locations l ON l.professional_id = p.id
         WHERE p.is_online = true
+          AND p.verification_status = 'verified'
           AND ST_DWithin(l.geom::geography, ST_MakePoint($1,$2)::geography, $3)
       `;
       const params: any[] = [lng, lat, radius];
@@ -547,9 +552,15 @@ setInterval(async () => {
         lat = parsed.lat; lng = parsed.lng;
       } catch { continue; }
       if (!isValidLatLng(lat, lng)) continue;
+      // Doble gate: solo persiste GPS de profesionales verificados (cubre el
+      // caso de un pro verificado al reportar y des-verificado luego).
       await pool.query(
         `INSERT INTO professional_locations (professional_id, geom, updated_at)
-         VALUES ($1, ST_SetSRID(ST_MakePoint($2,$3),4326), NOW())
+         SELECT $1, ST_SetSRID(ST_MakePoint($2,$3),4326), NOW()
+         WHERE EXISTS (
+           SELECT 1 FROM beauty_professionals
+           WHERE id = $1 AND verification_status = 'verified'
+         )
          ON CONFLICT (professional_id) DO UPDATE SET geom=EXCLUDED.geom, updated_at=NOW()`,
         [profId, lng, lat]
       );

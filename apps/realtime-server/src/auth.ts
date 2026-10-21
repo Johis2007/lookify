@@ -56,6 +56,18 @@ export async function resolveOwnProfessionalId(pool: Pool, userId: string): Prom
   return typeof id === 'number' ? id : null;
 }
 
+// Igual que resolveOwnProfessionalId pero SOLO devuelve el id si el perfil
+// está 'verified'. Se usa para operaciones que exigen verificación del lado
+// servidor (ponerse online, publicar GPS, aparecer en el radar).
+export async function resolveOwnVerifiedProfessionalId(pool: Pool, userId: string): Promise<number | null> {
+  const { rows } = await pool.query(
+    "SELECT id FROM beauty_professionals WHERE \"user\" = $1 AND verification_status = 'verified' LIMIT 1",
+    [userId]
+  );
+  const id = rows[0]?.id;
+  return typeof id === 'number' ? id : null;
+}
+
 // Acceso a una reserva: el cliente dueño, el pro asignado, o un admin.
 // Devuelve el id numérico si hay acceso, null si no (inexistente o ajena).
 export async function resolveBookingAccess(

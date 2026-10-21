@@ -7,6 +7,10 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 ALTER TABLE IF EXISTS professional_locations
   ADD COLUMN IF NOT EXISTS geom geometry(Point, 4326);
 
+-- Una sola fila de ubicación por profesional (habilita el UPSERT del batch GPS).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_prof_loc_professional
+  ON professional_locations (professional_id);
+
 CREATE INDEX IF NOT EXISTS idx_prof_loc_geom
   ON professional_locations USING GIST (geom);
 

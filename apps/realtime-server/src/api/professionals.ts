@@ -45,23 +45,34 @@ export const PROFILE_FORBIDDEN_FIELDS = [
   'current_lng',
 ] as const;
 
-const CreateProfileBody = z.object({
-  displayName: z.string().trim().min(1).max(120),
-  phone: z.string().trim().min(3).max(40).optional(),
-  bio: z.string().trim().max(2000).optional(),
-});
+// Teléfono: dígitos, espacios, + - ( ). Longitud 7..20.
+const PhoneField = z
+  .string()
+  .trim()
+  .regex(/^[+()\-\s\d]{7,20}$/, 'invalid_phone')
+  .max(24);
+
+const CreateProfileBody = z
+  .object({
+    displayName: z.string().trim().min(1).max(120),
+    phone: PhoneField.optional(),
+    bio: z.string().trim().max(2000).optional(),
+  })
+  .strict();
 
 // PATCH: al menos un campo, todos de la lista blanca (nombres en camelCase).
 const PatchProfileBody = z
   .object({
     displayName: z.string().trim().min(1).max(120).optional(),
-    phone: z.string().trim().min(3).max(40).nullable().optional(),
+    phone: PhoneField.nullable().optional(),
     bio: z.string().trim().max(2000).nullable().optional(),
     avatar: z.string().uuid().nullable().optional(),
     isOnline: z.boolean().optional(),
     yearsExp: z.number().int().min(0).max(80).nullable().optional(),
-    specialties: z.array(z.string().trim().min(1).max(80)).max(30).nullable().optional(),
-    // Solo se acepta 'pending' (reenviar a revisión); verified/rejected es admin.
+    // specialties es text en la base: se maneja como string libre acotado.
+    specialties: z.string().trim().max(500).nullable().optional(),
+    // Solo se acepta 'pending' (reenviar a revisión tras un rechazo);
+    // verified/rejected es del admin.
     verificationStatus: z.literal('pending').optional(),
   })
   .strict();
@@ -176,6 +187,27 @@ export function createProfessionalsRouter(pool: pg.Pool): Router {
       const parsed = PatchProfileBody.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'invalid_body');
       const body = parsed.data as Record<string, unknown>;
+
+      // Estado actual del perfil propio: necesario para aplicar los gates de
+      // negocio (ponerse online / reenviar a revisión) ANTES de escribir.
+      const current = await pool.query<{ verification_status: string | null }>(
+        'SELECT verification_status FROM beauty_professionals WHERE "user" = $1 LIMIT 1',
+        [user.userId],
+      );
+      if (!current.rows[0]) throw new HttpError(404, 'not_found');
+      const currentStatus = current.rows[0].verification_status;
+
+      // Gate servidor: solo un profesional verificado puede ponerse ONLINE.
+      // El gate client-side (assertHabilitado) queda como UX, no como control.
+      if (body.isOnline === true && currentStatus !== 'verified') {
+        throw new HttpError(403, 'professional_not_verified');
+      }
+
+      // Reenviar a revisión ('pending') solo es válido desde 'rejected'. Evita
+      // que un pro 'verified' se degrade o que dispare revisiones espurias.
+      if (body.verificationStatus === 'pending' && currentStatus !== 'rejected') {
+        throw new HttpError(409, 'invalid_transition');
+      }
 
       const sets: string[] = [];
       const values: unknown[] = [];
