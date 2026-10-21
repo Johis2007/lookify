@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type pg from 'pg';
 import { resolveOwnProfessionalId } from '../auth.js';
 import { withTransaction } from '../db.js';
+import { findCandidates, offerToCandidates, MATCH_RADIUS_M, MATCH_OFFER_TTL_MS } from '../matching.js';
 import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } from './http.js';
 
 // BFF de reservas (Paso 2B). Todo el acceso a bookings/booking_events pasa por
@@ -123,6 +124,32 @@ type BookingEventRow = {
   created_at: Date | null;
 };
 
+// Oferta vigente vista por el profesional antes de aceptar (claim).
+type AvailableRow = {
+  id: number;
+  service: number | null;
+  price_snapshot: string | null;
+  lat: number | null;
+  lng: number | null;
+  created_at: Date | null;
+  expires_at: Date | null;
+  distance_m: number;
+  s_id: number | null;
+  s_name: string | null;
+  s_duration: number | null;
+  client_first_name: string | null;
+};
+
+// Redondea a ~500 m (0.005°) para no revelar el punto exacto antes de aceptar.
+function round5(v: number | null): number | null {
+  return v === null ? null : Math.round(v * 200) / 200;
+}
+
+function primerNombre(v?: string | null): string {
+  const s = (v ?? '').trim();
+  return s ? s.split(/\s+/)[0] : 'Cliente';
+}
+
 // Forma compatible con DBooking del frontend (snake_case, service embebido),
 // para que el mapeo existente siga funcionando sin tocar la app.
 function toProBookingDto(row: ProBookingRow) {
@@ -179,10 +206,13 @@ export type BookingsDeps = {
   // Emisor de eventos socket: se llama tras confirmar la transacción.
   emitNew: (bookingId: number, professionalId: number | null, clientId: string) => void;
   emitStatus: (bookingId: number, status: string) => void;
+  // Modelo "claim": oferta difundida a cada candidato y aviso de que otro la tomó.
+  emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
+  emitTaken?: (bookingId: number, professionalId: number) => void;
 };
 
 export function createBookingsRouter(deps: BookingsDeps): Router {
-  const { pool, emitNew, emitStatus } = deps;
+  const { pool, emitNew, emitStatus, emitOffer, emitTaken } = deps;
   const router = Router();
 
   router.use(requireAuth);
@@ -216,12 +246,19 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       // ofrecer el servicio solicitado. Si no cumple -> 400 (no se crea).
       const professional = await resolveRequestedProfessional(pool, req.body?.professionalId, body.serviceId);
 
+      // Sin professionalId: modelo "claim". Se crea 'pending' sin asignar y se
+      // difunde a candidatos cercanos (ronda 1 = 3 km) con vencimiento a 60 s.
+      const isClaim = professional === null;
+
       const inserted = await withTransaction(pool, async (client) => {
         const { rows } = await client.query<BookingRow>(
           `INSERT INTO bookings
              (client, professional, service, status, price_snapshot,
-              address_text, lat, lng, scheduled_at, payment_method, created_at)
-           VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,$9,NOW())
+              address_text, lat, lng, scheduled_at, payment_method,
+              match_round, expires_at, created_at)
+           VALUES ($1,$2,$3,'pending',$4,$5,$6,$7,$8,$9,$10,
+             CASE WHEN $11 THEN NOW() + ($12::int * interval '1 millisecond') ELSE NULL END,
+             NOW())
            RETURNING ${BOOKING_FIELDS}`,
           [
             user.userId,
@@ -233,6 +270,9 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
             body.lng,
             body.scheduledAt ?? null,
             body.paymentMethod ?? null,
+            isClaim ? 1 : 0,
+            isClaim,
+            MATCH_OFFER_TTL_MS,
           ],
         );
         const booking = rows[0];
@@ -241,6 +281,14 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       });
 
       emitNew(inserted.id, inserted.professional, user.userId);
+
+      // Difusión a candidatos SOLO a la sala de cada uno (nunca broadcast).
+      if (isClaim) {
+        const candidates = await findCandidates(pool, body.serviceId, body.lat, body.lng, MATCH_RADIUS_M[0]);
+        const ids = await offerToCandidates(pool, inserted.id, 1, candidates);
+        for (const pid of ids) emitOffer?.(inserted.id, pid, user.userId);
+      }
+
       res.status(201).json({ data: toBookingDto(inserted) });
     }),
   );
@@ -289,6 +337,51 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
         params,
       );
       res.json({ data: rows.map(toProBookingDto) });
+    }),
+  );
+
+  // GET /api/bookings/pro/available — ofertas vigentes (claim) para el pro del
+  // token. Vista REDUCIDA antes de aceptar: servicio, precio, distancia, zona
+  // aproximada (coords redondeadas ~500 m) y nombre de pila. La dirección
+  // exacta y el teléfono solo se exponen tras aceptar (GET /:id).
+  router.get(
+    '/pro/available',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const user = req.user!;
+      const ownPro = await resolveOwnProfessionalId(pool, user.userId);
+      if (ownPro === null) throw new HttpError(404, 'not_found');
+      const { rows } = await pool.query<AvailableRow>(
+        `SELECT b.id, b.service, b.price_snapshot, b.lat, b.lng, b.created_at, b.expires_at,
+                bc.distance_m,
+                s.id AS s_id, s.name AS s_name, s.duration_min AS s_duration,
+                u.first_name AS client_first_name
+           FROM booking_candidates bc
+           JOIN bookings b ON b.id = bc.booking_id
+           LEFT JOIN beauty_services s ON s.id = b.service
+           LEFT JOIN directus_users u ON u.id = b.client
+          WHERE bc.professional_id = $1
+            AND bc.status = 'offered'
+            AND b.status = 'pending'
+            AND b.professional IS NULL
+          ORDER BY b.created_at ASC
+          LIMIT 50`,
+        [ownPro],
+      );
+      res.json({
+        data: rows.map((r) => ({
+          id: String(r.id),
+          servicioId: r.s_id === null ? null : String(r.s_id),
+          servicioNombre: r.s_name ?? 'Servicio',
+          duracionMin: r.s_duration ?? 60,
+          precio: r.price_snapshot === null ? 0 : Number(r.price_snapshot),
+          distanciaM: Math.round(Number(r.distance_m)),
+          // Zona aproximada: ~500 m (0.005°). Nunca la dirección exacta.
+          zona: { lat: round5(r.lat), lng: round5(r.lng) },
+          clientePrimerNombre: primerNombre(r.client_first_name),
+          expiraEn: r.expires_at ? r.expires_at.toISOString() : null,
+          creadaEn: r.created_at ? r.created_at.toISOString() : null,
+        })),
+      });
     }),
   );
 
@@ -369,7 +462,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
     router.post(
       `/:id/${action}`,
       asyncHandler(async (req: AuthedRequest, res: Response) => {
-        await handleTransition(pool, req, res, action, emitStatus);
+        await handleTransition(pool, req, res, action, emitStatus, emitTaken);
       }),
     );
   }
@@ -458,12 +551,105 @@ async function insertEvent(
   );
 }
 
+// Claim: el primer profesional elegible que acepta se queda con la reserva.
+// Es un UPDATE atómico: WHERE status='pending' AND professional IS NULL.
+async function claimBooking(
+  pool: pg.Pool,
+  req: AuthedRequest,
+  res: Response,
+  booking: BookingRow,
+  ownPro: number | null,
+  isAdmin: boolean,
+  emitStatus: (bookingId: number, status: string) => void,
+  emitTaken?: (bookingId: number, professionalId: number) => void,
+): Promise<void> {
+  void req;
+  if (ownPro === null) throw new HttpError(404, 'not_found');
+  // Debe ser elegible: verificado y ofrecer el servicio.
+  const elig = await pool.query<{ ok: boolean }>(
+    `SELECT (bp.verification_status = 'verified'
+             AND EXISTS (SELECT 1 FROM professional_services ps
+                          WHERE ps.professional_id = bp.id AND ps.service_id = $2)) AS ok
+       FROM beauty_professionals bp WHERE bp.id = $1`,
+    [ownPro, booking.service],
+  );
+  if (!elig.rows[0]?.ok) throw new HttpError(403, 'professional_not_verified');
+  // Y debe tener una oferta vigente para esta reserva (o ser admin probando).
+  const offered = await pool.query(
+    `SELECT 1 FROM booking_candidates
+      WHERE booking_id = $1 AND professional_id = $2 AND status = 'offered' LIMIT 1`,
+    [booking.id, ownPro],
+  );
+  if (offered.rowCount === 0 && !isAdmin) throw new HttpError(409, 'not_offered');
+
+  const claimed = await withTransaction(pool, async (client) => {
+    const { rows } = await client.query<BookingRow>(
+      `UPDATE bookings
+          SET status = 'accepted', professional = $2, expires_at = NULL
+        WHERE id = $1 AND status = 'pending' AND professional IS NULL
+      RETURNING ${BOOKING_FIELDS}`,
+      [booking.id, ownPro],
+    );
+    if (rows.length === 0) return null;
+    await client.query(
+      `UPDATE booking_candidates SET status = 'taken'
+        WHERE booking_id = $1 AND professional_id = $2`,
+      [booking.id, ownPro],
+    );
+    await client.query(
+      `UPDATE booking_candidates SET status = 'declined'
+        WHERE booking_id = $1 AND professional_id <> $2 AND status = 'offered'`,
+      [booking.id, ownPro],
+    );
+    await client.query(
+      `INSERT INTO booking_events (booking, status, lat, lng, note, created_at)
+       VALUES ($1,'accepted',NULL,NULL,'professional',NOW())`,
+      [booking.id],
+    );
+    return rows[0];
+  });
+
+  if (!claimed) throw new HttpError(409, 'conflict');
+
+  // Los demás candidatos dejan de ver la oferta.
+  const others = await pool.query<{ professional_id: number }>(
+    `SELECT professional_id FROM booking_candidates
+      WHERE booking_id = $1 AND professional_id <> $2 AND status = 'declined'`,
+    [booking.id, ownPro],
+  );
+  for (const o of others.rows) emitTaken?.(booking.id, Number(o.professional_id));
+
+  emitStatus(claimed.id, 'accepted');
+  res.json({ data: toBookingDto(claimed) });
+}
+
+// Rechazar (claim): solo saca la oferta de ESTE profesional; no cancela.
+async function declineOffer(
+  pool: pg.Pool,
+  req: AuthedRequest,
+  res: Response,
+  booking: BookingRow,
+  ownPro: number | null,
+  isAdmin: boolean,
+): Promise<void> {
+  void req;
+  if (ownPro === null || isAdmin) throw new HttpError(404, 'not_found');
+  const { rowCount } = await pool.query(
+    `UPDATE booking_candidates SET status = 'declined'
+      WHERE booking_id = $1 AND professional_id = $2 AND status = 'offered'`,
+    [booking.id, ownPro],
+  );
+  if (rowCount === 0) throw new HttpError(409, 'not_offered');
+  res.json({ data: { id: booking.id, status: 'pending' } });
+}
+
 async function handleTransition(
   pool: pg.Pool,
   req: AuthedRequest,
   res: Response,
   action: ProAction | ClientAction,
   emitStatus: (bookingId: number, status: string) => void,
+  emitTaken?: (bookingId: number, professionalId: number) => void,
 ): Promise<void> {
   const user = req.user!;
   const id = Number(req.params.id);
@@ -479,6 +665,23 @@ async function handleTransition(
   const ownPro = await resolveOwnProfessionalId(pool, user.userId);
   const isOwnerPro = ownPro !== null && ownPro === booking.professional;
   const isOwnerClient = booking.client !== null && booking.client === user.userId;
+
+  // --- Modelo "claim": reserva sin profesional asignado ---
+  if (booking.professional === null && booking.status === 'pending') {
+    if (action === 'accept') {
+      await claimBooking(pool, req, res, booking, ownPro, user.isAdmin, emitStatus, emitTaken);
+      return;
+    }    if (action === 'reject') {
+      await declineOffer(pool, req, res, booking, ownPro, user.isAdmin);
+      return;
+    }
+    if (action === 'cancel' && isOwnerClient) {
+      // El cliente cancela una reserva aún sin asignar: permitido.
+    } else {
+      // start/complete/cancel(pro) no aplican sin profesional asignado.
+      throw new HttpError(404, 'not_found');
+    }
+  }
 
   let to: BookingStatus;
   let fromStatuses: BookingStatus[];

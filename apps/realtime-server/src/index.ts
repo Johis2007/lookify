@@ -22,6 +22,7 @@ import {
 import { createBookingsRouter } from './api/bookings.js';
 import { createProfessionalsRouter } from './api/professionals.js';
 import { errorHandler } from './api/http.js';
+import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
 
 // Carga de entorno: primero apps/realtime-server/.env (si existe) y, como
 // fallback, el .env de la raíz del monorepo (donde viven DIRECTUS_SECRET y las
@@ -236,6 +237,16 @@ app.use(
     },
     emitStatus: (bookingId, status) => {
       io.to(`booking:${bookingId}`).emit('booking:status', { booking_id: String(bookingId), status });
+    },
+    emitOffer: (bookingId, professionalId, clientId) => {
+      io.to(`prof:${professionalId}`).emit('booking:new', {
+        booking_id: String(bookingId),
+        client_id: clientId,
+        offer: true,
+      });
+    },
+    emitTaken: (bookingId, professionalId) => {
+      io.to(`prof:${professionalId}`).emit('booking:taken', { booking_id: String(bookingId) });
     },
   }),
 );
@@ -573,3 +584,25 @@ httpServer.listen(PORT, () => {
   log('realtime up', { port: PORT, cors: CORS_OPEN ? 'open-dev' : 'restricted' });
   if (CORS_OPEN) logWarn('CORS abierto (*) — solo para DEV; en prod define CORS_ORIGIN');
 });
+
+// Barrido del modelo "claim": cada 10 s amplía radio (3->6 km) o expira
+// reservas vencidas. Estado en la base -> sobrevive reinicios. Se usa un
+// setInterval simple en vez de BullMQ: la carga es baja y no hace falta cola.
+setInterval(() => {
+  sweepMatching({
+    pool,
+    emitOffer: (bookingId, professionalId, clientId) => {
+      io.to(`prof:${professionalId}`).emit('booking:new', {
+        booking_id: String(bookingId),
+        client_id: clientId,
+        offer: true,
+      });
+    },
+    emitExpired: (bookingId) => {
+      io.to(`booking:${bookingId}`).emit('booking:status', {
+        booking_id: String(bookingId),
+        status: 'expired',
+      });
+    },
+  }).catch((e) => logErr('match sweep error', { err: String(e) }));
+}, MATCH_SWEEP_INTERVAL_MS).unref();

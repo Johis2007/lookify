@@ -123,12 +123,23 @@ before(async () => {
     `INSERT INTO professional_services (professional_id, service_id) VALUES ($1, $2), ($3, $2)`,
     [proId, serviceId, foreignProId],
   );
+  // Ubicaciones para el modelo "claim" (cerca del punto de prueba 4.7,-74.0;
+  // el lejano ~20 km para verificar el filtro por radio).
+  await pool.query(
+    `INSERT INTO professional_locations (professional_id, geom, updated_at)
+     VALUES ($1, ST_SetSRID(ST_MakePoint(-74.0, 4.7),4326), NOW()),
+            ($2, ST_SetSRID(ST_MakePoint(-73.9, 4.7),4326), NOW())
+     ON CONFLICT (professional_id) DO UPDATE SET geom = EXCLUDED.geom, updated_at = NOW()`,
+    [proId, foreignProId],
+  );
 });
 
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
   await pool.query('DELETE FROM booking_events WHERE booking IN (SELECT id FROM bookings WHERE client = ANY($1))', [[clientA, clientB]]);
+  await pool.query('DELETE FROM booking_candidates WHERE booking_id IN (SELECT id FROM bookings WHERE client = ANY($1))', [[clientA, clientB]]);
   await pool.query('DELETE FROM bookings WHERE client = ANY($1)', [[clientA, clientB]]);
+  await pool.query('DELETE FROM professional_locations WHERE professional_id = ANY($1)', [[proId, foreignProId]]);
   await pool.query('DELETE FROM professional_services WHERE service_id = $1', [serviceId]);
   await pool.query('DELETE FROM beauty_services WHERE id = $1', [serviceId]);
   await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [[proId, foreignProId]]);
@@ -483,4 +494,127 @@ maybe('las transiciones escriben eventos semánticos (iniciado/finalizado)', asy
   assert.ok(statuses.includes('finalizado'), 'evento finalizado (no completed)');
   assert.ok(!statuses.includes('in_progress'), 'sin evento crudo in_progress');
   assert.ok(!statuses.includes('completed'), 'sin evento crudo completed');
+});
+
+// ---------------------------------------------------------------------------
+// Modelo "claim": reservas sin profesional asignado.
+// ---------------------------------------------------------------------------
+
+async function makeClaimBooking(lat = 4.7, lng = -74.0): Promise<number> {
+  // Sin professionalId -> claim. El pro está online para ser candidato.
+  await pool.query(`UPDATE beauty_professionals SET is_online = true WHERE id = $1`, [proId]);
+  const res = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle Claim',
+    lat,
+    lng,
+  });
+  assert.equal(res.status, 201);
+  assert.equal(res.json.data.status, 'pending');
+  assert.equal(res.json.data.professionalId, null);
+  return res.json.data.id as number;
+}
+
+maybe('claim: el pro cercano recibe la oferta (candidato ronda 1)', async () => {
+  const bid = await makeClaimBooking();
+  const cand = await pool.query<{ professional_id: number; round: number }>(
+    `SELECT professional_id, round FROM booking_candidates WHERE booking_id = $1`,
+    [bid],
+  );
+  const ids = cand.rows.map((r) => Number(r.professional_id));
+  assert.ok(ids.includes(proId), 'el pro cercano es candidato');
+  assert.ok(!ids.includes(foreignProId), 'el pro a 20 km no está en radio 3 km');
+  assert.equal(Number(cand.rows[0].round), 1);
+});
+
+maybe('claim: GET /pro/available muestra la oferta y oculta la dirección exacta', async () => {
+  const bid = await makeClaimBooking();
+  const res = await api('GET', '/api/bookings/pro/available', proUser);
+  assert.equal(res.status, 200);
+  const offer = res.json.data.find((o: any) => o.id === String(bid));
+  assert.ok(offer, 'la oferta aparece');
+  assert.equal(offer.direccion, undefined, 'sin dirección exacta antes de aceptar');
+  assert.equal(offer.telefono, undefined, 'sin teléfono antes de aceptar');
+  assert.ok(offer.zona && typeof offer.zona.lat === 'number', 'zona aproximada presente');
+  assert.equal(offer.clientePrimerNombre, 'Test');
+});
+
+maybe('claim: el primero en aceptar gana; el otro recibe 409', async () => {
+  const bid = await makeClaimBooking();
+  // Pro 2 no está en la oferta (fuera de radio) ni es elegible por oferta.
+  const outsider = await api('POST', `/api/bookings/${bid}/accept`, foreignProUser);
+  assert.equal(outsider.status, 409);
+  const win = await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  assert.equal(win.status, 200);
+  assert.equal(win.json.data.status, 'accepted');
+  assert.equal(win.json.data.professionalId, proId);
+  const again = await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  assert.equal(again.status, 409);
+});
+
+maybe('claim: tras aceptar, la oferta desaparece de /pro/available', async () => {
+  const bid = await makeClaimBooking();
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  const res = await api('GET', '/api/bookings/pro/available', proUser);
+  assert.ok(!res.json.data.some((o: any) => o.id === String(bid)), 'ya no está disponible');
+});
+
+maybe('claim: rechazar solo quita la oferta (reserva sigue pending)', async () => {
+  const bid = await makeClaimBooking();
+  const rej = await api('POST', `/api/bookings/${bid}/reject`, proUser);
+  assert.equal(rej.status, 200);
+  const ev = await pool.query<{ status: string }>(`SELECT status FROM bookings WHERE id = $1`, [bid]);
+  assert.equal(ev.rows[0].status, 'pending');
+  const cand = await pool.query<{ status: string }>(
+    `SELECT status FROM booking_candidates WHERE booking_id = $1 AND professional_id = $2`,
+    [bid, proId],
+  );
+  assert.equal(cand.rows[0].status, 'declined');
+});
+
+maybe('claim: pro no verificado no puede aceptar aunque sea candidato', async () => {
+  const bid = await makeClaimBooking();
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'pending' WHERE id = $1`, [proId]);
+  const res = await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  assert.equal(res.status, 403);
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+});
+
+maybe('claim: no participante no ve la reserva ni la acepta (404)', async () => {
+  const bid = await makeClaimBooking();
+  const view = await api('GET', `/api/bookings/${bid}`, clientB);
+  assert.equal(view.status, 404);
+  const acc = await api('POST', `/api/bookings/${bid}/accept`, clientB);
+  assert.equal(acc.status, 404);
+});
+
+maybe('claim: el barrido amplía a 6 km y expira tras dos rondas', async () => {
+  const { sweepMatching } = await import('../matching.js');
+  const bid = await makeClaimBooking();
+  // Vencer la ronda 1.
+  await pool.query(`UPDATE bookings SET expires_at = NOW() - interval '1 second' WHERE id = $1`, [bid]);
+  const n1 = await sweepMatching({ pool, emitOffer: () => {}, emitExpired: () => {} });
+  assert.ok(n1 >= 1);
+  const r2 = await pool.query<{ match_round: number; status: string }>(
+    `SELECT match_round, status FROM bookings WHERE id = $1`,
+    [bid],
+  );
+  assert.equal(r2.rows[0].match_round, 2);
+  assert.equal(r2.rows[0].status, 'pending');
+  // No se re-ofrece al mismo pro; el lejano (20 km) sigue fuera de 6 km.
+  const cand2 = await pool.query<{ professional_id: number }>(
+    `SELECT professional_id FROM booking_candidates WHERE booking_id = $1 AND round = 2`,
+    [bid],
+  );
+  assert.equal(cand2.rows.length, 0, 'sin candidatos nuevos en la ronda 2');
+  // Vencer la ronda 2 -> expired.
+  await pool.query(`UPDATE bookings SET expires_at = NOW() - interval '1 second' WHERE id = $1`, [bid]);
+  await sweepMatching({ pool, emitOffer: () => {}, emitExpired: () => {} });
+  const r3 = await pool.query<{ status: string }>(`SELECT status FROM bookings WHERE id = $1`, [bid]);
+  assert.equal(r3.rows[0].status, 'expired');
+  const ev = await pool.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM booking_events WHERE booking = $1 AND status = 'expired'`,
+    [bid],
+  );
+  assert.equal(ev.rows[0].count, '1');
 });
