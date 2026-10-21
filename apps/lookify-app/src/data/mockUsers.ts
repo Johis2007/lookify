@@ -15,7 +15,7 @@ export interface MockUser {
 
 const seed: MockUser[] = [
   {
-    email: 'cliente@lookify.test',
+    email: 'cliente@lookify.app',
     password: 'Lookify123',
     nombre: 'Cliente demo',
   },

@@ -2,9 +2,12 @@
 // LÍMITES DE LA INSTANCIA (licencia Core gratuita):
 // - Solo reglas estáticas (collection+action+fields ['*']). Todo lo dinámico
 //   ($CURRENT_USER, presets, validation, recorte de campos) responde 403.
-// - SEATS = 3: cada usuario con rol admin o App User ocupa uno. Superado el
-//   tope, crear usuarios (registro) falla con LIMIT_EXCEEDED. Solución real:
-//   licencia Directus (también desbloquea reglas granulares).
+// - SEATS: la licencia Core solo cuenta usuarios con App Access o Admin Access
+//   (los que entran a Directus Studio). Un rol/policy SIN app_access no consume
+//   seat: sus usuarios usan la API con su token pero no pueden entrar al panel.
+//   Por eso la policy "Lookify App" se crea con app_access=false y no cuenta.
+//   (Si la instancia cayera en LIMIT_EXCEEDED, la solución real es licencia
+//   Directus, que además desbloquea reglas granulares.)
 // Por eso:
 // - Public (sin login): SOLO crear usuarios para registro. El rol se asigna
 //   vía settings.public_registration_role (forzado por Directus, probado en
@@ -18,6 +21,9 @@
 // - Admin (admin_access): omite estas reglas, sin cambios.
 // - Registro público asigna el rol App User y los sin-rol se migran (si seats
 //   lo permite; si no, ver SQL en el paso 6).
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 const URL = process.env.DIRECTUS_URL || 'http://localhost:8055';
 const TOKEN = process.env.ADMIN_TOKEN;
 if (!TOKEN) { console.error('Falta ADMIN_TOKEN'); process.exit(1); }
@@ -56,13 +62,24 @@ let roleId;
 }
 
 // 2. Policy Lookify App + acceso al rol.
+// app_access:false -> los usuarios de la app NO ocupan seat (solo API, sin
+// panel). Idempotente: si la policy ya existe, se fuerza el valor actualizado.
+const APP_POLICY_BODY = {
+  name: 'Lookify App',
+  app_access: false,
+  admin_access: false,
+  description: 'Permisos granulares de la app (solo API; no consume seat)',
+};
 let appPolicy;
 {
   appPolicy = await findByName('/policies', 'Lookify App');
   if (!appPolicy) {
-    const c = await api('POST', '/policies', { name: 'Lookify App', app_access: true, admin_access: false, description: 'Permisos granulares de la app ($CURRENT_USER)' });
+    const c = await api('POST', '/policies', APP_POLICY_BODY);
     if (c.status !== 200 && c.status !== 201 && c.status !== 204) fail('POST policies', c);
     appPolicy = c.data?.data?.id || (await findByName('/policies', 'Lookify App'));
+  } else {
+    const u = await api('PATCH', `/policies/${appPolicy}`, APP_POLICY_BODY);
+    if (u.status !== 200) fail('PATCH policy Lookify App', u);
   }
   if (!appPolicy) throw new Error('Sin policy Lookify App');
   const a = await api('GET', `/access?filter[policy][_eq]=${appPolicy}&fields=id,role&limit=100`);
@@ -194,5 +211,26 @@ console.log(`app: ${MATRIX.length} permisos aplicados`);
     }
   }
   console.log('registro público -> rol App User');
+}
+
+// 7. Sincronizar EXPO_PUBLIC_APP_ROLE_ID en apps/lookify-app/.env.
+// Este rol cambia por instancia; sin esto habría que copiarlo a mano y el
+// registro fallaría (rol inexistente). Upsert sin tocar el resto de líneas.
+{
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const envPath = join(root, 'apps', 'lookify-app', '.env');
+  const line = `EXPO_PUBLIC_APP_ROLE_ID=${roleId}`;
+  let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+  let replaced = false;
+  lines = lines.map((l) => {
+    if (/^EXPO_PUBLIC_APP_ROLE_ID=/.test(l)) {
+      replaced = true;
+      return line;
+    }
+    return l;
+  });
+  if (!replaced) lines.push(line);
+  writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
+  console.log(`EXPO_PUBLIC_APP_ROLE_ID=${roleId} -> apps/lookify-app/.env`);
 }
 console.log('PERMISSIONS OK (modelo seguro)');

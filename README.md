@@ -76,6 +76,16 @@ inician sesión solos con esas credenciales si no defines `ADMIN_TOKEN`.
 | `LOG_LEVEL` | Nivel de log del realtime (`debug`/`info`/`warn`/`error`) |
 | `PORT` | Puerto del realtime (por defecto 4001) |
 
+El **realtime-server** lee primero `apps/realtime-server/.env` (si existe) y, como
+fallback, el `.env` de la raíz del monorepo. `DIRECTUS_SECRET`, `DATABASE_URL` y
+`REDIS_URL` son obligatorias: si faltan, el proceso imprime el mensaje exacto y
+sale con código `1` (no arranca en silencio).
+
+> **Seats de Directus:** la policy "Lookify App" se crea con `app_access: false`,
+> así que los usuarios de la app (cliente/pro) usan la API pero **no consumen
+> seat** ni pueden entrar al panel. Solo el admin ocupa licencia.
+
+
 ## Notas de BD
 
 - Todo es **idempotente**: `db:setup`, `db:migrate` y `db:seed` pueden
