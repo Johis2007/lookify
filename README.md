@@ -85,6 +85,27 @@ sale con código `1` (no arranca en silencio).
 > así que los usuarios de la app (cliente/pro) usan la API pero **no consumen
 > seat** ni pueden entrar al panel. Solo el admin ocupa licencia.
 
+### BFF de reservas (`/api/bookings`)
+
+El realtime-server también expone un BFF en el mismo puerto (`:4001`) para el
+acceso a reservas. La identidad sale **siempre del JWT** (`Bearer <access token
+de Directus>`), nunca del body; el precio se calcula en el servidor.
+
+| Método y ruta | Quién | Qué hace |
+|---|---|---|
+| `POST /api/bookings` | cliente | Crea la reserva (`pending`); valida servicio activo y calcula el precio |
+| `GET /api/bookings/mine` | cliente | Lista las reservas propias |
+| `GET /api/bookings/:id` | participantes | Detalle; si no es participante → `404` |
+| `POST /api/bookings/:id/accept\|reject` | profesional | `pending → accepted\|rejected` |
+| `POST /api/bookings/:id/start` | profesional | `accepted → in_progress` |
+| `POST /api/bookings/:id/complete` | profesional | `in_progress → completed` |
+| `POST /api/bookings/:id/cancel` | cliente o profesional | `pending\|accepted\|in_progress → cancelled` |
+
+Cada transición hace un `UPDATE` condicional atómico (solo gana quien vea el
+estado previo correcto; doble aceptación → `409`) y escribe el `booking_events`
+en la misma transacción. Los eventos socket `booking:new`/`booking:status` se
+emiten tras confirmar la escritura. Tests: `npm --workspace apps/realtime-server test`.
+
 
 ## Notas de BD
 

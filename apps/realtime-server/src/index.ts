@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer, type IncomingMessage } from 'http';
+import express from 'express';
 import { Server } from 'socket.io';
 import Redis from 'ioredis';
 import pg from 'pg';
@@ -17,6 +18,8 @@ import {
   verifyAccessToken,
   type AuthedUser,
 } from './auth.js';
+import { createBookingsRouter } from './api/bookings.js';
+import { errorHandler } from './api/http.js';
 
 // Carga de entorno: primero apps/realtime-server/.env (si existe) y, como
 // fallback, el .env de la raíz del monorepo (donde viven DIRECTUS_SECRET y las
@@ -101,86 +104,86 @@ function httpBearer(req: IncomingMessage): AuthedUser | null {
   }
 }
 
-const httpServer = createServer((req, res) => {
-  if (req.url === '/health') {
-    // Health con checks reales (Fase 5): redis + postgres.
-    (async () => {
-      let redisOk = false;
-      let pgOk = false;
-      try {
-        const pong = await redis.ping();
-        redisOk = pong === 'PONG';
-      } catch { redisOk = false; }
-      try {
-        await pool.query('SELECT 1');
-        pgOk = true;
-      } catch { pgOk = false; }
-      const ok = redisOk && pgOk;
-      res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({
-        status: ok ? 'ok' : 'degraded',
-        redis: redisOk ? 'up' : 'down',
-        postgres: pgOk ? 'up' : 'down',
-        uptime_s: Math.floor((Date.now() - stats.startedAt) / 1000),
-        cors: CORS_OPEN ? 'open-dev' : 'restricted',
-        stats,
-      }));
-    })();
-    return;
-  }
-  if (req.url && req.url.startsWith('/realtime/nearby')) {
-    // Fase 3/5: query geo centralizada (PostGIS, anti-saturación con limit).
-    // Fase 6: mide latencia p95 (ver scripts/load-test.mjs).
-    // Fase 7: requiere Bearer (mismo JWT que el socket).
-    if (!httpBearer(req)) {
-      stats.nearbyErrors += 1;
-      res.writeHead(401, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'unauthorized' }));
-      return;
-    }
-    const t0 = Date.now();
-    (async () => {
-      try {
-        const u = new URL(req.url || '', 'http://localhost');
-        const lat = Number(u.searchParams.get('lat'));
-        const lng = Number(u.searchParams.get('lng'));
-        const radiusM = Math.min(Math.max(Number(u.searchParams.get('radius')) || 5000, 100), 20000);
-        const limit = Math.min(Math.max(Number(u.searchParams.get('limit')) || 20, 1), 50);
-        if (!isValidLatLng(lat, lng)) {
-          stats.nearbyErrors += 1;
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'lat/lng inválidos' }));
-          return;
-        }
-        const { rows } = await pool.query(
-          `SELECT pl.professional_id,
-                  ST_Y(pl.geom::geometry) AS lat, ST_X(pl.geom::geometry) AS lng,
-                  pl.updated_at, bp.display_name, bp.rating_avg, bp.is_online
-           FROM professional_locations pl
-           JOIN beauty_professionals bp ON bp.id = pl.professional_id
-           WHERE bp.is_online = true
-             AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
-           ORDER BY pl.geom::geography <-> ST_SetSRID(ST_MakePoint($2,$1),4326)::geography
-           LIMIT $4`,
-          [lat, lng, radiusM, limit]
-        );
-        stats.nearbyQueries += 1;
-        res.writeHead(200, {
-          'Content-Type': 'application/json',
-          'Server-Timing': `db;dur=${Date.now() - t0}`,
-        });
-        res.end(JSON.stringify({ data: rows }));
-      } catch (e) {
-        stats.nearbyErrors += 1;
-        logErr('nearby error', { err: String(e) });
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: 'nearby failed' }));
-      }
-    })();
-    return;
-  }
-  res.writeHead(404).end('not-found');
+// BFF HTTP montado sobre el mismo servidor (Paso 2B): además de /health y
+// /realtime/nearby, expone /api/bookings/* con Express. Socket.io se engancha
+// al mismo httpServer, así que la app solo necesita un host:puerto.
+const app = express();
+app.set('trust proxy', true);
+app.use(express.json({ limit: '64kb' }));
+app.locals.directusSecret = DIRECTUS_SECRET;
+
+app.get('/health', (_req, res) => {
+  // Health con checks reales (Fase 5): redis + postgres.
+  (async () => {
+    let redisOk = false;
+    let pgOk = false;
+    try {
+      const pong = await redis.ping();
+      redisOk = pong === 'PONG';
+    } catch { redisOk = false; }
+    try {
+      await pool.query('SELECT 1');
+      pgOk = true;
+    } catch { pgOk = false; }
+    const ok = redisOk && pgOk;
+    res.status(ok ? 200 : 503).json({
+      status: ok ? 'ok' : 'degraded',
+      redis: redisOk ? 'up' : 'down',
+      postgres: pgOk ? 'up' : 'down',
+      uptime_s: Math.floor((Date.now() - stats.startedAt) / 1000),
+      cors: CORS_OPEN ? 'open-dev' : 'restricted',
+      stats,
+    });
+  })();
 });
+
+app.get('/realtime/nearby', (req, res) => {
+  // Fase 3/5: query geo centralizada (PostGIS, anti-saturación con limit).
+  // Fase 6: mide latencia p95 (ver scripts/load-test.mjs).
+  // Fase 7: requiere Bearer (mismo JWT que el socket).
+  const fakeReq = { headers: req.headers } as IncomingMessage;
+  if (!httpBearer(fakeReq)) {
+    stats.nearbyErrors += 1;
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  const t0 = Date.now();
+  (async () => {
+    try {
+      const lat = Number(req.query.lat);
+      const lng = Number(req.query.lng);
+      const radiusM = Math.min(Math.max(Number(req.query.radius) || 5000, 100), 20000);
+      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+      if (!isValidLatLng(lat, lng)) {
+        stats.nearbyErrors += 1;
+        res.status(400).json({ error: 'lat/lng inválidos' });
+        return;
+      }
+      const { rows } = await pool.query(
+        `SELECT pl.professional_id,
+                ST_Y(pl.geom::geometry) AS lat, ST_X(pl.geom::geometry) AS lng,
+                pl.updated_at, bp.display_name, bp.rating_avg, bp.is_online
+         FROM professional_locations pl
+         JOIN beauty_professionals bp ON bp.id = pl.professional_id
+         WHERE bp.is_online = true
+           AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
+         ORDER BY pl.geom::geography <-> ST_SetSRID(ST_MakePoint($2,$1),4326)::geography
+         LIMIT $4`,
+        [lat, lng, radiusM, limit]
+      );
+      stats.nearbyQueries += 1;
+      res.setHeader('Server-Timing', `db;dur=${Date.now() - t0}`);
+      res.json({ data: rows });
+    } catch (e) {
+      stats.nearbyErrors += 1;
+      logErr('nearby error', { err: String(e) });
+      res.status(500).json({ error: 'nearby failed' });
+    }
+  })();
+});
+
+const httpServer = createServer(app);
+
 const io = new Server(httpServer, {
   cors: { origin: corsOrigin },
   // Fase 6: límites anti-saturación a nivel transporte.
@@ -213,6 +216,27 @@ io.use((socket, next) => {
 
 redis.on('error', (e) => logErr('redis error', { err: e?.message || String(e) }));
 pool.on('error', (e) => logErr('pg pool error', { err: e?.message || String(e) }));
+
+// BFF de reservas (Paso 2B). Los eventos socket se emiten SOLO tras confirmar
+// la transacción en la base, nunca antes.
+app.use(
+  '/api/bookings',
+  createBookingsRouter({
+    pool,
+    emitNew: (bookingId, professionalId, clientId) => {
+      const payload: Record<string, unknown> = { booking_id: String(bookingId), client_id: clientId };
+      if (professionalId !== null && professionalId !== undefined) {
+        payload.professional_id = String(professionalId);
+        io.to(`prof:${professionalId}`).emit('booking:new', payload);
+      }
+      io.to('admins').emit('booking:new', payload);
+    },
+    emitStatus: (bookingId, status) => {
+      io.to(`booking:${bookingId}`).emit('booking:status', { booking_id: String(bookingId), status });
+    },
+  }),
+);
+app.use(errorHandler);
 
 // Anti-saturación (Fase 3/5/6): 1 msg / 5s por socket + ban temporal si abusa.
 const lastLoc = new Map<string, number>();
