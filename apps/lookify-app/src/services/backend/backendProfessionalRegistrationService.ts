@@ -19,7 +19,6 @@ import { BACKEND } from '../../lib/backend/config';
 import {
   backendSolicitudId,
   loadBackendSession,
-  resolveProfessionalId,
   saveBackendSession,
 } from '../../lib/backend/session';
 import { connectRealtime } from '../../lib/backend/realtime';
@@ -69,7 +68,6 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
     async guardarServicios(input: GuardarServiciosRequest): Promise<GuardarServiciosResponse> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
       const ids = [...new Set(input.servicioIds.map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0))];
       if (ids.length === 0) throw new ServiceError('VALIDATION');
       // Valida que existan en el catálogo.
@@ -79,22 +77,10 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
         session.token,
       );
       if (existentes.length !== ids.length) throw new ServiceError('SERVICIO_INVALIDO');
-      const actuales = await api<{ id: number }[]>(
-        'GET',
-        `/items/professional_services?filter[professional_id][_eq]=${professionalId}&fields=id&limit=200`,
-        session.token,
-      );
-      await Promise.all(
-        actuales.map((r) => api('DELETE', `/items/professional_services/${r.id}`, session.token)),
-      );
-      await Promise.all(
-        ids.map((serviceId) =>
-          api('POST', '/items/professional_services', session.token, {
-            professional_id: professionalId,
-            service_id: serviceId,
-          }),
-        ),
-      );
+      // El BFF reemplaza el vínculo de forma transaccional y deriva el pro del token.
+      await bffApi('PUT', '/api/professionals/me/services', session.token, {
+        serviceIds: ids,
+      });
       return {
         solicitudId: input.solicitudId,
         servicioIds: ids.map(String),

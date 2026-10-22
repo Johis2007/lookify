@@ -18,33 +18,43 @@ import {
 } from '../../types/professionalDashboard';
 import { ResenaProfesional } from '../../types/professionalReview';
 import { ServiceError } from '../errors';
-import { api, assetUrl, uploadFile } from '../../lib/backend/directus';
+import { assetUrl, uploadFile } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import {
   clearBackendSession,
   loadBackendSession,
   resolveProfessionalId,
 } from '../../lib/backend/session';
-import { DProfessional } from '../../lib/backend/mapping';
 import { disconnectRealtime, emitProOffline, ensureProOnline } from '../../lib/backend/realtime';
 import { resumenDiaBackend } from './backendProfessionalEarningsHistoryService';
 import { validarArchivoFotoPerfil } from '../../utils/profilePhotoFile';
 import { FotoPerfilMimePermitido } from '../../constants/professionalProfilePhoto';
+
+type ProPanel = {
+  id: number;
+  displayName: string | null;
+  avatar: string | null;
+  isOnline: boolean | null;
+  ratingAvg: number | null;
+  verificationStatus: string | null;
+};
+
+type ServicioPro = { serviceId: number; name: string; durationMin: number | null; priceBase: number | null };
 
 async function servicioActivo(token: string, _professionalId?: number): Promise<boolean> {
   const rows = await bffApi<unknown[]>('GET', '/api/bookings/pro/mine?status=accepted,in_progress', token);
   return rows.length > 0;
 }
 
-async function assertHabilitado(token: string, professionalId: number): Promise<DProfessional> {
-  const pro = await api<DProfessional>(
+async function assertHabilitado(token: string): Promise<ProPanel> {
+  const pro = await bffApi<ProPanel>(
     'GET',
-    `/items/beauty_professionals/${professionalId}?fields=id,display_name,is_online,rating_avg,avatar,verification_status`,
+    '/api/professionals/me',
     token,
     undefined,
     'SOLICITUD_NO_ENCONTRADA',
   );
-  if (pro.verification_status !== 'verified') throw new ServiceError('PROFESIONAL_NO_HABILITADO');
+  if (pro.verificationStatus !== 'verified') throw new ServiceError('PROFESIONAL_NO_HABILITADO');
   return pro;
 }
 
@@ -54,7 +64,7 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId, input.solicitudId);
-      const pro = await assertHabilitado(session.token, professionalId);
+      const pro = await assertHabilitado(session.token);
 
       const [resenas, servicios] = await Promise.all([
         bffApi<{
@@ -64,12 +74,7 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
           reviews: [],
           total: 0,
         })),
-        api<{ service: { id: number; name: string; duration_min: number; price_base: number } }[]>(
-          'GET',
-          `/items/professional_services?filter[professional_id][_eq]=${professionalId}` +
-            `&fields=service.id,service.name,service.duration_min,service.price_base&limit=100`,
-          session.token,
-        ).catch(() => []),
+        bffApi<ServicioPro[]>('GET', '/api/professionals/me/services', session.token).catch(() => []),
       ]);
 
       const totalResenas = resenas.total;
@@ -81,20 +86,18 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       const resumenDia = await resumenDiaBackend(session.token, professionalId);
 
       return {
-        nombre: pro.display_name,
-        calificacionPromedio: totalResenas > 0 ? (pro.rating_avg ?? null) : null,
+        nombre: pro.displayName ?? '',
+        calificacionPromedio: totalResenas > 0 ? (pro.ratingAvg ?? null) : null,
         totalResenas,
-        disponibilidad: pro.is_online ? 'DISPONIBLE' : 'OCUPADO',
+        disponibilidad: pro.isOnline ? 'DISPONIBLE' : 'OCUPADO',
         resumenDia: { ...resumenDia },
         ultimasResenas,
-        serviciosOfrecidos: servicios
-          .filter((s) => s.service)
-          .map((s) => ({
-            servicioId: String(s.service.id),
-            nombre: s.service.name,
-            duracionMin: s.service.duration_min,
-            precioBaseCop: s.service.price_base,
-          })),
+        serviciosOfrecidos: servicios.map((s) => ({
+          servicioId: String(s.serviceId),
+          nombre: s.name,
+          duracionMin: s.durationMin ?? 0,
+          precioBaseCop: s.priceBase ?? 0,
+        })),
         fotoPerfil: pro.avatar
           ? { uri: assetUrl(pro.avatar) ?? '', mimeType: 'image/jpeg' as FotoPerfilMimePermitido }
           : null,
@@ -106,7 +109,7 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId, input.solicitudId);
       if (input.disponibilidad === 'DISPONIBLE') {
-        await assertHabilitado(session.token, professionalId);
+        await assertHabilitado(session.token);
         if (await servicioActivo(session.token, professionalId)) {
           throw new ServiceError('SERVICIO_EN_CURSO_ACTIVO');
         }
@@ -149,13 +152,14 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
     async consultarDisponibilidad(input: ConsultarDisponibilidadRequest): Promise<ConsultarDisponibilidadResponse> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(input.profesionalId);
-      const pro = await api<DProfessional>(
+      const pro = await bffApi<{ isOnline: boolean | null }>(
         'GET',
-        `/items/beauty_professionals/${professionalId}?fields=is_online`,
+        '/api/professionals/me',
         session.token,
+        undefined,
+        'SOLICITUD_NO_ENCONTRADA',
       );
-      return { disponibilidad: pro.is_online ? 'DISPONIBLE' : 'OCUPADO' };
+      return { disponibilidad: pro.isOnline ? 'DISPONIBLE' : 'OCUPADO' };
     },
   };
 }

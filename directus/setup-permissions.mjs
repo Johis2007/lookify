@@ -127,25 +127,13 @@ const MATRIX = [
   // Catálogo: lectura autenticada.
   ['beauty_services', 'read'],
   ['service_categories', 'read'],
-  ['beauty_professionals', 'read'],
-  ['professional_services', 'read'],
-  // Perfil profesional: SOLO lectura directa. Crear/editar el perfil pasa por
-  // el BFF (/api/professionals/me), que deriva el user del token y fuerza
-  // verification_status='pending'. Así se cierra la auto-verificación.
-  // Reservas y eventos: TODO pasa por el BFF (/api/bookings*). El App User no
-  // tiene acceso directo (ver REVOKE). El admin ve reservas con su token.
-  // Reseñas, perfiles de cliente y radar: solo por BFF / uso analítico interno
-  // (ver REVOKE). El App User no lee ni escribe directo.
-  // Documentos de verificación pro.
-  ['professional_documents', 'read'],
-  // Servicios del profesional (precios visibles; vínculo propio).
-  ['professional_services', 'create'],
-  ['professional_services', 'update'],
-  ['professional_services', 'delete'],
-  // Documentos de verificación: el pro gestiona los suyos.
-  ['professional_documents', 'update'],
-  ['professional_documents', 'delete'],
-  // Archivos: subir avatar y ver (URLs del marketplace).
+  // Perfil profesional, servicios ofrecidos y documentos: TODO pasa por el BFF
+  // (/api/professionals/me*, /api/professionals/:id/public). El App User no
+  // lee ni escribe directo (ver REVOKE).
+  // Reservas y eventos: TODO pasa por el BFF (/api/bookings*). El admin ve
+  // reservas con su token.
+  // Reseñas, perfiles de cliente y radar: solo por BFF / uso analítico interno.
+  // Archivos: subir avatar/certificados y ver (URLs del marketplace).
   ['directus_files', 'create'],
   ['directus_files', 'read'],
   ['directus_files', 'delete'],
@@ -194,8 +182,19 @@ const REVOKE = [
   ['reviews', 'create'],
   ['reviews', 'update'],
   ['reviews', 'delete'],
+  // Ola 2b: perfil público, servicios y documentos solo por BFF.
+  ['beauty_professionals', 'read'],
   ['beauty_professionals', 'create'],
   ['beauty_professionals', 'update'],
+  ['beauty_professionals', 'delete'],
+  ['professional_services', 'read'],
+  ['professional_services', 'create'],
+  ['professional_services', 'update'],
+  ['professional_services', 'delete'],
+  ['professional_documents', 'read'],
+  ['professional_documents', 'create'],
+  ['professional_documents', 'update'],
+  ['professional_documents', 'delete'],
   ['bookings', 'read'],
   ['bookings', 'create'],
   ['bookings', 'update'],

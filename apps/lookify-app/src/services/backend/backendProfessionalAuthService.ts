@@ -7,31 +7,31 @@ import { ProfessionalAuthService } from '../professionalAuthService';
 import { SesionProfesional } from '../../types/professionalAuth';
 import { ServiceError } from '../errors';
 import { api, loginDirectus } from '../../lib/backend/directus';
+import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
   loadBackendSession,
   saveBackendSession,
 } from '../../lib/backend/session';
-import { DProfessional } from '../../lib/backend/mapping';
 import { connectRealtime } from '../../lib/backend/realtime';
 import { createMockProfessionalAuthService } from '../mock/mockProfessionalAuthService';
 
+export type ProEstado = {
+  id: number;
+  displayName?: string | null;
+  verificationStatus?: string | null;
+};
+
 export async function estadoDesdePro(
   token: string,
-  pro: DProfessional,
+  pro: ProEstado,
 ): Promise<{ estado: SesionProfesional['estadoSolicitud']; onboarding?: SesionProfesional['onboardingPaso'] }> {
-  if (pro.verification_status === 'verified') return { estado: 'APROBADO' };
-  if (pro.verification_status === 'rejected') return { estado: 'RECHAZADO' };
-  const docs = await api<unknown[]>(
-    'GET',
-    `/items/professional_documents?filter[professional][_eq]=${pro.id}&fields=id&limit=1`,
-    token,
-  );
+  if (pro.verificationStatus === 'verified') return { estado: 'APROBADO' };
+  if (pro.verificationStatus === 'rejected') return { estado: 'RECHAZADO' };
+  const docs = await bffApi<unknown[]>('GET', '/api/professionals/me/documents', token).catch(() => []);
   if (docs.length > 0) return { estado: 'EN_REVISION' };
-  const servicios = await api<unknown[]>(
-    'GET',
-    `/items/professional_services?filter[professional_id][_eq]=${pro.id}&fields=id&limit=1`,
-    token,
+  const servicios = await bffApi<unknown[]>('GET', '/api/professionals/me/services', token).catch(
+    () => [],
   );
   return {
     estado: 'DOCUMENTOS_PENDIENTES',
@@ -51,14 +51,19 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
           '/users/me?fields=id,first_name,last_name,email',
           accessToken,
         );
-        const pros = await api<DProfessional[]>(
+        const pro = await bffApi<ProEstado>(
           'GET',
-          `/items/beauty_professionals?filter[user][_eq]=${me.id}&fields=id,display_name,verification_status&limit=1`,
+          '/api/professionals/me',
           accessToken,
-        );
-        const pro = pros[0];
+          undefined,
+          'SOLICITUD_NO_ENCONTRADA',
+        ).catch((e: unknown) => {
+          if (e instanceof ServiceError && e.code === 'SOLICITUD_NO_ENCONTRADA') return null;
+          throw e;
+        });
         if (!pro) throw new ServiceError('VALIDATION', 'Esta cuenta no es de profesional.');
-        const nombre = pro.display_name || [me.first_name, me.last_name].filter(Boolean).join(' ') || cleanEmail;
+        const nombre =
+          pro.displayName || [me.first_name, me.last_name].filter(Boolean).join(' ') || cleanEmail;
         const { estado, onboarding } = await estadoDesdePro(accessToken, pro);
         await saveBackendSession({
           token: accessToken,

@@ -40,10 +40,9 @@ type CertMeta = {
 
 type DDoc = {
   id: number;
-  professional: number;
-  file: string;
-  doc_type: string;
-  status: string;
+  file: string | null;
+  docType: string | null;
+  status: string | null;
   note?: string | null;
 };
 
@@ -69,13 +68,13 @@ function docTypePara(nombreTipo: string): string {
   return 'certificado';
 }
 
-async function serviciosDelPro(token: string, professionalId: number): Promise<string[]> {
-  const rows = await api<{ service_id: number }[]>(
-    'GET',
-    `/items/professional_services?filter[professional_id][_eq]=${professionalId}&fields=service_id&limit=200`,
-    token,
-  );
-  return rows.map((r) => String(r.service_id));
+async function serviciosDelPro(token: string): Promise<string[]> {
+  const rows = await bffApi<{ serviceId: number }[]>('GET', '/api/professionals/me/services', token);
+  return rows.map((r) => String(r.serviceId));
+}
+
+async function documentosDelPro(token: string): Promise<DDoc[]> {
+  return bffApi<DDoc[]>('GET', '/api/professionals/me/documents', token);
 }
 
 function validarCobertura(form: CertificadoFormPayload, servicioIdsDelPro: string[], existentes: CertificadoProfesional[], excluirId?: string): void {
@@ -109,7 +108,7 @@ function aCertificado(doc: DDoc, solicitudId: string, archivo: CertificadoArchiv
   return {
     id: String(doc.id),
     solicitudId,
-    nombreTipo: meta?.nombreTipo ?? doc.doc_type,
+    nombreTipo: meta?.nombreTipo ?? doc.docType ?? '',
     entidadEmisora: meta?.entidadEmisora ?? '',
     ...(meta?.fechaEmision ? { fechaEmision: meta.fechaEmision } : {}),
     servicioIds: meta?.servicioIds ?? [],
@@ -123,19 +122,14 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      return { servicioIds: await serviciosDelPro(session.token, professionalId) };
+      return { servicioIds: await serviciosDelPro(session.token) };
     },
 
     async listarCertificados(input): Promise<CertificadoProfesional[]> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const docs = await api<DDoc[]>(
-        'GET',
-        `/items/professional_documents?filter[professional][_eq]=${professionalId}` +
-          `&fields=id,professional,file,doc_type,status,note&sort=created_at&limit=100`,
-        session.token,
-      );
+      const docs = await documentosDelPro(session.token);
       const solicitudId = backendSolicitudId(professionalId);
       return docs.map((d) =>
         aCertificado(d, solicitudId, {
@@ -152,16 +146,14 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
       const form = input.certificado;
-      const delPro = await serviciosDelPro(session.token, professionalId);
+      const delPro = await serviciosDelPro(session.token);
       const existentes = await this.listarCertificados({ solicitudId: input.solicitudId });
       validarCobertura(form, delPro, existentes);
       await validarArchivo(form.archivo);
       const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType);
-      const created = await api<DDoc>('POST', '/items/professional_documents', session.token, {
-        professional: professionalId,
+      const created = await bffApi<DDoc>('POST', '/api/professionals/me/documents', session.token, {
         file: fileId,
-        doc_type: docTypePara(form.nombreTipo),
-        status: 'pending',
+        docType: docTypePara(form.nombreTipo),
         note: encodeMeta({
           nombreTipo: form.nombreTipo,
           entidadEmisora: form.entidadEmisora,
@@ -186,24 +178,20 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       if (!existentes.some((c) => c.id === input.certificadoId)) {
         throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
       }
-      validarCobertura(form, await serviciosDelPro(session.token, professionalId), existentes, input.certificadoId);
+      validarCobertura(form, await serviciosDelPro(session.token), existentes, input.certificadoId);
       await validarArchivo(form.archivo);
-      const anterior = await api<DDoc>(
-        'GET',
-        `/items/professional_documents/${input.certificadoId}?fields=id,professional,file`,
-        session.token,
-        'CERTIFICADO_NO_ENCONTRADO',
+      const anterior = (await documentosDelPro(session.token)).find(
+        (d) => String(d.id) === input.certificadoId,
       );
-      if (Number(anterior.professional) !== professionalId) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
+      if (!anterior) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
       const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType);
-      const updated = await api<DDoc>(
+      const updated = await bffApi<DDoc>(
         'PATCH',
-        `/items/professional_documents/${input.certificadoId}`,
+        `/api/professionals/me/documents/${input.certificadoId}`,
         session.token,
         {
           file: fileId,
-          doc_type: docTypePara(form.nombreTipo),
-          status: 'pending',
+          docType: docTypePara(form.nombreTipo),
           note: encodeMeta({
             nombreTipo: form.nombreTipo,
             entidadEmisora: form.entidadEmisora,
@@ -227,14 +215,11 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const doc = await api<DDoc>(
-        'GET',
-        `/items/professional_documents/${input.certificadoId}?fields=id,professional,file`,
-        session.token,
-        'CERTIFICADO_NO_ENCONTRADO',
+      const doc = (await documentosDelPro(session.token)).find(
+        (d) => String(d.id) === input.certificadoId,
       );
-      if (Number(doc.professional) !== professionalId) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
-      await api('DELETE', `/items/professional_documents/${input.certificadoId}`, session.token);
+      if (!doc) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
+      await bffApi('DELETE', `/api/professionals/me/documents/${input.certificadoId}`, session.token);
       if (doc.file) {
         await api('DELETE', `/files/${doc.file}`, session.token).catch(() => undefined);
       }
@@ -246,13 +231,15 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const pro = await api<{ id: number; display_name: string; verification_status?: string }>(
+      const pro = await bffApi<{ displayName: string; verificationStatus?: string | null }>(
         'GET',
-        `/items/beauty_professionals/${professionalId}?fields=id,display_name,verification_status`,
+        '/api/professionals/me',
         session.token,
+        undefined,
+        'SOLICITUD_NO_ENCONTRADA',
       );
-      if (pro.verification_status === 'verified') throw new ServiceError('OPERACION_NO_PERMITIDA');
-      const delPro = await serviciosDelPro(session.token, professionalId);
+      if (pro.verificationStatus === 'verified') throw new ServiceError('OPERACION_NO_PERMITIDA');
+      const delPro = await serviciosDelPro(session.token);
       const certs = await this.listarCertificados({ solicitudId: input.solicitudId });
       for (const s of delPro) {
         const n = certs.filter((c) => c.servicioIds.includes(s)).length;
@@ -266,7 +253,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
         solicitudId: backendSolicitudId(professionalId),
         estadoSolicitud: 'EN_REVISION',
         profesionalId: String(professionalId),
-        nombre: pro.display_name,
+        nombre: pro.displayName,
         email: session.email,
         onboardingPaso: 'CERTIFICADOS',
       };

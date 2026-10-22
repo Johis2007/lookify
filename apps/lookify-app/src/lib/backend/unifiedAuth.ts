@@ -10,6 +10,7 @@ import {
 } from '../../types/professionalAuth';
 import { resolvePostLoginRoute } from '../../navigation/professionalRoutes';
 import { api, loginDirectus, refreshAccessToken } from './directus';
+import { bffApi } from './bff';
 import { BACKEND } from './config';
 import {
   backendSolicitudId,
@@ -24,8 +25,9 @@ import {
 import { loadAdminSession, saveAdminSession, isAdminToken } from './adminAuth';
 import { estadoDesdePro } from '../../services/backend/backendProfessionalAuthService';
 import { connectRealtime } from './realtime';
-import { DProfessional } from './mapping';
 import { findMockUser } from '../../data/mockUsers';
+
+type ProBff = { id: number; displayName?: string | null; verificationStatus?: string | null };
 
 export type RolUsuario = 'admin' | 'pro' | 'client';
 
@@ -65,14 +67,18 @@ export async function loginUniversal(email: string, password: string): Promise<U
       return { rol: 'admin', email: cleanEmail, nombre };
     }
 
-    const pros = await api<DProfessional[]>(
+    const pro = await bffApi<ProBff>(
       'GET',
-      `/items/beauty_professionals?filter[user][_eq]=${me.id}&fields=id,display_name,verification_status&limit=1`,
+      '/api/professionals/me',
       accessToken,
-    );
-    const pro = pros[0];
+      undefined,
+      'SOLICITUD_NO_ENCONTRADA',
+    ).catch((e: unknown) => {
+      if (e instanceof ServiceError && e.code === 'SOLICITUD_NO_ENCONTRADA') return null;
+      throw e;
+    });
     if (pro) {
-      const nombrePro = pro.display_name || nombre;
+      const nombrePro = pro.displayName || nombre;
       const { estado, onboarding } = await estadoDesdePro(accessToken, pro);
       await saveBackendSession({
         token: accessToken,
@@ -280,10 +286,12 @@ async function resumeOnline(): Promise<ResumeTarget | null> {
     }
     if (token) {
       try {
-        const row = await api<DProfessional>(
+        const row = await bffApi<ProBff>(
           'GET',
-          `/items/beauty_professionals/${pro.professionalId}?fields=id,display_name,verification_status`,
+          '/api/professionals/me',
           token,
+          undefined,
+          'SOLICITUD_NO_ENCONTRADA',
         );
         const { estado, onboarding } = await estadoDesdePro(token, row);
         connectRealtime(token);

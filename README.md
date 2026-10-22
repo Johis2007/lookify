@@ -102,6 +102,27 @@ de Directus>`), nunca del body; el precio se calcula en el servidor.
 | `POST /api/bookings/:id/cancel` | cliente o profesional | `pending\|accepted\|in_progress → cancelled` |
 | `GET /api/bookings/:id/tracking` | participantes | Última posición del pro en `accepted` (Redis, TTL 120 s) + `arrivedAt` |
 
+### BFF de profesionales y datos personales (Ola 2)
+
+El App User ya no lee ni escribe directo `beauty_professionals`,
+`professional_services`, `professional_documents`, `reviews`,
+`client_profiles` ni `radar_searches`: todo pasa por el BFF y la identidad sale
+del JWT. El admin (`admin_access`) no se ve afectado.
+
+| Método y ruta | Quién | Qué hace |
+|---|---|---|
+| `GET/POST/PATCH /api/professionals/me` | pro | Perfil propio; `verification_status` solo pasa a `pending` desde `rejected` |
+| `GET /api/professionals/:id/public` | autenticado | Perfil público sin PII (ni `user`, ni email, ni teléfono) + servicios |
+| `GET/PUT /api/professionals/me/services` | pro | Servicios ofrecidos; `PUT` reemplaza en transacción y valida el catálogo |
+| `GET/POST/PATCH/DELETE /api/professionals/me/documents/:id` | pro | Documentos propios; alta forzada a `status='pending'` |
+| `GET /api/professionals/me/reviews` · `/:id/reviews` | autenticado | Reseñas con solo el primer nombre del cliente |
+| `GET/POST/PUT /api/clients/me` | cliente | Perfil propio (upsert idempotente) |
+| `POST /api/bookings/:id/review` | cliente dueño | Reseña de reserva `completed`; única por reserva |
+
+La migración `005`/`006` crea los índices únicos (un perfil por usuario, una
+reseña por reserva) y revoca esos permisos directos. Los archivos
+(`directus_files`) siguen siendo directos hasta la ola de archivos (2E-3).
+
 Cada transición hace un `UPDATE` condicional atómico (solo gana quien vea el
 estado previo correcto; doble aceptación → `409`) y escribe el `booking_events`
 en la misma transacción. Los eventos socket `booking:new`/`booking:status` se

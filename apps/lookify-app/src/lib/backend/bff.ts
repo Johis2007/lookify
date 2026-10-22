@@ -7,7 +7,7 @@ import { BACKEND } from './config';
 import { toServiceError } from './directus';
 
 export async function bffApi<T = any>(
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
   token: string,
   body?: unknown,

@@ -22,7 +22,6 @@ import {
   ValidarCodigoActivacionResponse,
 } from '../../types/professionalVerification';
 import { ServiceError } from '../errors';
-import { api } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
@@ -33,34 +32,27 @@ import { maskEmail } from '../../utils/maskEmail';
 
 type ProRow = {
   id: number;
-  display_name: string;
-  verification_status?: 'pending' | 'verified' | 'rejected' | null;
-  verification_note?: string | null;
+  displayName: string;
+  verificationStatus?: 'pending' | 'verified' | 'rejected' | null;
+  verificationNote?: string | null;
 };
 
-async function leerPro(token: string, professionalId: number): Promise<ProRow> {
-  return api<ProRow>(
+async function leerPro(token: string): Promise<ProRow> {
+  return bffApi<ProRow>(
     'GET',
-    `/items/beauty_professionals/${professionalId}?fields=id,display_name,verification_status,verification_note`,
+    '/api/professionals/me',
     token,
+    undefined,
     'SOLICITUD_NO_ENCONTRADA',
   );
 }
 
-async function resumenEnvio(token: string, professionalId: number): Promise<{ cantidadCertificados: number; cantidadServicios: number; servicioIds: string[] }> {
+async function resumenEnvio(token: string): Promise<{ cantidadCertificados: number; cantidadServicios: number; servicioIds: string[] }> {
   const [docs, servicios] = await Promise.all([
-    api<unknown[]>(
-      'GET',
-      `/items/professional_documents?filter[professional][_eq]=${professionalId}&fields=id&limit=100`,
-      token,
-    ).catch(() => []),
-    api<{ service_id: number }[]>(
-      'GET',
-      `/items/professional_services?filter[professional_id][_eq]=${professionalId}&fields=service_id&limit=200`,
-      token,
-    ).catch(() => []),
+    bffApi<unknown[]>('GET', '/api/professionals/me/documents', token).catch(() => []),
+    bffApi<{ serviceId: number }[]>('GET', '/api/professionals/me/services', token).catch(() => []),
   ]);
-  const servicioIds = [...new Set(servicios.map((s) => String(s.service_id)))];
+  const servicioIds = [...new Set(servicios.map((s) => String(s.serviceId)))];
   return { cantidadCertificados: docs.length, cantidadServicios: servicioIds.length, servicioIds };
 }
 
@@ -69,15 +61,15 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
     const session = await loadBackendSession();
     if (!session) throw new ServiceError('INVALID_CREDENTIALS');
     const professionalId = await resolveProfessionalId(undefined, solicitudId);
-    const pro = await leerPro(session.token, professionalId);
+    const pro = await leerPro(session.token);
     const sid = backendSolicitudId(professionalId);
     const base = {
       solicitudId: sid,
       profesionalId: String(professionalId),
-      nombre: pro.display_name,
+      nombre: pro.displayName,
       emailEnmascarado: maskEmail(session.email),
     };
-    if (pro.verification_status === 'verified') {
+    if (pro.verificationStatus === 'verified') {
       return {
         ...base,
         estadoSolicitud: 'APROBADO',
@@ -91,24 +83,24 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
         },
       };
     }
-    if (pro.verification_status === 'rejected') {
+    if (pro.verificationStatus === 'rejected') {
       return {
         ...base,
         estadoSolicitud: 'RECHAZADO',
         profesionalActivado: false,
-        rechazo: { motivo: pro.verification_note ?? 'Documentación rechazada.', serviciosAfectadosIds: [] },
+        rechazo: { motivo: pro.verificationNote ?? 'Documentación rechazada.', serviciosAfectadosIds: [] },
       };
     }
-    const docs = await api<unknown[]>(
+    const docs = await bffApi<unknown[]>(
       'GET',
-      `/items/professional_documents?filter[professional][_eq]=${professionalId}&fields=id&limit=1`,
+      '/api/professionals/me/documents',
       session.token,
     ).catch(() => []);
     return {
       ...base,
       estadoSolicitud: docs.length > 0 ? 'EN_REVISION' : 'DOCUMENTOS_PENDIENTES',
       profesionalActivado: false,
-      resumen: await resumenEnvio(session.token, professionalId),
+      resumen: await resumenEnvio(session.token),
     };
   }
 
@@ -127,24 +119,24 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const pro = await leerPro(session.token, professionalId);
-      if (pro.verification_status !== 'rejected') throw new ServiceError('VALIDATION');
+      const pro = await leerPro(session.token);
+      if (pro.verificationStatus !== 'rejected') throw new ServiceError('VALIDATION');
       await bffApi('PATCH', '/api/professionals/me', session.token, {
         verificationStatus: 'pending',
       });
-      const servicios = await api<{ service_id: number }[]>(
+      const servicios = await bffApi<{ serviceId: number }[]>(
         'GET',
-        `/items/professional_services?filter[professional_id][_eq]=${professionalId}&fields=service_id&limit=200`,
+        '/api/professionals/me/services',
         session.token,
       ).catch(() => []);
       return {
         profesionalId: String(professionalId),
         solicitudId: backendSolicitudId(professionalId),
-        nombre: pro.display_name,
+        nombre: pro.displayName,
         email: session.email,
         estadoSolicitud: 'DOCUMENTOS_PENDIENTES',
         onboardingPaso: 'CERTIFICADOS',
-        servicioIds: servicios.map((s) => String(s.service_id)),
+        servicioIds: servicios.map((s) => String(s.serviceId)),
       };
     },
 
@@ -152,8 +144,8 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const pro = await leerPro(session.token, professionalId);
-      if (pro.verification_status !== 'verified') throw new ServiceError('REENVIO_NO_DISPONIBLE');
+      const pro = await leerPro(session.token);
+      if (pro.verificationStatus !== 'verified') throw new ServiceError('REENVIO_NO_DISPONIBLE');
       return { emailEnmascarado: maskEmail(session.email), reenvioDisponibleEnMs: null, reenviosRestantes: 0 };
     },
 
@@ -161,14 +153,14 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const pro = await leerPro(session.token, professionalId);
-      if (pro.verification_status !== 'verified' || !/^\d{6}$/.test(input.codigo)) {
+      const pro = await leerPro(session.token);
+      if (pro.verificationStatus !== 'verified' || !/^\d{6}$/.test(input.codigo)) {
         throw new ServiceError('CODIGO_INVALIDO');
       }
       return {
         profesionalId: String(professionalId),
         solicitudId: backendSolicitudId(professionalId),
-        nombre: pro.display_name,
+        nombre: pro.displayName,
         email: session.email,
         estadoSolicitud: 'APROBADO',
         profesionalActivado: true,
@@ -179,8 +171,8 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
-      const pro = await leerPro(session.token, professionalId);
-      return { motivoRechazo: pro.verification_note ?? null };
+      const pro = await leerPro(session.token);
+      return { motivoRechazo: pro.verificationNote ?? null };
     },
 
     async simularDecisionAdministrador(_input: SimularDecisionAdministradorRequest): Promise<EstadoVerificacionResponse> {
