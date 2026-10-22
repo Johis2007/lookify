@@ -100,11 +100,22 @@ de Directus>`), nunca del body; el precio se calcula en el servidor.
 | `POST /api/bookings/:id/start` | profesional | `accepted → in_progress` |
 | `POST /api/bookings/:id/complete` | profesional | `in_progress → completed` |
 | `POST /api/bookings/:id/cancel` | cliente o profesional | `pending\|accepted\|in_progress → cancelled` |
+| `GET /api/bookings/:id/tracking` | participantes | Última posición del pro en `accepted` (Redis, TTL 120 s) + `arrivedAt` |
 
 Cada transición hace un `UPDATE` condicional atómico (solo gana quien vea el
 estado previo correcto; doble aceptación → `409`) y escribe el `booking_events`
 en la misma transacción. Los eventos socket `booking:new`/`booking:status` se
 emiten tras confirmar la escritura. Tests: `npm --workspace apps/realtime-server test`.
+
+### Rastreo en vivo (4C-2)
+
+El profesional asignado emite `location:update` con `booking_id`; el servidor
+valida que sea él (token) y que la reserva siga en `accepted`, y reenvía
+`booking:location {booking_id, lat, lng, ts}` **solo** a la sala `booking:{id}`.
+La sala admite únicamente al cliente dueño y al profesional asignado; el relevo
+se corta al pasar a `in_progress`, `completed` o `cancelled` y tiene un límite
+de 1 mensaje cada 2 s por socket. La llegada (`POST .../events` con
+`status: 'llegada'`) se anuncia como `booking:event` en la misma sala.
 
 
 ## Notas de BD
@@ -118,6 +129,12 @@ emiten tras confirmar la escritura. Tests: `npm --workspace apps/realtime-server
   Directus Studio > Flows > Import.
 - `directus/snapshots/schema.json` es respaldo del esquema; la fuente de verdad
   versionada son `directus/setup*.mjs` + `directus/migrations/`.
+- **Retención de datos GPS:** cada relevo de tracking deja una muestra en
+  `booking_location_history` (PostGIS, migración `004_tracking.sql`). Se
+  conserva **30 días** por defecto (`GPS_RETENTION_DAYS`). La limpieza es
+  `npm run db:cleanup:gps` (o `-- --days=N`); prográmala con cron/Task Scheduler
+  en producción. La última posición para el polling vive en Redis con TTL 120 s
+  y se borra al iniciar/completar/cancelar la reserva.
 
 ## Problemas comunes
 

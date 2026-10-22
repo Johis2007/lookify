@@ -12,6 +12,7 @@ import {
   MATCH_OFFER_TTL_MS,
 } from '../matching.js';
 import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } from './http.js';
+import { readLastPosition, trackingKey, type TrackingRedis } from '../tracking.js';
 
 // BFF de reservas (Paso 2B). Todo el acceso a bookings/booking_events pasa por
 // aquí; el App User deja de tener permisos directos en 2D. El servidor valida
@@ -257,10 +258,14 @@ export type BookingsDeps = {
   emitTaken?: (bookingId: number, professionalId: number) => void;
   // Aviso de expiración (sin candidatos o sin aceptación).
   emitExpired?: (bookingId: number, clientId: string) => void;
+  // 4C-2: tracking por reserva. `redis` guarda la última posición (TTL 120 s)
+  // y `emitEvent` avisa al cliente en la sala booking:{id}.
+  redis?: TrackingRedis;
+  emitEvent?: (bookingId: number, event: { status: string; ts: number }) => void;
 };
 
 export function createBookingsRouter(deps: BookingsDeps): Router {
-  const { pool, emitNew, emitStatus, emitOffer, emitTaken, emitExpired } = deps;
+  const { pool, emitNew, emitStatus, emitOffer, emitTaken, emitExpired, redis, emitEvent } = deps;
   const router = Router();
 
   router.use(requireAuth);
@@ -473,6 +478,36 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
     }),
   );
 
+  // GET /api/bookings/:id/tracking — última posición conocida del pro (4C-2).
+  // Respaldo del socket: la app lo consulta cada 10 s mientras la reserva está
+  // en 'accepted'. Solo participantes (cliente dueño/pro asignado/admin) → 404.
+  router.get(
+    '/:id/tracking',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const booking = await loadBooking(pool, req.params.id);
+      if (!booking) throw new HttpError(404, 'not_found');
+      if (!(await canAccess(pool, req.user!, booking))) throw new HttpError(404, 'not_found');
+      if (booking.professional === null) throw new HttpError(404, 'not_found');
+      const location = redis ? await readLastPosition(redis, booking.id) : null;
+      const { rows } = await pool.query<{ created_at: Date | null }>(
+        `SELECT created_at FROM booking_events
+          WHERE booking = $1 AND status = 'llegada'
+          ORDER BY created_at DESC LIMIT 1`,
+        [booking.id],
+      );
+      res.json({
+        data: {
+          bookingId: booking.id,
+          status: booking.status,
+          professionalId: booking.professional,
+          location,
+          arrivedAt: rows[0]?.created_at ?? null,
+          client: { lat: booking.lat, lng: booking.lng },
+        },
+      });
+    }),
+  );
+
   // POST /api/bookings/:id/events — registra un evento (nota) en la reserva.
   // Solo participantes. El status se acota por rol y estado:
   //  - cliente: solo 'nota'
@@ -509,6 +544,10 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
          RETURNING id, booking, status, lat, lng, note, created_at`,
         [booking.id, e.status, e.lat ?? null, e.lng ?? null, e.note ?? null],
       );
+      // 4C-2: 'llegada' se anuncia en vivo al cliente en su sala de reserva.
+      if (e.status === 'llegada') {
+        emitEvent?.(booking.id, { status: 'llegada', ts: Date.now() });
+      }
       res.status(201).json({ data: rows[0] });
     }),
   );
@@ -524,6 +563,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
           emitTaken,
           emitOffer,
           emitExpired,
+          redis,
         });
       }),
     );
@@ -761,9 +801,10 @@ async function handleTransition(
     emitTaken?: (bookingId: number, professionalId: number) => void;
     emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
     emitExpired?: (bookingId: number, clientId: string) => void;
+    redis?: TrackingRedis;
   },
 ): Promise<void> {
-  const { emitStatus, emitTaken, emitOffer, emitExpired } = emit;
+  const { emitStatus, emitTaken, emitOffer, emitExpired, redis } = emit;
   const user = req.user!;
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
@@ -865,6 +906,11 @@ async function handleTransition(
   }
 
   emitStatus(updated.id, to);
+  // 4C-2: el rastreo solo vive mientras la reserva está 'accepted'. Al pasar a
+  // in_progress/completed/cancelled se descarta la última posición.
+  if (to !== 'accepted') {
+    await redis?.del(trackingKey(updated.id)).catch(() => undefined);
+  }
   res.json({ data: toBookingDto(updated) });
 }
 

@@ -75,6 +75,8 @@ const stats = {
   locRateLimited: 0,
   locBanned: 0,
   locInvalid: 0,
+  trackRelayed: 0,
+  trackRateLimited: 0,
   nearbyQueries: 0,
   nearbyErrors: 0,
   batchRuns: 0,
@@ -250,6 +252,14 @@ app.use(
       io.to(`booking:${bookingId}`).emit('booking:status', {
         booking_id: String(bookingId),
         status: 'expired',
+      });
+    },
+    // 4C-2: última posición en Redis para el polling + aviso de llegada.
+    redis,
+    emitEvent: (bookingId, event) => {
+      io.to(`booking:${bookingId}`).emit('booking:event', {
+        booking_id: String(bookingId),
+        ...event,
       });
     },
   }),

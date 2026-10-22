@@ -31,6 +31,8 @@ const stats: RealtimeStats = {
   locRateLimited: 0,
   locBanned: 0,
   locInvalid: 0,
+  trackRelayed: 0,
+  trackRateLimited: 0,
 };
 
 // Redis en memoria: basta para comprobar qué claves escribe (o no) el gate.
@@ -53,6 +55,9 @@ function fakeRedis(): SocketRedis & { store: Map<string, string>; sets: Map<stri
     async set(key, value) {
       store.set(key, value);
       return 'OK';
+    },
+    async get(key) {
+      return store.get(key) ?? null;
     },
     async del(key) {
       return store.delete(key) ? 1 : 0;

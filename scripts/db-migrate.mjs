@@ -13,7 +13,7 @@ loadRootEnv(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DB_USER = process.env.DB_USER || 'lookify';
 const DB_NAME = process.env.DB_DATABASE || 'lookify';
-const FILES = ['directus/migrations/001_postgis.sql', 'directus/migrations/002_constraints.sql', 'directus/migrations/003_matching.sql'];
+const FILES = ['directus/migrations/001_postgis.sql', 'directus/migrations/002_constraints.sql', 'directus/migrations/003_matching.sql', 'directus/migrations/004_tracking.sql'];
 
 for (const file of FILES) {
   console.log(`=== ${file} ===`);

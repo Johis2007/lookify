@@ -9,6 +9,13 @@ import {
   resolveOwnVerifiedProfessionalId,
   type AuthedUser,
 } from './auth.js';
+import {
+  insertTrackingHistory,
+  resolveAssignedProfessionalForTracking,
+  resolveTrackingParticipant,
+  saveLastPosition,
+  TRACKING_MIN_INTERVAL_MS,
+} from './tracking.js';
 
 // Handlers de Socket.io (Fase 3-7) extraídos de index.ts para poder probarlos
 // sin levantar el proceso completo. Toda la autorización vive aquí: el
@@ -24,6 +31,8 @@ export type RealtimeStats = {
   locRateLimited: number;
   locBanned: number;
   locInvalid: number;
+  trackRelayed: number;
+  trackRateLimited: number;
 };
 
 // Subconjunto de Redis que usan los handlers (permite inyectar un fake en tests).
@@ -31,6 +40,7 @@ export type SocketRedis = {
   sadd(key: string, member: string): Promise<number>;
   expire(key: string, seconds: number): Promise<number>;
   set(key: string, value: string, mode: 'EX', ttl: number): Promise<unknown>;
+  get(key: string): Promise<string | null>;
   del(key: string): Promise<number>;
   smembers(key: string): Promise<string[]>;
 };
@@ -96,6 +106,20 @@ function checkRateLimit(socketId: string, stats: RealtimeStats): { ok: boolean; 
   }
   lastLoc.set(socketId, now);
   return { ok: true };
+}
+
+// 4C-2: anti-saturación del rastreo por reserva (1 relevo / 2 s por socket).
+const lastTrack = new Map<string, number>();
+
+function checkTrackingRate(socketId: string, stats: RealtimeStats): boolean {
+  const now = Date.now();
+  const last = lastTrack.get(socketId) || 0;
+  if (now - last < TRACKING_MIN_INTERVAL_MS) {
+    stats.trackRateLimited += 1;
+    return false;
+  }
+  lastTrack.set(socketId, now);
+  return true;
 }
 
 function geohash5(lat: number, lng: number) {
@@ -173,16 +197,57 @@ export function registerSocketHandlers(io: Server, deps: SocketHandlerDeps): voi
       if (professional_id !== undefined && professional_id !== null && String(professional_id) !== String(pid)) {
         logWarn('pro id mismatch (ignorado)', { claimed: String(professional_id), pid, user: me.userId });
       }
+      const now = Date.now();
+
+      // 4C-2: relevo de tracking de UNA reserva. Solo el pro asignado, solo en
+      // 'accepted', y solo a la sala booking:{id} (sin fan-out global).
+      let tracked = false;
+      if (booking_id !== undefined && booking_id !== null) {
+        const target = await resolveAssignedProfessionalForTracking(pool, me, booking_id);
+        if (!target || target.professionalId !== pid) {
+          stats.locInvalid += 1;
+          forbidden('location:update');
+          return;
+        }
+        if (!checkTrackingRate(socket.id, stats)) {
+          socket.emit('error', {
+            code: 'RATE_LIMITED',
+            message: 'Máximo 1 relevo de tracking cada 2s',
+          });
+          return;
+        }
+        const payload = {
+          booking_id: String(target.bookingId),
+          professional_id: String(pid),
+          lat,
+          lng,
+          ts: now,
+        };
+        io.to(`booking:${target.bookingId}`).emit('booking:location', payload);
+        try {
+          await saveLastPosition(redis, target.bookingId, { lat, lng, ts: now });
+        } catch (e) {
+          logErr('tracking redis', { err: String(e), bid: target.bookingId });
+        }
+        insertTrackingHistory(pool, target.bookingId, pid, lat, lng).catch((e) =>
+          logErr('tracking history', { err: String(e), bid: target.bookingId }),
+        );
+        stats.trackRelayed += 1;
+        tracked = true;
+      }
+
+      // Radar/zonas mantiene su límite de 5s; no bloquea el relevo de tracking.
       const gate = checkRateLimit(socket.id, stats);
       if (!gate.ok) {
-        socket.emit('error', {
-          code: gate.reason === 'banned' ? 'BANNED_60S' : 'RATE_LIMITED',
-          message: 'Máximo 1 mensaje GPS cada 5s',
-        });
+        if (!tracked) {
+          socket.emit('error', {
+            code: gate.reason === 'banned' ? 'BANNED_60S' : 'RATE_LIMITED',
+            message: 'Máximo 1 mensaje GPS cada 5s',
+          });
+        }
         return;
       }
       stats.locAccepted += 1;
-      const now = Date.now();
       const zone = geohash5(lat, lng);
       socket.join(`zone:${zone}`);
       // Redis TTL 30s: si no reporta, se considera offline (Fase 5).
@@ -191,28 +256,12 @@ export function registerSocketHandlers(io: Server, deps: SocketHandlerDeps): voi
       const payload = { professional_id: String(pid), lat, lng, ts: now };
       // Fan-out a su zona (clientes del mapa/radar).
       socket.to(`zone:${zone}`).emit('zone:update', [payload]);
-      // + a sus bookings activos (tracking 1:1, sin broadcast global).
-      try {
-        const bids = await redis.smembers(`prof_bookings:${pid}`);
-        const targets = new Set<string>(bids);
-        // Reenvío extra solo si la reserva le pertenece (cliente, pro o admin).
-        if (booking_id !== undefined && booking_id !== null) {
-          const bid = await resolveBookingAccess(pool, me, booking_id);
-          if (bid === null) {
-            stats.locInvalid += 1;
-          } else targets.add(String(bid));
-        }
-        for (const bid of targets) {
-          io.to(`booking:${bid}`).emit('pro:location', { ...payload, booking_id: bid });
-        }
-      } catch (e) {
-        logErr('forward booking rooms', { err: String(e) });
-      }
     });
 
     socket.on('booking:join', async ({ booking_id, professional_id }) => {
-      // Entrar a la room exige pertenencia: cliente dueño, pro asignado o admin.
-      const bid = await resolveBookingAccess(pool, me, booking_id);
+      // Tracking 4C-2: la sala booking:{id} es SOLO para el cliente dueño o el
+      // profesional asignado (el admin y terceros quedan fuera).
+      const bid = await resolveTrackingParticipant(pool, me, booking_id);
       if (bid === null) {
         forbidden('booking:join');
         return;
@@ -282,7 +331,7 @@ export function registerSocketHandlers(io: Server, deps: SocketHandlerDeps): voi
 
     // Compat FASE 3 (app/(client)/map): alias simple de join a booking room.
     socket.on('join:booking', async ({ booking_id }) => {
-      const bid = await resolveBookingAccess(pool, me, booking_id);
+      const bid = await resolveTrackingParticipant(pool, me, booking_id);
       if (bid === null) {
         forbidden('join:booking');
         return;
@@ -386,6 +435,7 @@ export function registerSocketHandlers(io: Server, deps: SocketHandlerDeps): voi
     socket.on('disconnect', () => {
       stats.connectionsCurrent = Math.max(0, stats.connectionsCurrent - 1);
       lastLoc.delete(socket.id);
+      lastTrack.delete(socket.id);
       violations.delete(socket.id);
       bannedUntil.delete(socket.id);
     });
