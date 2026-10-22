@@ -248,6 +248,12 @@ app.use(
     emitTaken: (bookingId, professionalId) => {
       io.to(`prof:${professionalId}`).emit('booking:taken', { booking_id: String(bookingId) });
     },
+    emitExpired: (bookingId) => {
+      io.to(`booking:${bookingId}`).emit('booking:status', {
+        booking_id: String(bookingId),
+        status: 'expired',
+      });
+    },
   }),
 );
 app.use('/api/professionals', createProfessionalsRouter(pool));

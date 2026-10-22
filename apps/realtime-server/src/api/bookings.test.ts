@@ -26,8 +26,20 @@ let proUser: string;
 let proId: number;
 let foreignProUser: string;
 let foreignProId: number;
+// Pro a ~4,5 km: entra solo en la ronda 2 (radio 6 km), no en la ronda 1
+// (radio 3 km). Sirve para probar el avance de rondas.
+let midProUser: string;
+let midProId: number;
 let serviceId: number;
 let pendingBookingId: number;
+
+// Eventos emitidos por el router (para comprobar que no se duplican).
+const emitted: {
+  offer: Array<{ bookingId: number; professionalId: number }>;
+  taken: Array<{ bookingId: number; professionalId: number }>;
+  expired: number[];
+  status: Array<{ bookingId: number; status: string }>;
+} = { offer: [], taken: [], expired: [], status: [] };
 
 function token(userId: string, isAdmin = false): string {
   return jwt.sign({ id: userId, role: 'app-role', admin_access: isAdmin }, SECRET as string, {
@@ -70,7 +82,18 @@ before(async () => {
     createBookingsRouter({
       pool,
       emitNew: () => {},
-      emitStatus: () => {},
+      emitStatus: (bookingId, status) => {
+        emitted.status.push({ bookingId, status });
+      },
+      emitOffer: (bookingId, professionalId) => {
+        emitted.offer.push({ bookingId, professionalId });
+      },
+      emitTaken: (bookingId, professionalId) => {
+        emitted.taken.push({ bookingId, professionalId });
+      },
+      emitExpired: (bookingId) => {
+        emitted.expired.push(bookingId);
+      },
     }),
   );
   app.use(errorHandler);
@@ -97,8 +120,8 @@ before(async () => {
   );
   proUser = u.rows[0].id;
   const p = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals (\"user\", display_name, verification_status, is_online)
-     VALUES ($1, 'Test Pro', 'verified', false) RETURNING id`,
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg)
+     VALUES ($1, 'Test Pro', 'verified', false, 4.7) RETURNING id`,
     [proUser],
   );
   proId = p.rows[0].id;
@@ -113,6 +136,18 @@ before(async () => {
     [foreignProUser],
   );
   foreignProId = fp.rows[0].id;
+  // Pro intermedio a ~4,5 km (solo entra en la ronda 2).
+  const mu = await pool.query<{ id: string }>(
+    `INSERT INTO directus_users (id, first_name, email, status)
+     VALUES (gen_random_uuid(), 'Test Pro Mid', 'test-pro-mid@lookify.app', 'active') RETURNING id`,
+  );
+  midProUser = mu.rows[0].id;
+  const mp = await pool.query<{ id: number }>(
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg)
+     VALUES ($1, 'Test Pro Mid', 'verified', false, 4.8) RETURNING id`,
+    [midProUser],
+  );
+  midProId = mp.rows[0].id;
   const s = await pool.query<{ id: number }>(
     `INSERT INTO beauty_services (name, price_base, duration_min, is_active)
      VALUES ('Test Service', 42000, 40, true) RETURNING id`,
@@ -120,17 +155,19 @@ before(async () => {
   serviceId = s.rows[0].id;
   // El pro debe ofrecer el servicio para poder asignársele reservas.
   await pool.query(
-    `INSERT INTO professional_services (professional_id, service_id) VALUES ($1, $2), ($3, $2)`,
-    [proId, serviceId, foreignProId],
+    `INSERT INTO professional_services (professional_id, service_id) VALUES ($1, $2), ($3, $2), ($4, $2)`,
+    [proId, serviceId, foreignProId, midProId],
   );
   // Ubicaciones para el modelo "claim" (cerca del punto de prueba 4.7,-74.0;
-  // el lejano ~20 km para verificar el filtro por radio).
+  // el intermedio ~4,5 km entra solo en la ronda 2; el lejano ~11 km queda
+  // fuera de ambos radios).
   await pool.query(
     `INSERT INTO professional_locations (professional_id, geom, updated_at)
      VALUES ($1, ST_SetSRID(ST_MakePoint(-74.0, 4.7),4326), NOW()),
-            ($2, ST_SetSRID(ST_MakePoint(-73.9, 4.7),4326), NOW())
+            ($2, ST_SetSRID(ST_MakePoint(-73.9, 4.7),4326), NOW()),
+            ($3, ST_SetSRID(ST_MakePoint(-73.9594, 4.7),4326), NOW())
      ON CONFLICT (professional_id) DO UPDATE SET geom = EXCLUDED.geom, updated_at = NOW()`,
-    [proId, foreignProId],
+    [proId, foreignProId, midProId],
   );
 });
 
@@ -139,11 +176,11 @@ after(async () => {
   await pool.query('DELETE FROM booking_events WHERE booking IN (SELECT id FROM bookings WHERE client = ANY($1))', [[clientA, clientB]]);
   await pool.query('DELETE FROM booking_candidates WHERE booking_id IN (SELECT id FROM bookings WHERE client = ANY($1))', [[clientA, clientB]]);
   await pool.query('DELETE FROM bookings WHERE client = ANY($1)', [[clientA, clientB]]);
-  await pool.query('DELETE FROM professional_locations WHERE professional_id = ANY($1)', [[proId, foreignProId]]);
+  await pool.query('DELETE FROM professional_locations WHERE professional_id = ANY($1)', [[proId, foreignProId, midProId]]);
   await pool.query('DELETE FROM professional_services WHERE service_id = $1', [serviceId]);
   await pool.query('DELETE FROM beauty_services WHERE id = $1', [serviceId]);
-  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [[proId, foreignProId]]);
-  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [[clientA, clientB, proUser, foreignProUser]]);
+  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [[proId, foreignProId, midProId]]);
+  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [[clientA, clientB, proUser, foreignProUser, midProUser]]);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.end();
 });
@@ -501,8 +538,12 @@ maybe('las transiciones escriben eventos semánticos (iniciado/finalizado)', asy
 // ---------------------------------------------------------------------------
 
 async function makeClaimBooking(lat = 4.7, lng = -74.0): Promise<number> {
-  // Sin professionalId -> claim. El pro está online para ser candidato.
-  await pool.query(`UPDATE beauty_professionals SET is_online = true WHERE id = $1`, [proId]);
+  // Sin professionalId -> claim. Los pros cercanos están online para ser
+  // candidatos (el intermedio solo entra en la ronda 2).
+  await pool.query(
+    `UPDATE beauty_professionals SET is_online = true WHERE id = ANY($1)`,
+    [[proId, midProId]],
+  );
   const res = await api('POST', '/api/bookings', clientA, {
     serviceId,
     addressText: 'Calle Claim',
@@ -601,12 +642,19 @@ maybe('claim: el barrido amplía a 6 km y expira tras dos rondas', async () => {
   );
   assert.equal(r2.rows[0].match_round, 2);
   assert.equal(r2.rows[0].status, 'pending');
-  // No se re-ofrece al mismo pro; el lejano (20 km) sigue fuera de 6 km.
+  // La ronda 2 ofrece al pro de ~4,5 km (en la ronda 1 quedaba fuera de radio).
   const cand2 = await pool.query<{ professional_id: number }>(
     `SELECT professional_id FROM booking_candidates WHERE booking_id = $1 AND round = 2`,
     [bid],
   );
-  assert.equal(cand2.rows.length, 0, 'sin candidatos nuevos en la ronda 2');
+  assert.deepEqual(cand2.rows.map((r) => Number(r.professional_id)), [midProId]);
+  // No se re-ofrece al pro de la ronda 1 y el lejano (~11 km) sigue fuera.
+  const all = await pool.query<{ professional_id: number; round: number }>(
+    `SELECT professional_id, round FROM booking_candidates WHERE booking_id = $1`,
+    [bid],
+  );
+  assert.ok(!all.rows.some((r) => Number(r.professional_id) === foreignProId));
+  assert.equal(all.rows.filter((r) => Number(r.professional_id) === proId).length, 1);
   // Vencer la ronda 2 -> expired.
   await pool.query(`UPDATE bookings SET expires_at = NOW() - interval '1 second' WHERE id = $1`, [bid]);
   await sweepMatching({ pool, emitOffer: () => {}, emitExpired: () => {} });
@@ -617,4 +665,156 @@ maybe('claim: el barrido amplía a 6 km y expira tras dos rondas', async () => {
     [bid],
   );
   assert.equal(ev.rows[0].count, '1');
+});
+
+// ---------------------------------------------------------------------------
+// 4A-bis: rondas atómicas, avance temprano y ficha pública.
+// ---------------------------------------------------------------------------
+
+maybe('4A-bis: dos barridos simultáneos procesan la reserva una sola vez', async () => {
+  const { sweepMatching } = await import('../matching.js');
+  const bid = await makeClaimBooking();
+  await pool.query(`UPDATE bookings SET expires_at = NOW() - interval '1 second' WHERE id = $1`, [bid]);
+  const offers: number[] = [];
+  const expired: number[] = [];
+  const deps = () => ({
+    pool,
+    emitOffer: (_bookingId: number, professionalId: number) => {
+      offers.push(professionalId);
+    },
+    emitExpired: (bookingId: number) => {
+      expired.push(bookingId);
+    },
+  });
+  await Promise.all([sweepMatching(deps()), sweepMatching(deps())]);
+  // La oferta de la ronda 2 se anuncia UNA sola vez (no duplicada).
+  assert.equal(offers.filter((p) => p === midProId).length, 1, 'oferta emitida una sola vez');
+  assert.equal(expired.length, 0, 'no expira (tiene candidatos en la ronda 2)');
+  // Y en la base queda una sola fila de candidato para la ronda 2.
+  const rows = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM booking_candidates WHERE booking_id = $1 AND round = 2`,
+    [bid],
+  );
+  assert.equal(rows.rows[0].n, '1');
+  const b = await pool.query<{ match_round: number; status: string }>(
+    `SELECT match_round, status FROM bookings WHERE id = $1`,
+    [bid],
+  );
+  assert.equal(b.rows[0].match_round, 2);
+  assert.equal(b.rows[0].status, 'pending');
+});
+
+maybe('4A-bis: sin candidatos en la ronda 1 se pasa de inmediato a la ronda 2', async () => {
+  // Punto a ~5 km del pro cercano: fuera del radio de la ronda 1 (3 km) y
+  // dentro del de la ronda 2 (6 km). No se espera al TTL.
+  const res = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle Ronda 2',
+    lat: 4.7,
+    lng: -74.045,
+  });
+  assert.equal(res.status, 201);
+  const bid = res.json.data.id;
+  const b = await pool.query<{ match_round: number; status: string }>(
+    `SELECT match_round, status FROM bookings WHERE id = $1`,
+    [bid],
+  );
+  assert.equal(b.rows[0].match_round, 2, 'pasa de inmediato a la ronda 2');
+  assert.equal(b.rows[0].status, 'pending');
+  const cand = await pool.query<{ professional_id: number; round: number }>(
+    `SELECT professional_id, round FROM booking_candidates WHERE booking_id = $1`,
+    [bid],
+  );
+  assert.deepEqual(cand.rows.map((r) => Number(r.professional_id)), [proId]);
+  assert.ok(cand.rows.every((r) => Number(r.round) === 2), 'sin ofertas en la ronda 1');
+});
+
+maybe('4A-bis: si todos los candidatos rechazan, se avanza de inmediato', async () => {
+  const bid = await makeClaimBooking();
+  const rej = await api('POST', `/api/bookings/${bid}/reject`, proUser);
+  assert.equal(rej.status, 200);
+  const b = await pool.query<{ match_round: number; status: string }>(
+    `SELECT match_round, status FROM bookings WHERE id = $1`,
+    [bid],
+  );
+  assert.equal(b.rows[0].match_round, 2, 'avanza de inmediato a la ronda 2');
+  assert.equal(b.rows[0].status, 'pending');
+  const cand = await pool.query<{ professional_id: number }>(
+    `SELECT professional_id FROM booking_candidates WHERE booking_id = $1 AND round = 2`,
+    [bid],
+  );
+  assert.deepEqual(cand.rows.map((r) => Number(r.professional_id)), [midProId]);
+});
+
+maybe('4A-bis: sin candidatos en ninguna ronda la reserva expira de inmediato', async () => {
+  const res = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle Lejos',
+    lat: 5.5,
+    lng: -75.0,
+  });
+  assert.equal(res.status, 201);
+  const bid = res.json.data.id;
+  assert.equal(res.json.data.status, 'expired', 'la respuesta ya refleja la expiración');
+  const b = await pool.query<{ status: string }>(`SELECT status FROM bookings WHERE id = $1`, [bid]);
+  assert.equal(b.rows[0].status, 'expired');
+  const ev = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM booking_events WHERE booking = $1 AND status = 'expired'`,
+    [bid],
+  );
+  assert.equal(ev.rows[0].n, '1', 'un único evento expired');
+});
+
+maybe('4A-bis: el cliente cancela una reserva sin asignar y cierra las ofertas', async () => {
+  const bid = await makeClaimBooking();
+  const takenBefore = emitted.taken.length;
+  const res = await api('POST', `/api/bookings/${bid}/cancel`, clientA);
+  assert.equal(res.status, 200);
+  assert.equal(res.json.data.status, 'cancelled');
+  const b = await pool.query<{ status: string }>(`SELECT status FROM bookings WHERE id = $1`, [bid]);
+  assert.equal(b.rows[0].status, 'cancelled');
+  const cand = await pool.query<{ status: string }>(
+    `SELECT status FROM booking_candidates WHERE booking_id = $1 AND professional_id = $2`,
+    [bid, proId],
+  );
+  assert.equal(cand.rows[0].status, 'declined', 'la oferta queda cerrada');
+  const ev = await pool.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM booking_events WHERE booking = $1 AND status = 'cancelled'`,
+    [bid],
+  );
+  assert.equal(ev.rows[0].n, '1');
+  assert.ok(emitted.taken.length > takenBefore, 'se avisa a los candidatos (booking:taken)');
+  const avail = await api('GET', '/api/bookings/pro/available', proUser);
+  assert.ok(!avail.json.data.some((o: any) => o.id === String(bid)), 'ya no está disponible');
+});
+
+maybe('4A-bis: GET /:id devuelve expiresAt, matchRound y la ficha pública del profesional', async () => {
+  const bid = await makeClaimBooking();
+  const pending = await api('GET', `/api/bookings/${bid}`, clientA);
+  assert.equal(pending.status, 200);
+  assert.ok(pending.json.data.expiresAt, 'expiresAt presente mientras busca');
+  assert.equal(pending.json.data.matchRound, 1);
+  assert.equal(pending.json.data.professionalPublic, null, 'sin ficha pública todavía');
+  await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  const accepted = await api('GET', `/api/bookings/${bid}`, clientA);
+  assert.equal(accepted.status, 200);
+  const pub = accepted.json.data.professionalPublic;
+  assert.ok(pub, 'ficha pública del profesional');
+  assert.equal(pub.id, proId);
+  assert.equal(pub.displayName, 'Test Pro');
+  assert.equal(typeof pub.rating, 'number');
+  assert.equal(pub.phone, undefined, 'sin teléfono');
+  assert.equal(pub.email, undefined, 'sin email');
+  assert.ok(!JSON.stringify(accepted.json.data).includes('@lookify.app'), 'sin datos de contacto');
+  assert.equal(accepted.json.data.expiresAt, null, 'sin vencimiento tras aceptar');
+});
+
+maybe('4A-bis: la distancia de la oferta se redondea a múltiplos de 100 m', async () => {
+  const bid = await makeClaimBooking(4.7, -74.045);
+  const res = await api('GET', '/api/bookings/pro/available', proUser);
+  assert.equal(res.status, 200);
+  const offer = res.json.data.find((o: any) => o.id === String(bid));
+  assert.ok(offer, 'la oferta aparece');
+  assert.equal(offer.distanciaM % 100, 0, 'distancia redondeada a 100 m');
+  assert.ok(offer.distanciaM >= 4000 && offer.distanciaM <= 6000, 'distancia coherente');
 });

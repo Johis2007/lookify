@@ -3,7 +3,14 @@ import { z } from 'zod';
 import type pg from 'pg';
 import { resolveOwnProfessionalId } from '../auth.js';
 import { withTransaction } from '../db.js';
-import { findCandidates, offerToCandidates, MATCH_RADIUS_M, MATCH_OFFER_TTL_MS } from '../matching.js';
+import {
+  avanzarAhora,
+  avanzarSiTodosRechazaron,
+  findCandidates,
+  offerToCandidates,
+  MATCH_RADIUS_M,
+  MATCH_OFFER_TTL_MS,
+} from '../matching.js';
 import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } from './http.js';
 
 // BFF de reservas (Paso 2B). Todo el acceso a bookings/booking_events pasa por
@@ -20,6 +27,8 @@ export const BOOKING_STATUSES = [
   'in_progress',
   'completed',
   'cancelled',
+  // El motor de matching expira las reservas que se quedan sin candidatos.
+  'expired',
 ] as const;
 export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
@@ -96,10 +105,12 @@ type BookingRow = {
   lng: number | null;
   scheduled_at: Date | null;
   created_at: Date | null;
+  match_round: number | null;
+  expires_at: Date | null;
 };
 
 const BOOKING_FIELDS =
-  'id, client, professional, service, status, price_snapshot, address_text, lat, lng, scheduled_at, created_at';
+  'id, client, professional, service, status, price_snapshot, address_text, lat, lng, scheduled_at, created_at, match_round, expires_at';
 
 // Fila de reserva con servicio embebido y nombre del cliente (rutas del pro).
 type ProBookingRow = BookingRow & {
@@ -112,6 +123,9 @@ type ProBookingRow = BookingRow & {
   s_price: string | null;
   s_duration: number | null;
   client_first_name: string | null;
+  pro_name: string | null;
+  pro_avatar: string | null;
+  pro_rating: number | null;
 };
 
 type BookingEventRow = {
@@ -145,10 +159,21 @@ function round5(v: number | null): number | null {
   return v === null ? null : Math.round(v * 200) / 200;
 }
 
+// Distancia en la vista reducida: múltiplos de 100 m (no revela la posición
+// exacta del cliente).
+function round100(v: number | null): number {
+  if (v === null) return 0;
+  return Math.round(Number(v) / 100) * 100;
+}
+
 function primerNombre(v?: string | null): string {
   const s = (v ?? '').trim();
   return s ? s.split(/\s+/)[0] : 'Cliente';
 }
+
+// Estados en los que la reserva ya tiene profesional y el cliente puede ver su
+// ficha pública (nombre, foto, calificación). Nunca teléfono ni documentos.
+const PUBLIC_PRO_STATUSES = ['accepted', 'in_progress', 'completed'];
 
 // Forma compatible con DBooking del frontend (snake_case, service embebido),
 // para que el mapeo existente siga funcionando sin tocar la app.
@@ -178,6 +203,24 @@ function toProBookingDto(row: ProBookingRow) {
     payment_method: row.payment_method,
     cancel_reason: row.cancel_reason,
     clientFirstName: row.client_first_name,
+    // Rondas de matching y vencimiento de la oferta (4A-bis).
+    expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
+    matchRound: Number(row.match_round ?? 0),
+    // Ficha pública del profesional (solo una vez aceptada).
+    professionalPublic: toProfessionalPublic(row),
+  };
+}
+
+// Ficha pública del profesional: nombre, foto y calificación. Sin teléfono,
+// sin documentos y sin datos de verificación.
+function toProfessionalPublic(row: ProBookingRow) {
+  if (row.professional === null) return null;
+  if (!row.status || !PUBLIC_PRO_STATUSES.includes(row.status)) return null;
+  return {
+    id: row.professional,
+    displayName: row.pro_name ?? 'Profesional',
+    avatar: row.pro_avatar ?? null,
+    rating: row.pro_rating === null ? null : Number(row.pro_rating),
   };
 }
 
@@ -195,6 +238,9 @@ function toBookingDto(row: BookingRow) {
     lng: row.lng,
     scheduledAt: row.scheduled_at,
     createdAt: row.created_at,
+    // Rondas de matching y vencimiento de la oferta (4A-bis).
+    expiresAt: row.expires_at ? row.expires_at.toISOString() : null,
+    matchRound: Number(row.match_round ?? 0),
   };
 }
 
@@ -209,10 +255,12 @@ export type BookingsDeps = {
   // Modelo "claim": oferta difundida a cada candidato y aviso de que otro la tomó.
   emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
   emitTaken?: (bookingId: number, professionalId: number) => void;
+  // Aviso de expiración (sin candidatos o sin aceptación).
+  emitExpired?: (bookingId: number, clientId: string) => void;
 };
 
 export function createBookingsRouter(deps: BookingsDeps): Router {
-  const { pool, emitNew, emitStatus, emitOffer, emitTaken } = deps;
+  const { pool, emitNew, emitStatus, emitOffer, emitTaken, emitExpired } = deps;
   const router = Router();
 
   router.use(requireAuth);
@@ -285,11 +333,20 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       // Difusión a candidatos SOLO a la sala de cada uno (nunca broadcast).
       if (isClaim) {
         const candidates = await findCandidates(pool, body.serviceId, body.lat, body.lng, MATCH_RADIUS_M[0]);
-        const ids = await offerToCandidates(pool, inserted.id, 1, candidates);
-        for (const pid of ids) emitOffer?.(inserted.id, pid, user.userId);
+        if (candidates.length > 0) {
+          const ids = await offerToCandidates(pool, inserted.id, 1, candidates);
+          for (const pid of ids) emitOffer?.(inserted.id, pid, user.userId);
+        } else {
+          // Sin candidatos en la ronda 1: se pasa de inmediato a la ronda 2 y,
+          // si tampoco hay, la reserva expira sin esperar (4A-bis).
+          await avanzarAhora({ pool, emitOffer, emitExpired }, inserted.id);
+        }
       }
 
-      res.status(201).json({ data: toBookingDto(inserted) });
+      // La respuesta refleja el estado real tras el avance (puede ser
+      // 'expired' si no hay nadie a quien ofrecerle).
+      const final = (await loadBooking(pool, String(inserted.id))) ?? inserted;
+      res.status(201).json({ data: toBookingDto(final) });
     }),
   );
 
@@ -374,7 +431,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
           servicioNombre: r.s_name ?? 'Servicio',
           duracionMin: r.s_duration ?? 60,
           precio: r.price_snapshot === null ? 0 : Number(r.price_snapshot),
-          distanciaM: Math.round(Number(r.distance_m)),
+          distanciaM: round100(r.distance_m),
           // Zona aproximada: ~500 m (0.005°). Nunca la dirección exacta.
           zona: { lat: round5(r.lat), lng: round5(r.lng) },
           clientePrimerNombre: primerNombre(r.client_first_name),
@@ -462,7 +519,12 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
     router.post(
       `/:id/${action}`,
       asyncHandler(async (req: AuthedRequest, res: Response) => {
-        await handleTransition(pool, req, res, action, emitStatus, emitTaken);
+        await handleTransition(pool, req, res, action, {
+          emitStatus,
+          emitTaken,
+          emitOffer,
+          emitExpired,
+        });
       }),
     );
   }
@@ -514,12 +576,14 @@ async function loadBooking(pool: pg.Pool, rawId: string | undefined | string[]):
 const PRO_BOOKING_SELECT = `
   SELECT b.id, b.client, b.professional, b.service, b.status, b.price_snapshot,
          b.address_text, b.lat, b.lng, b.scheduled_at, b.created_at, b.completed_at,
-         b.rating, b.payment_method, b.cancel_reason,
+         b.rating, b.payment_method, b.cancel_reason, b.match_round, b.expires_at,
          s.id AS s_id, s.name AS s_name, s.price_base AS s_price, s.duration_min AS s_duration,
-         u.first_name AS client_first_name
+         u.first_name AS client_first_name,
+         bp.display_name AS pro_name, bp.avatar AS pro_avatar, bp.rating_avg AS pro_rating
     FROM bookings b
     LEFT JOIN beauty_services s ON s.id = b.service
-    LEFT JOIN directus_users u ON u.id = b.client`;
+    LEFT JOIN directus_users u ON u.id = b.client
+    LEFT JOIN beauty_professionals bp ON bp.id = b.professional`;
 
 async function loadBookingFull(pool: pg.Pool, id: number): Promise<ProBookingRow | null> {
   const { rows } = await pool.query<ProBookingRow>(`${PRO_BOOKING_SELECT} WHERE b.id = $1`, [id]);
@@ -624,15 +688,19 @@ async function claimBooking(
 }
 
 // Rechazar (claim): solo saca la oferta de ESTE profesional; no cancela.
+// Si con este rechazo se queda sin ofertas vivas en la ronda, se avanza de
+// inmediato a la ronda siguiente (o expira) sin esperar al vencimiento.
 async function declineOffer(
   pool: pg.Pool,
-  req: AuthedRequest,
   res: Response,
   booking: BookingRow,
   ownPro: number | null,
   isAdmin: boolean,
+  emit: {
+    emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
+    emitExpired?: (bookingId: number, clientId: string) => void;
+  },
 ): Promise<void> {
-  void req;
   if (ownPro === null || isAdmin) throw new HttpError(404, 'not_found');
   const { rowCount } = await pool.query(
     `UPDATE booking_candidates SET status = 'declined'
@@ -640,7 +708,47 @@ async function declineOffer(
     [booking.id, ownPro],
   );
   if (rowCount === 0) throw new HttpError(409, 'not_offered');
-  res.json({ data: { id: booking.id, status: 'pending' } });
+
+  // Avance temprano por rechazo (atómico: si otro proceso ya avanzó, no pasa nada).
+  const res2 = await avanzarSiTodosRechazaron({ pool, ...emit }, booking.id);
+  const status = res2.tipo === 'expirada' ? 'expired' : 'pending';
+  res.json({ data: { id: booking.id, status } });
+}
+
+// El cliente cancela una reserva aún SIN asignar (modelo claim): la reserva
+// pasa a 'cancelled', se cierran las ofertas vigentes y los candidatos
+// desaparece de su lista (booking:taken).
+async function cancelUnassignedBooking(
+  pool: pg.Pool,
+  res: Response,
+  booking: BookingRow,
+  emitStatus: (bookingId: number, status: string) => void,
+  emitTaken?: (bookingId: number, professionalId: number) => void,
+): Promise<void> {
+  const result = await withTransaction(pool, async (client) => {
+    // UPDATE condicional atómico: solo se cancela si sigue 'pending' y sin pro.
+    const { rows } = await client.query<BookingRow>(
+      `UPDATE bookings
+          SET status = 'cancelled', expires_at = NULL
+        WHERE id = $1 AND status = 'pending' AND professional IS NULL
+      RETURNING ${BOOKING_FIELDS}`,
+      [booking.id],
+    );
+    if (rows.length === 0) return null;
+    const { rows: candidates } = await client.query<{ professional_id: number }>(
+      `UPDATE booking_candidates SET status = 'declined'
+        WHERE booking_id = $1 AND status = 'offered'
+      RETURNING professional_id`,
+      [booking.id],
+    );
+    await insertEvent(client, booking.id, 'cancelled', null, null, 'client');
+    return { booking: rows[0], candidates };
+  });
+
+  if (!result) throw new HttpError(409, 'conflict');
+  for (const c of result.candidates) emitTaken?.(booking.id, Number(c.professional_id));
+  emitStatus(result.booking.id, 'cancelled');
+  res.json({ data: toBookingDto(result.booking) });
 }
 
 async function handleTransition(
@@ -648,9 +756,14 @@ async function handleTransition(
   req: AuthedRequest,
   res: Response,
   action: ProAction | ClientAction,
-  emitStatus: (bookingId: number, status: string) => void,
-  emitTaken?: (bookingId: number, professionalId: number) => void,
+  emit: {
+    emitStatus: (bookingId: number, status: string) => void;
+    emitTaken?: (bookingId: number, professionalId: number) => void;
+    emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
+    emitExpired?: (bookingId: number, clientId: string) => void;
+  },
 ): Promise<void> {
+  const { emitStatus, emitTaken, emitOffer, emitExpired } = emit;
   const user = req.user!;
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
@@ -671,16 +784,22 @@ async function handleTransition(
     if (action === 'accept') {
       await claimBooking(pool, req, res, booking, ownPro, user.isAdmin, emitStatus, emitTaken);
       return;
-    }    if (action === 'reject') {
-      await declineOffer(pool, req, res, booking, ownPro, user.isAdmin);
+    }
+    if (action === 'reject') {
+      await declineOffer(pool, res, booking, ownPro, user.isAdmin, {
+        emitOffer,
+        emitExpired,
+      });
       return;
     }
     if (action === 'cancel' && isOwnerClient) {
-      // El cliente cancela una reserva aún sin asignar: permitido.
-    } else {
-      // start/complete/cancel(pro) no aplican sin profesional asignado.
-      throw new HttpError(404, 'not_found');
+      // El cliente cancela una reserva aún sin asignar: cierra las ofertas
+      // vigentes y avisa a los candidatos.
+      await cancelUnassignedBooking(pool, res, booking, emitStatus, emitTaken);
+      return;
     }
+    // start/complete/cancel(pro) no aplican sin profesional asignado.
+    throw new HttpError(404, 'not_found');
   }
 
   let to: BookingStatus;
