@@ -87,10 +87,92 @@ export function joinBookingRoom(bookingId: string, professionalId: number): void
   }
 }
 
+/**
+ * La reserva la tomó otro profesional: el candidato la retira de su lista.
+ * El servidor lo emite en la sala prof:{id} como 'booking:taken'.
+ */
+export function onBookingTaken(cb: (bookingId: string) => void): () => void {
+  if (!socket) return () => undefined;
+  const handler = (p: { booking_id?: string | number }) => {
+    if (p?.booking_id === undefined || p?.booking_id === null) return;
+    cb(String(p.booking_id));
+  };
+  socket.on('booking:taken', handler);
+  return () => {
+    try {
+      socket?.off('booking:taken', handler);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
 export function emitBookingStatus(bookingId: string, status: string): void {
   try {
     socket?.emit('booking:status', { booking_id: bookingId, status });
   } catch {
     /* noop */
   }
+}
+
+// ---------------------------------------------------------------------------
+// Socket del CLIENTE (4B): observa el estado de su propia reserva.
+// Es un socket aparte del del profesional: el cliente no emite prof:*.
+// ---------------------------------------------------------------------------
+
+let clientSocket: Socket | null = null;
+
+/** Conecta el socket del cliente (idempotente mientras viva la sesión). */
+export function connectClientRealtime(token: string): Socket {
+  if (clientSocket) return clientSocket;
+  clientSocket = io(BACKEND.socketUrl, {
+    auth: { token },
+    transports: ['websocket'],
+    reconnection: true,
+  });
+  return clientSocket;
+}
+
+export function disconnectClientRealtime(): void {
+  try {
+    clientSocket?.disconnect();
+  } catch {
+    /* noop */
+  }
+  clientSocket = null;
+}
+
+/** Entra a la sala de su reserva para recibir booking:status. */
+export function joinClientBookingRoom(bookingId: string): void {
+  const emit = () => {
+    try {
+      clientSocket?.emit('booking:join', { booking_id: bookingId });
+    } catch {
+      /* noop */
+    }
+  };
+  emit();
+  // Tras una reconexión hay que volver a entrar a la sala.
+  clientSocket?.on('connect', emit);
+}
+
+/**
+ * Cambios de estado de la reserva del cliente.
+ * El servidor emite { booking_id, status } en la sala booking:{id}.
+ */
+export function onBookingStatus(cb: (bookingId: string, status: string) => void): () => void {
+  if (!clientSocket) return () => undefined;
+  const handler = (p: { booking_id?: string | number; status?: string }) => {
+    if (p?.booking_id === undefined || p?.booking_id === null) return;
+    if (!p?.status) return;
+    cb(String(p.booking_id), String(p.status));
+  };
+  clientSocket.on('booking:status', handler);
+  return () => {
+    try {
+      clientSocket?.off('booking:status', handler);
+    } catch {
+      /* noop */
+    }
+  };
 }

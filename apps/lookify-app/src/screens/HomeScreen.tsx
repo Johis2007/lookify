@@ -20,6 +20,9 @@ import { MOCK_CLIENT_LOCATION } from '../constants/geo';
 import { useLiveLocation } from '../hooks/useLiveLocation';
 import { useRememberedPlace } from '../hooks/useRememberedPlace';
 import { distanciaKm } from '../utils/geo';
+import { getNearbyService } from '../services/nearbyService';
+import type { ProfesionalCercano } from '../services/nearbyService';
+import { isBackendEnabled } from '../services/backend/initBackend';
 
 // El ícono es presentación, por eso vive aquí y no en el archivo de datos
 // (que mañana se reemplaza por la respuesta del backend).
@@ -42,8 +45,21 @@ const INITIAL_COORD = {
   longitude: MOCK_CLIENT_LOCATION.longitude,
 };
 
+/** Radio de búsqueda en el mapa (mismo que la ronda 2 del matching). */
+const RADIO_CERCANOS_KM = 6;
+
+type ProEnMapa = {
+  id: string;
+  nombre: string;
+  calificacion: number | null;
+  latitude: number;
+  longitude: number;
+};
+
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [categoriaActiva, setCategoriaActiva] = useState<CategoriaId>('peluqueria');
+  const usandoBackend = isBackendEnabled();
+  const [cercanos, setCercanos] = useState<ProfesionalCercano[]>([]);
 
   // GPS en vivo (expo-location, 2 s / 5 m) + punto recordado (ej. Soacha).
   const { location: live, error: liveError } = useLiveLocation(true);
@@ -65,25 +81,70 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     });
   }, [live]);
 
-  const profesionalesFiltrados = MOCK_PROFESSIONALS.filter(
-    (p) => p.categoria === categoriaActiva
-  );
+  // Profesionales reales cercanos (backend). Se refresca por zona (~100 m),
+  // no por cada fix de GPS.
+  const coordKey = `${clientCoord.latitude.toFixed(3)},${clientCoord.longitude.toFixed(3)}`;
+  useEffect(() => {
+    if (!usandoBackend) return;
+    let activo = true;
+    getNearbyService()
+      .listarCercanos({
+        lat: clientCoord.latitude,
+        lng: clientCoord.longitude,
+        radioKm: RADIO_CERCANOS_KM,
+      })
+      .then((lista) => {
+        if (activo) setCercanos(lista);
+      })
+      .catch(() => {
+        if (activo) setCercanos([]);
+      });
+    return () => {
+      activo = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usandoBackend, coordKey]);
 
-  const pins = profesionalesFiltrados.map((p) => ({
+  const profesionalesEnMapa: ProEnMapa[] = usandoBackend
+    ? cercanos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        calificacion: p.calificacion,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      }))
+    : MOCK_PROFESSIONALS.filter((p) => p.categoria === categoriaActiva).map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        calificacion: p.calificacion,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      }));
+
+  const pins = profesionalesEnMapa.map((p) => ({
     id: p.id,
     latitude: p.latitude,
     longitude: p.longitude,
-    title: `${p.nombre} · ⭐ ${p.calificacion}`,
+    title: `${p.nombre}${p.calificacion ? ` · ⭐ ${p.calificacion.toFixed(1)}` : ''}`,
     color: colors.navy,
   }));
 
   // Al tocar un pin se avanza al flujo con la categoría de ese profesional.
   const handleProPress = (id: string) => {
-    const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
-    if (!pro) return;
-    const categoria = CATEGORIAS.find((c) => c.id === pro.categoria);
+    if (!usandoBackend) {
+      const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
+      if (!pro) return;
+      const categoria = CATEGORIAS.find((c) => c.id === pro.categoria);
+      navigation.navigate('ServiceSelection', {
+        categoriaId: pro.categoria,
+        categoriaNombre: categoria?.nombre,
+      });
+      return;
+    }
+    // Backend: la categoría la elige el cliente en el flujo de servicio.
+    const categoria = CATEGORIAS.find((c) => c.id === categoriaActiva);
     navigation.navigate('ServiceSelection', {
-      categoriaId: pro.categoria,
+      categoriaId: categoriaActiva,
       categoriaNombre: categoria?.nombre,
     });
   };
@@ -99,11 +160,11 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   // Abre el mapa en vivo con ruta por calles hacia el primer profesional
   // de la categoría activa (sin API key: OSRM + OSM).
   const handleVerRuta = () => {
-    const dest = profesionalesFiltrados[0];
+    const dest = profesionalesEnMapa[0];
     navigation.navigate('LiveRoute', {
       latitude: dest?.latitude ?? MOCK_CLIENT_LOCATION.latitude + 0.01,
       longitude: dest?.longitude ?? MOCK_CLIENT_LOCATION.longitude + 0.01,
-      nombre: dest ? `${dest.nombre} · ⭐ ${dest.calificacion}` : 'Destino demo',
+      nombre: dest ? dest.nombre : 'Destino demo',
     });
   };
 
@@ -208,10 +269,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <View style={[styles.liveDot, (live || place.hasFix) && styles.liveDotOn]} />
           <Text style={styles.liveText}>
             {live
-              ? `En vivo · ${profesionalesFiltrados.length} cerca`
+              ? `En vivo · ${profesionalesEnMapa.length} cerca`
               : place.hasFix
-                ? `${place.label} · ${profesionalesFiltrados.length} cerca`
-                : `${profesionalesFiltrados.length} cerca · activando GPS…`}
+                ? `${place.label} · ${profesionalesEnMapa.length} cerca`
+                : `${profesionalesEnMapa.length} cerca · activando GPS…`}
           </Text>
         </View>
       </View>
@@ -219,8 +280,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       {/* Resumen + acción principal */}
       <View style={styles.footer}>
         <Text style={styles.footerCount}>
-          {profesionalesFiltrados.length}{' '}
-          {profesionalesFiltrados.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
+          {profesionalesEnMapa.length}{' '}
+          {profesionalesEnMapa.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
         </Text>
         <Button label="Solicitar ahora" onPress={handleSolicitar} />
         <Button label="Ver ruta en vivo" variant="outline" onPress={handleVerRuta} />

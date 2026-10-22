@@ -26,6 +26,7 @@ import ProfessionalStackNavigator, {
 } from './ProfessionalStackNavigator';
 import AdminStackNavigator, { AdminStackParamList } from './AdminStackNavigator';
 import { CategoriaId } from '../data/mockProfessionals';
+import { ProfesionalPublico } from '../services/bookingService';
 
 export type MatchingRouteParams = {
   categoriaId: CategoriaId;
@@ -41,6 +42,12 @@ export type MatchingRouteParams = {
 export type ProfessionalOfferRouteParams = MatchingRouteParams & {
   professionalId: string;
   distanciaKm: number;
+  /** Ficha pública real del profesional (backend). */
+  profesional?: ProfesionalPublico;
+  /** Precio calculado por el servidor (backend). */
+  precioServidor?: number | null;
+  /** Nombre real del servicio (backend). */
+  servicioNombre?: string | null;
 };
 
 export type TrackingRouteParams = {
@@ -53,6 +60,10 @@ export type TrackingRouteParams = {
   precioTotal: number;
   /** id de la reserva real (BFF); ausente en modo demo. */
   bookingId?: string;
+  /** Ficha pública real del profesional (backend). */
+  profesional?: ProfesionalPublico;
+  /** Nombre real del servicio (backend). */
+  servicioNombre?: string | null;
 };
 
 export type ServiceInProgressRouteParams = TrackingRouteParams;

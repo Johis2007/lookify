@@ -1,7 +1,9 @@
 // src/services/backend/backendProfessionalIncomingRequestService.ts
-// Solicitudes reales: bookings pending del profesional + socket booking:new.
-// Cache en memoria de la última activa para el listener (indirección sin
-// importar mocks). Sin dirección exacta hasta aceptación mutua.
+// Solicitudes reales del profesional (4B, modelo "claim"): las ofertas vivas
+// son las que el servidor le difunde a este profesional, es decir
+// GET /api/bookings/pro/available. Aceptar o rechazar es un POST sobre la
+// reserva. La dirección exacta del cliente nunca se muestra: solo la zona
+// (~500 m) y la distancia redondeada que envía el BFF.
 
 import {
   ProfessionalIncomingRequestService,
@@ -19,24 +21,15 @@ import {
   SolicitudEntrante,
 } from '../../types/professionalIncomingRequest';
 import { ServiceError } from '../errors';
-import { api } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import { loadBackendSession, resolveProfessionalId } from '../../lib/backend/session';
-import {
-  DBooking,
-  DProfessional,
-  DReview,
-  desglose,
-  distanciaAprox,
-  expiraEnDesdeCreada,
-  primerNombre,
-} from '../../lib/backend/mapping';
+import { DBooking } from '../../lib/backend/mapping';
 import {
   disconnectRealtime,
-  emitBookingStatus,
   ensureProOnline,
   joinBookingRoom,
   onBookingNew,
+  onBookingTaken,
 } from '../../lib/backend/realtime';
 
 const cacheActiva = new Map<string, SolicitudEntrante>();
@@ -55,64 +48,80 @@ function olvidar(profesionalId: string): void {
   cacheActiva.delete(profesionalId);
 }
 
-async function mapearSolicitud(
-  token: string,
-  b: DBooking,
-  professionalId: number,
-): Promise<SolicitudEntrante> {
-  const svc = typeof b.service === 'object' && b.service !== null ? b.service : null;
-  const [pro, clientReviews] = await Promise.all([
-    api<DProfessional>(
-      'GET',
-      `/items/beauty_professionals/${professionalId}?fields=current_lat,current_lng`,
-      token,
-    ).catch(() => null),
-    api<DReview[]>(
-      'GET',
-      `/items/reviews?filter[client][_eq]=${b.client}&fields=rating&limit=100`,
-      token,
-    ).catch(() => []),
-  ]);
-  const total = clientReviews.length;
-  const prom = total > 0 ? clientReviews.reduce((a, r) => a + r.rating, 0) / total : null;
-  const base = svc?.price_base ?? b.price_snapshot;
-  const d = desglose(base, b.price_snapshot);
-  const dist = distanciaAprox(pro?.current_lat, pro?.current_lng, b.lat, b.lng);
+/** Oferta viva que el BFF difunde a este profesional. */
+type OfertaDisponible = {
+  id: string;
+  servicioId: string | null;
+  servicioNombre: string;
+  duracionMin: number;
+  precio: number;
+  distanciaM: number;
+  zona: { lat: number; lng: number };
+  clientePrimerNombre: string;
+  expiraEn: string | null;
+  creadaEn: string | null;
+};
+
+async function listarOfertas(token: string): Promise<OfertaDisponible[]> {
+  const rows = await bffApi<OfertaDisponible[]>('GET', '/api/bookings/pro/available', token);
+  return Array.isArray(rows) ? rows : [];
+}
+
+/** Estado de la reserva (null si este profesional ya no es participante). */
+async function consultarReserva(bookingId: string, token: string): Promise<DBooking | null> {
+  try {
+    return await bffApi<DBooking>('GET', `/api/bookings/${encodeURIComponent(bookingId)}`, token);
+  } catch {
+    return null;
+  }
+}
+
+function mapearOferta(dto: OfertaDisponible, profesionalId: number): SolicitudEntrante {
+  const precio = Number(dto.precio ?? 0);
   return {
-    id: String(b.id),
-    profesionalId: String(professionalId),
-    servicioId: svc ? String(svc.id) : String(b.service),
-    servicioNombre: svc?.name ?? 'Servicio',
-    duracionMin: svc?.duration_min ?? 60,
-    distanciaKmAprox: dist ?? 0,
-    desglose: d,
-    clientePrimerNombre: primerNombre(b.clientFirstName),
-    clienteCalificacionPromedio: prom !== null ? Math.round(prom * 10) / 10 : null,
-    clienteTotalResenas: total,
-    expiraEn: expiraEnDesdeCreada(b.created_at),
+    id: String(dto.id),
+    profesionalId: String(profesionalId),
+    servicioId: dto.servicioId ?? '',
+    servicioNombre: dto.servicioNombre ?? 'Servicio',
+    duracionMin: Number(dto.duracionMin ?? 60),
+    distanciaKmAprox: Math.round((Number(dto.distanciaM ?? 0) / 1000) * 10) / 10,
+    // El precio del servidor es la base del servicio; el domicilio se
+    // calcula al final (no lo decide el servidor en esta fase).
+    desglose: {
+      precioBaseCop: precio,
+      precioDomicilioCop: 0,
+      precioTotalCop: precio,
+    },
+    clientePrimerNombre: dto.clientePrimerNombre ?? 'Cliente',
+    clienteCalificacionPromedio: null,
+    clienteTotalResenas: 0,
+    expiraEn: dto.expiraEn ? Date.parse(dto.expiraEn) : Date.now() + 60_000,
     estado: 'PENDIENTE_PRO',
   };
 }
 
-// Reserva propia del profesional vía BFF (valida participación en el servidor).
-async function bookingPropio(
-  token: string,
-  bookingId: string,
-  professionalId: number,
-): Promise<DBooking> {
-  const id = Number(bookingId);
-  if (!Number.isInteger(id) || id <= 0) throw new ServiceError('VALIDATION');
-  const b = await bffApi<DBooking>(
-    'GET',
-    `/api/bookings/${id}`,
-    token,
-    undefined,
-    'SOLICITUD_ENTRANTE_NO_ENCONTRADA',
-  );
-  if (b.professional !== null && Number(b.professional) !== professionalId) {
-    throw new ServiceError('SOLICITUD_ENTRANTE_NO_ENCONTRADA');
-  }
-  return b;
+// Reserva ya asignada a este profesional (tras aceptar).
+function mapearAceptada(b: DBooking, profesionalId: number): SolicitudEntrante {
+  const svc = typeof b.service === 'object' && b.service !== null ? b.service : null;
+  const precio = Number(b.price_snapshot ?? svc?.price_base ?? 0);
+  return {
+    id: String(b.id),
+    profesionalId: String(profesionalId),
+    servicioId: svc ? String(svc.id) : String(b.service),
+    servicioNombre: svc?.name ?? 'Servicio',
+    duracionMin: svc?.duration_min ?? 60,
+    distanciaKmAprox: 0,
+    desglose: {
+      precioBaseCop: precio,
+      precioDomicilioCop: 0,
+      precioTotalCop: precio,
+    },
+    clientePrimerNombre: b.clientFirstName ?? 'Cliente',
+    clienteCalificacionPromedio: null,
+    clienteTotalResenas: 0,
+    expiraEn: Date.now() + 60_000,
+    estado: 'LISTA_PARA_SERVICIO',
+  };
 }
 
 export function createBackendProfessionalIncomingRequestService(): ProfessionalIncomingRequestService {
@@ -121,17 +130,13 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      const rows = await bffApi<DBooking[]>(
-        'GET',
-        '/api/bookings/pro/mine?status=pending',
-        session.token,
-      );
-      const b = rows[0];
-      if (!b) {
+      const ofertas = await listarOfertas(session.token);
+      const dto = ofertas[0];
+      if (!dto) {
         olvidar(String(professionalId));
         return null;
       }
-      const s = await mapearSolicitud(session.token, b, professionalId);
+      const s = mapearOferta(dto, professionalId);
       recordar(s);
       return s;
     },
@@ -140,53 +145,72 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      try {
-        const b = await bookingPropio(session.token, input.solicitudEntranteId, professionalId);
-        if (b.status !== 'pending') return null;
-        const s = await mapearSolicitud(session.token, b, professionalId);
-        recordar(s);
-        return s;
-      } catch (e) {
-        if (e instanceof ServiceError && e.code === 'SOLICITUD_ENTRANTE_NO_ENCONTRADA') return null;
-        throw e;
+      const ofertas = await listarOfertas(session.token);
+      const dto = ofertas.find((o) => String(o.id) === String(input.solicitudEntranteId));
+      if (!dto) {
+        // Ya no está disponible: otro profesional la tomó o expiró.
+        olvidar(String(professionalId));
+        return null;
       }
+      const s = mapearOferta(dto, professionalId);
+      recordar(s);
+      return s;
     },
 
     suscribirseASolicitudesEntrantes(input, callback): () => void {
       ensureProOnline();
-      return onBookingNew((bookingId) => {
+      const unsubNueva = onBookingNew((bookingId) => {
         void (async () => {
           try {
             const session = await loadBackendSession();
             if (!session) return;
             const professionalId = await resolveProfessionalId(input.profesionalId);
-            const b = await bookingPropio(session.token, bookingId, professionalId);
-            if (b.status !== 'pending') return;
-            const s = await mapearSolicitud(session.token, b, professionalId);
+            const ofertas = await listarOfertas(session.token);
+            const dto = ofertas.find((o) => String(o.id) === String(bookingId));
+            if (!dto) return;
+            const s = mapearOferta(dto, professionalId);
             recordar(s);
             callback({ tipo: 'NUEVA', solicitud: s });
           } catch {
-            /* reserva ajena o sin acceso: se ignora */
+            /* oferta ajena o sin acceso: se ignora */
           }
         })();
       });
+      // Otro profesional tomó la reserva: la oferta se retira de inmediato.
+      const unsubTomada = onBookingTaken((bookingId) => {
+        const cache = cacheActiva.get(String(input.profesionalId));
+        if (!cache || String(cache.id) !== String(bookingId)) return;
+        const cerrada: SolicitudEntrante = { ...cache, estado: 'CERRADA_YA_ASIGNADA' };
+        recordar(cerrada);
+        callback({ tipo: 'ACTUALIZADA', solicitud: cerrada });
+      });
+      return () => {
+        unsubNueva();
+        unsubTomada();
+      };
     },
 
     async aceptarSolicitud(input: AceptarSolicitudEntranteRequest): Promise<RespuestaAccionSolicitudEntrante> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      const b = await bookingPropio(session.token, input.solicitudEntranteId, professionalId);
-      if (b.status !== 'pending') {
+      const ofertaId = String(input.solicitudEntranteId);
+      const ofertas = await listarOfertas(session.token);
+      const dto = ofertas.find((o) => String(o.id) === ofertaId);
+      if (!dto) {
         olvidar(String(professionalId));
-        return { resultado: b.status === 'accepted' ? 'ACEPTADA' : 'YA_ASIGNADA', solicitud: null };
+        return { resultado: 'YA_ASIGNADA', solicitud: null };
       }
-      await bffApi('POST', `/api/bookings/${b.id}/accept`, session.token, {});
-      joinBookingRoom(String(b.id), professionalId);
-      emitBookingStatus(String(b.id), 'accepted');
-      const actualizada = await bookingPropio(session.token, String(b.id), professionalId);
-      const s = await mapearSolicitud(session.token, actualizada, professionalId);
-      s.estado = 'ESPERANDO_CLIENTE';
+      await bffApi('POST', `/api/bookings/${encodeURIComponent(ofertaId)}/accept`, session.token, {});
+      joinBookingRoom(ofertaId, professionalId);
+      const aceptada = await bffApi<DBooking>(
+        'GET',
+        `/api/bookings/${encodeURIComponent(ofertaId)}`,
+        session.token,
+        undefined,
+        'SOLICITUD_ENTRANTE_NO_ENCONTRADA',
+      );
+      const s = mapearAceptada(aceptada, professionalId);
       recordar(s);
       return { resultado: 'ACEPTADA', solicitud: s };
     },
@@ -195,13 +219,14 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       const professionalId = await resolveProfessionalId(input.profesionalId);
-      const b = await bookingPropio(session.token, input.solicitudEntranteId, professionalId);
-      if (b.status !== 'pending') {
+      const ofertaId = String(input.solicitudEntranteId);
+      const ofertas = await listarOfertas(session.token);
+      const dto = ofertas.find((o) => String(o.id) === ofertaId);
+      if (!dto) {
         olvidar(String(professionalId));
         return { resultado: 'YA_ASIGNADA', solicitud: null };
       }
-      await bffApi('POST', `/api/bookings/${b.id}/reject`, session.token, {});
-      emitBookingStatus(String(b.id), 'rejected');
+      await bffApi('POST', `/api/bookings/${encodeURIComponent(ofertaId)}/reject`, session.token, {});
       olvidar(String(professionalId));
       return { resultado: 'RECHAZADA', solicitud: null };
     },
@@ -209,25 +234,26 @@ export function createBackendProfessionalIncomingRequestService(): ProfessionalI
     async procesarExpiracion(input: ProcesarExpiracionSolicitudRequest): Promise<RespuestaAccionSolicitudEntrante> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(input.profesionalId);
-      try {
-        const b = await bookingPropio(session.token, input.solicitudEntranteId, professionalId);
-        if (b.status !== 'pending') {
-          olvidar(String(professionalId));
-          return { resultado: 'YA_ASIGNADA', solicitud: null };
-        }
-        if (Date.now() < expiraEnDesdeCreada(b.created_at)) {
-          const s = await mapearSolicitud(session.token, b, professionalId);
-          return { resultado: 'ACEPTADA', solicitud: s };
-        }
-        olvidar(String(professionalId));
-        return { resultado: 'EXPIRADA', solicitud: null };
-      } catch (e) {
-        if (e instanceof ServiceError && e.code === 'SOLICITUD_ENTRANTE_NO_ENCONTRADA') {
-          return { resultado: 'YA_ASIGNADA', solicitud: null };
-        }
-        throw e;
+      const profesionalId = await resolveProfessionalId(input.profesionalId);
+      const ofertaId = String(input.solicitudEntranteId);
+      const ofertas = await listarOfertas(session.token);
+      const dto = ofertas.find((o) => String(o.id) === ofertaId);
+      if (dto) {
+        // El servidor todavía ofrece la reserva: no expiró (la cuenta atrás
+        // local pudo adelantarse por reloj). Se mantiene pendiente.
+        const s = mapearOferta(dto, profesionalId);
+        recordar(s);
+        return { resultado: 'PENDIENTE', solicitud: s };
       }
+      olvidar(String(profesionalId));
+      // Ya no está en la lista: expiró o la tomó otro profesional.
+      const b = await consultarReserva(ofertaId, session.token);
+      if (b && b.status === 'accepted') {
+        const s = mapearAceptada(b, profesionalId);
+        recordar(s);
+        return { resultado: 'ACEPTADA', solicitud: s };
+      }
+      return { resultado: 'EXPIRADA', solicitud: null };
     },
 
     async simularSolicitudEntrante(input: SimularSolicitudEntranteRequest): Promise<SolicitudEntrante> {

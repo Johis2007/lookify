@@ -13,7 +13,9 @@ export type ResultadoRespuestaPro =
   | 'ACEPTADA'
   | 'RECHAZADA'
   | 'EXPIRADA'
-  | 'YA_ASIGNADA';
+  | 'YA_ASIGNADA'
+  /** La oferta sigue viva en el servidor (aún no expiró). */
+  | 'PENDIENTE';
 
 export type DesgloseSolicitudEntrante = {
   precioBaseCop: number;

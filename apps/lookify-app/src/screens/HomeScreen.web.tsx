@@ -3,7 +3,7 @@
 // (LookifyMap resuelve a LookifyMap.web.tsx: Leaflet por CDN, sin API key).
 // Estado, navegación y estilos idénticos a HomeScreen.tsx.
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -14,6 +14,9 @@ import Button from '../components/Button';
 import { clearClientSession } from '../lib/backend/clientAuth';
 import { MOCK_PROFESSIONALS, CATEGORIAS, CategoriaId } from '../data/mockProfessionals';
 import { MOCK_CLIENT_LOCATION } from '../constants/geo';
+import { getNearbyService } from '../services/nearbyService';
+import type { ProfesionalCercano } from '../services/nearbyService';
+import { isBackendEnabled } from '../services/backend/initBackend';
 
 const CATEGORIA_ICONOS: Record<CategoriaId, keyof typeof MaterialCommunityIcons.glyphMap> = {
   peluqueria: 'content-cut',
@@ -21,6 +24,9 @@ const CATEGORIA_ICONOS: Record<CategoriaId, keyof typeof MaterialCommunityIcons.
   maquillaje: 'lipstick',
   unas: 'hand-back-right-outline',
 };
+
+/** Radio de búsqueda en el mapa (mismo que la ronda 2 del matching). */
+const RADIO_CERCANOS_KM = 6;
 
 interface HomeScreenProps {
   navigation: {
@@ -31,25 +37,76 @@ interface HomeScreenProps {
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [categoriaActiva, setCategoriaActiva] = useState<CategoriaId>('peluqueria');
+  const usandoBackend = isBackendEnabled();
+  const [cercanos, setCercanos] = useState<ProfesionalCercano[]>([]);
 
-  const profesionalesFiltrados = MOCK_PROFESSIONALS.filter(
-    (p) => p.categoria === categoriaActiva
-  );
+  // En web no hay GPS en vivo: se consulta el nearby real desde el punto
+  // de referencia (mismo mock que usa el mapa).
+  useEffect(() => {
+    if (!usandoBackend) return;
+    let activo = true;
+    getNearbyService()
+      .listarCercanos({
+        lat: MOCK_CLIENT_LOCATION.latitude,
+        lng: MOCK_CLIENT_LOCATION.longitude,
+        radioKm: RADIO_CERCANOS_KM,
+      })
+      .then((lista) => {
+        if (activo) setCercanos(lista);
+      })
+      .catch(() => {
+        if (activo) setCercanos([]);
+      });
+    return () => {
+      activo = false;
+    };
+  }, [usandoBackend]);
 
-  const pins = profesionalesFiltrados.map((p) => ({
+  const profesionalesEnMapa: {
+    id: string;
+    nombre: string;
+    calificacion: number | null;
+    latitude: number;
+    longitude: number;
+  }[] = usandoBackend
+    ? cercanos.map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        calificacion: p.calificacion,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      }))
+    : MOCK_PROFESSIONALS.filter((p) => p.categoria === categoriaActiva).map((p) => ({
+        id: p.id,
+        nombre: p.nombre,
+        calificacion: p.calificacion,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      }));
+
+  const pins = profesionalesEnMapa.map((p) => ({
     id: p.id,
     latitude: p.latitude,
     longitude: p.longitude,
-    title: `${p.nombre} · ⭐ ${p.calificacion}`,
+    title: `${p.nombre}${p.calificacion ? ` · ⭐ ${p.calificacion.toFixed(1)}` : ''}`,
     color: colors.navy,
   }));
 
   const handleProPress = (id: string) => {
-    const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
-    if (!pro) return;
-    const categoria = CATEGORIAS.find((c) => c.id === pro.categoria);
+    if (!usandoBackend) {
+      const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
+      if (!pro) return;
+      const categoria = CATEGORIAS.find((c) => c.id === pro.categoria);
+      navigation.navigate('ServiceSelection', {
+        categoriaId: pro.categoria,
+        categoriaNombre: categoria?.nombre,
+      });
+      return;
+    }
+    // Backend: la categoría la elige el cliente en el flujo de servicio.
+    const categoria = CATEGORIAS.find((c) => c.id === categoriaActiva);
     navigation.navigate('ServiceSelection', {
-      categoriaId: pro.categoria,
+      categoriaId: categoriaActiva,
       categoriaNombre: categoria?.nombre,
     });
   };
@@ -135,15 +192,15 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         <View style={styles.liveBadge}>
           <View style={styles.liveDot} />
           <Text style={styles.liveText}>
-            {profesionalesFiltrados.length} cerca · en vivo
+            {profesionalesEnMapa.length} cerca · en vivo
           </Text>
         </View>
       </View>
 
       <View style={styles.footer}>
         <Text style={styles.footerCount}>
-          {profesionalesFiltrados.length}{' '}
-          {profesionalesFiltrados.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
+          {profesionalesEnMapa.length}{' '}
+          {profesionalesEnMapa.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
         </Text>
         <Button label="Solicitar ahora" onPress={handleSolicitar} />
       </View>

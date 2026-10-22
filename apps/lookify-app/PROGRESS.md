@@ -11,9 +11,11 @@ completas; el siguiente paso (Admin Web o los pendientes de negocio) lo define e
 `31a2da9` — feat(pro) pantalla 9 servicio en curso (`main`) · `3c5cc99` — docs(pro) contrato
 pantalla 8 (`main`).
 
-Fase actual: **frontend únicamente** (React Native + Expo SDK 57). El backend se
-construye después de cerrar todo el frontend. No hay autenticación real, base de
-datos ni llamadas HTTP: todos los datos son mocks locales.
+Fase actual: **frontend con backend opcional**. La app sigue siendo React Native +
+Expo SDK 57, pero ya existe una capa de servicios (`src/services/`) que se puede
+conectar al backend real. Con `EXPO_PUBLIC_USE_BACKEND=false` (default) todo es
+mock local, sin red; con `EXPO_PUBLIC_USE_BACKEND=true` se usan el BFF de reservas
+(`apps/realtime-server`) y el socket. Ver **sección 6** (fases 4A/4B).
 
 ---
 
@@ -952,3 +954,96 @@ de deuda y/o tope de deuda que bloquea aceptar nuevos servicios en efectivo.
 | Uñas | Premium | 50.000 | 90 |
 
 IDs en código: `pel-1`…`pel-4`, `bar-1`…`bar-4`, `maq-1`…`maq-3`, `una-1`…`una-3`.
+
+---
+
+## 6. Fase backend 4A/4B (app ↔ realtime-server)
+
+El backend que se está construyendo es **`apps/realtime-server`** (Express + Socket.io +
+PostGIS). La app lo consume **por el BFF REST** (`/api/*`) y **por socket**; el modelo de
+reservas es **claim**: la reserva se crea sin profesional y el primero que la acepta se la
+queda.
+
+**Interruptor:** `EXPO_PUBLIC_USE_BACKEND=true` (ver `apps/lookify-app/.env`). En `false`
+todo sigue en mock, sin cambios de comportamiento. `initBackend()` se llama en `App.tsx`
+solo si el backend está activo; es el punto donde se registran las implementaciones
+reales de los servicios.
+
+### 6.1 Servicios nuevos (4B)
+
+| Archivo | Rol |
+|---|---|
+| `src/services/nearbyService.ts` | Interfaz `NearbyService` + `ProfesionalCercano` (id, nombre, calificación, avatar, lat/lng, distanciaKm) y swap de implementación. |
+| `src/services/mock/mockNearbyService.ts` | Fallback demo: deriva de `MOCK_PROFESSIONALS`, sin red. |
+| `src/services/backend/backendNearbyService.ts` | `GET {SOCKET_URL}/realtime/nearby?lat&lng&radius&limit` (Bearer). `radius` va en **metros** (el servidor lo acota a 100–20.000 m). Calcula la distancia en km y guarda la última lista (`getUltimoListadoCercanos`) para la pantalla de Oferta. |
+
+**Inicio (`HomeScreen.tsx` y `HomeScreen.web.tsx`):** con backend, los pines del mapa y el
+contador «N cerca» salen de `/realtime/nearby` (radio 6 km, refresco por zona de ~100 m);
+sin backend, siguen los mocks por categoría. En web no hay GPS en vivo: se consulta
+desde el punto de referencia (`MOCK_CLIENT_LOCATION`).
+
+### 6.2 Matching real (pantalla 6)
+
+`MatchingScreen.tsx` mantiene la simulación local cuando **no** hay `bookingId` (modo
+demo intacto) y cambia a modo real si `EXPO_PUBLIC_USE_BACKEND=true` **y** llega un
+`bookingId`:
+
+- **Creación de la reserva:** `POST /api/bookings` (cliente, sin profesional) → el servidor
+  calcula precio, `expiresAt` (60 s) y `matchRound` (1).
+- **Estado:** `GET /api/bookings/:id` cada **5 s** (`POLL_MS`) + avisos por socket
+  (`booking:status` en la sala `booking:{id}`, con re-unión a la sala al reconectar).
+  El socket es **aparte** del del profesional (`connectClientRealtime` en
+  `src/lib/backend/realtime.ts`): el cliente no emite `prof:*`.
+- **Estados de UI:** buscando → **aceptado** (pasa a la Oferta con la ficha pública del
+  profesional), **expirado** (ampliar radio / cancelar sin costo) y **cancelado**.
+  Un fallo puntual de red no cierra la búsqueda: solo tras **3 fallos seguidos** se
+  muestra el estado de error.
+- **Cancelar:** confirma con la alerta compartida (`promptCancelarSolicitud`) y luego
+  `POST /api/bookings/:id/cancel` (reserva sin asignar). La alerta **no** detiene el poll
+  en modo real.
+- **Reintentar:** crea una **reserva nueva** (ronda 1) y reemplaza la pantalla; la
+  anterior ya expiró, así que no se cancela.
+- **Rondas:** las amplía el servidor (3 km → 6 km → `expired`), no la app. La app solo
+  refleja `matchRound` en el checklist.
+
+### 6.3 Oferta real (pantalla 7)
+
+`ProfessionalOfferScreen.tsx` recibe del matching la **ficha pública** del profesional
+(`id`, `displayName`, `avatar`, `rating` de `professionalPublic`), el **precio del
+servidor** (`price_snapshot`) y el **nombre del servicio**. Con backend, «Aceptar» lleva a
+**Seguimiento** con el `bookingId` real y «Buscar otro profesional» cancela la reserva y
+vuelve al matching con una reserva nueva. Sin backend, la pantalla queda igual que antes
+(mock).
+
+### 6.4 Solicitud entrante real (App Pro, pantalla 8)
+
+`backendProfessionalIncomingRequestService.ts` se reescribió sobre el modelo claim:
+
+- Las ofertas del profesional son **`GET /api/bookings/pro/available`** (vista reducida:
+  servicio, precio, distancia redondeada a 100 m y zona a ~500 m; **nunca** la dirección
+  exacta). Antes se usaba `GET /api/bookings/:id`, que da 404 para candidatos sin asignar.
+- **Aceptar** = `POST /api/bookings/:id/accept` (el primero que acepta se queda la
+  reserva); **rechazar** = `POST /api/bookings/:id/reject`.
+- El socket `booking:taken` retira la oferta de la lista del candidato; el listener
+  (`ProfessionalIncomingRequestListener`) **además** hace **polling de respaldo cada 12 s**
+  (`POLL_OFERTAS_MS`) por si el socket no llegó.
+- `procesarExpiracion` **no decide sola**: consulta el servidor; si la oferta sigue viva
+  devuelve `PENDIENTE`, si ya no está y la reserva está `accepted` devuelve `ACEPTADA`, y
+  si no → `EXPIRADA`. Se agregó `PENDIENTE` a `ResultadoRespuestaPro`.
+
+### 6.5 Lo que sigue en mock
+
+- **Seguimiento (pantalla 8 del cliente):** el mapa y la animación del profesional siguen
+  siendo simulados (`MOCK_TRACKING_MS`). La app ya recibe el `bookingId` real y la ficha
+  real del profesional, pero **no** hay GPS del profesional ni posición real del cliente
+  en el mapa. El **rastreo en vivo** es el siguiente bloque (fase 4C), no está hecho.
+- **Pantalla 9 del cliente** (servicio en progreso) y **pantalla 9 del profesional**
+  (servicio en curso + PIN) siguen mock.
+- **Pago y calificación** (pantalla 10) siguen mock.
+
+### 6.6 Verificación
+
+- `npm run typecheck` (servidor + app) limpio.
+- Tests del servidor: `node --env-file=.env --test --import tsx "apps/realtime-server/src/**/*.test.ts"` → **58/58**.
+- Prueba manual con **dos sesiones** (cliente + profesional) sobre el backend local.
+

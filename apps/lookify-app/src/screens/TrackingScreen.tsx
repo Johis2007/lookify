@@ -52,9 +52,28 @@ export default function TrackingScreen({ navigation, route }: Props) {
     precioTotal,
   } = params;
 
-  const professional = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
+  // En backend el profesional es real: no está en el catálogo de ejemplo, así
+  // que se arma una ficha mínima con su resumen público (el tracking sigue
+  // siendo una simulación).
+  const professional = useMemo(() => {
+    const mock = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
+    if (mock) return mock;
+    const publico = params.profesional;
+    if (!publico) return undefined;
+    return {
+      id: publico.id,
+      nombre: publico.nombre,
+      calificacion: publico.calificacion ?? 0,
+      latitude: MOCK_CLIENT_LOCATION.latitude,
+      longitude: MOCK_CLIENT_LOCATION.longitude,
+    };
+  }, [professionalId, params.profesional]);
+
   const servicio = SERVICIOS_POR_CATEGORIA[categoriaId]?.find((s) => s.id === servicioId);
-  const datosValidos = Boolean(professional && servicio);
+  const datosValidos = Boolean(professional && (servicio || params.bookingId));
+  // En backend el id del servicio es real: el nombre del catálogo no aplica,
+  // pero el BFF sí manda el nombre del servicio reservado.
+  const nombreServicio = servicio?.nombre ?? params.servicioNombre ?? 'Servicio reservado';
 
   const startCoord = useMemo(
     () =>
@@ -198,7 +217,7 @@ export default function TrackingScreen({ navigation, route }: Props) {
     );
   };
 
-  if (!datosValidos || !professional || !servicio) {
+  if (!datosValidos || !professional) {
     return null;
   }
 
@@ -250,7 +269,7 @@ export default function TrackingScreen({ navigation, route }: Props) {
               <View style={styles.proText}>
                 <Text style={styles.proName}>{professional.nombre}</Text>
                 <Text style={styles.proMeta}>
-                  {servicio.nombre} · ⭐ {professional.calificacion.toFixed(1)}
+                  {nombreServicio} · ⭐ {professional.calificacion.toFixed(1)}
                 </Text>
               </View>
             </View>

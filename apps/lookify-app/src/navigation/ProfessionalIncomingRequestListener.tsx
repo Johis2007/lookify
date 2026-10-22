@@ -12,8 +12,11 @@ import { getProfessionalIncomingRequestService } from '../services/professionalI
 import { getProfessionalDashboardService } from '../services/professionalDashboardService';
 import { getActiveSolicitudKnown } from '../services/incomingActive';
 import { SolicitudEntrante } from '../types/professionalIncomingRequest';
+import { BACKEND } from '../lib/backend/config';
 
 const DISPONIBILIDAD_POLL_MS = 1500;
+/** Respaldo del socket: cada cuánto se revisan ofertas vivas (backend). */
+const POLL_OFERTAS_MS = 12000;
 
 function esSolicitudVigente(s: SolicitudEntrante | null): s is SolicitudEntrante {
   return (
@@ -96,23 +99,38 @@ export default function ProfessionalIncomingRequestListener() {
 
     const svc = getProfessionalIncomingRequestService();
 
-    void svc.obtenerSolicitudActiva({ profesionalId }).then((activa) => {
-      if (!esSolicitudVigente(activa)) {
-        return;
+    const presentarActiva = async () => {
+      try {
+        const activa = await svc.obtenerSolicitudActiva({ profesionalId });
+        if (!esSolicitudVigente(activa)) {
+          return;
+        }
+        if (routeNameRef.current === 'ProfessionalIncomingRequest') {
+          return;
+        }
+        if (ultimaSolicitudPresentadaRef.current === activa.id) {
+          return;
+        }
+        const sess = sessionRef.current;
+        if (!sess) {
+          return;
+        }
+        ultimaSolicitudPresentadaRef.current = activa.id;
+        abrirSolicitudEntranteEnStackPro(navigation, sess, activa.id);
+      } catch {
+        /* sin ofertas vivas: se reintenta en el siguiente ciclo */
       }
-      if (routeNameRef.current === 'ProfessionalIncomingRequest') {
-        return;
-      }
-      if (ultimaSolicitudPresentadaRef.current === activa.id) {
-        return;
-      }
-      const sess = sessionRef.current;
-      if (!sess) {
-        return;
-      }
-      ultimaSolicitudPresentadaRef.current = activa.id;
-      abrirSolicitudEntranteEnStackPro(navigation, sess, activa.id);
-    });
+    };
+
+    void presentarActiva();
+
+    // Respaldo del socket: con backend las ofertas se difunden por socket,
+    // pero un poll lento cubre reconexiones y entregas perdidas.
+    const pollId = BACKEND.enabled
+      ? setInterval(() => {
+          void presentarActiva();
+        }, POLL_OFERTAS_MS)
+      : null;
 
     const unsub = svc.suscribirseASolicitudesEntrantes({ profesionalId }, (evento) => {
       if (evento.tipo !== 'NUEVA') {
@@ -147,7 +165,10 @@ export default function ProfessionalIncomingRequestListener() {
       abrirSolicitudEntranteEnStackPro(navigation, sess, evento.solicitud.id);
     });
 
-    return unsub;
+    return () => {
+      if (pollId) clearInterval(pollId);
+      unsub();
+    };
   }, [profesionalId, disponible, navigation]);
 
   return null;

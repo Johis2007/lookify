@@ -1,4 +1,7 @@
-// Pantalla 6: búsqueda simulada de profesional disponible.
+// Pantalla 6: búsqueda de profesional.
+//  - Modo demo (sin backend): simulación local como antes.
+//  - Modo backend (4B): reserva real en el BFF, consultation por poll de
+//    GET /api/bookings/:id y avisos por socket (booking:status).
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -17,10 +20,24 @@ import { filtrarCandidatosMatching } from '../data/mockProfessionals';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { promptCancelarSolicitud } from '../utils/cancelarSolicitudAlert';
 import { redondearDistanciaKm } from '../utils/geo';
+import { getBookingService } from '../services/bookingService';
+import type { ReservaDetalle } from '../services/bookingService';
+import { isBackendEnabled } from '../services/backend/initBackend';
+import { getUltimoListadoCercanos } from '../services/backend/backendNearbyService';
+import { MOCK_CLIENT_LOCATION } from '../constants/geo';
+import {
+  connectClientRealtime,
+  disconnectClientRealtime,
+  joinClientBookingRoom,
+  onBookingStatus,
+} from '../lib/backend/realtime';
+import { loadClientSession } from '../lib/backend/clientAuth';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Matching'>;
 
 const MOCK_STEP_MS = 1500;
+/** Frecuencia del poll de la reserva mientras se busca. */
+const POLL_MS = 5000;
 
 const CHECKLIST_LABELS = [
   'Solicitud enviada',
@@ -28,18 +45,36 @@ const CHECKLIST_LABELS = [
   'Profesional confirmó disponibilidad',
 ] as const;
 
+/** Radio de búsqueda por ronda (el servidor amplía solo). */
+const RADIO_POR_RONDA: Record<number, number> = { 1: 3, 2: 6 };
+
 export default function MatchingScreen({ navigation, route }: Props) {
   const params = route.params;
   const { categoriaId, servicioId, radioKm, rejectionCount, rejectedIds, categoriaNombre } =
     params;
+  const bookingId = params.bookingId;
+
+  const modoReal = isBackendEnabled() && Boolean(bookingId);
 
   const [completedSteps, setCompletedSteps] = useState(0);
   const [showSpecialOptions, setShowSpecialOptions] = useState(false);
+  // Estado real de la reserva (backend).
+  const [estadoReal, setEstadoReal] = useState<
+    'buscando' | 'aceptado' | 'expirado' | 'cancelado' | 'error'
+  >('buscando');
+  const [rondaReal, setRondaReal] = useState(1);
+  const [expiraEn, setExpiraEn] = useState<number | null>(null);
+  const [segundos, setSegundos] = useState<number | null>(null);
+  const [errorReal, setErrorReal] = useState<string | null>(null);
 
   const allowExitRef = useRef(false);
   const alertOpenRef = useRef(false);
   const completedStepsRef = useRef(0);
   const timerIdsRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const detalleRef = useRef<ReservaDetalle | null>(null);
+  const fallosRef = useRef(0);
   const scanning = !showSpecialOptions;
 
   useEffect(() => {
@@ -49,6 +84,14 @@ export default function MatchingScreen({ navigation, route }: Props) {
   const clearTimers = useCallback(() => {
     timerIdsRef.current.forEach(clearTimeout);
     timerIdsRef.current = [];
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    if (countdownRef.current) {
+      clearInterval(countdownRef.current);
+      countdownRef.current = null;
+    }
   }, []);
 
   const schedule = useCallback((fn: () => void, delayMs: number) => {
@@ -81,6 +124,76 @@ export default function MatchingScreen({ navigation, route }: Props) {
     [clearTimers, navigation, params]
   );
 
+  // --- Modo real: el profesional aceptó, se muestra su ficha ---------------
+  const goToOfferReal = useCallback(() => {
+    const detalle = detalleRef.current;
+    const pro = detalle?.profesional;
+    if (!pro) return;
+    const cercano = getUltimoListadoCercanos().find((p) => p.id === pro.id);
+    allowExitRef.current = true;
+    clearTimers();
+    navigation.replace('ProfessionalOffer', {
+      ...params,
+      professionalId: pro.id,
+      distanciaKm: cercano?.distanciaKm ?? 1.2,
+      profesional: pro,
+      precioServidor: detalle?.precioTotal ?? null,
+      servicioNombre: detalle?.servicioNombre ?? null,
+    });
+  }, [clearTimers, navigation, params]);
+
+  // --- Modo real: aplicación del estado de la reserva ----------------------
+  const aplicarEstado = useCallback(
+    (estado: string, detalle?: { profesional: unknown; expiraEn: number | null; ronda: number }) => {
+      if (estado === 'accepted') {
+        setEstadoReal('aceptado');
+        setCompletedSteps(3);
+        goToOfferReal();
+        return;
+      }
+      if (estado === 'expired') {
+        setEstadoReal('expirado');
+        setShowSpecialOptions(true);
+        return;
+      }
+      if (estado === 'cancelled') {
+        setEstadoReal('cancelado');
+        setShowSpecialOptions(true);
+        return;
+      }
+      // pending: sigue buscando.
+      setEstadoReal('buscando');
+      setShowSpecialOptions(false);
+      setErrorReal(null);
+      if (typeof detalle?.ronda === 'number' && detalle.ronda > 0) setRondaReal(detalle.ronda);
+      if (detalle?.expiraEn) setExpiraEn(detalle.expiraEn);
+    },
+    [goToOfferReal]
+  );
+
+  const consultarReserva = useCallback(async () => {
+    if (!bookingId) return;
+    try {
+      const detalle = await getBookingService().obtenerReserva(bookingId);
+      fallosRef.current = 0;
+      detalleRef.current = detalle;
+      aplicarEstado(detalle.estado, {
+        profesional: detalle.profesional,
+        expiraEn: detalle.expiraEn,
+        ronda: detalle.ronda,
+      });
+    } catch {
+      // Fallos sueltos (red) no cierran la búsqueda: solo tras varios seguidos.
+      fallosRef.current += 1;
+      if (fallosRef.current >= 3) {
+        setEstadoReal('error');
+        setErrorReal('No pudimos consultar tu reserva. Revisa tu conexión.');
+        setShowSpecialOptions(true);
+      }
+    }
+  }, [aplicarEstado, bookingId]);
+
+  // --- Modo demo: simulación local ----------------------------------------
   const runSimulation = useCallback(
     (fromStep: number) => {
       clearTimers();
@@ -125,26 +238,98 @@ export default function MatchingScreen({ navigation, route }: Props) {
   const runSimulationRef = useRef(runSimulation);
   runSimulationRef.current = runSimulation;
 
+  // Cancelar la reserva real (backend) o cerrar la búsqueda (demo).
+  const cancelarYVolver = useCallback(async () => {
+    if (modoReal && bookingId) {
+      try {
+        await getBookingService().cancelarReserva(bookingId);
+      } catch {
+        // Si el servidor ya la cerró, se vuelve al inicio de igual.
+      }
+    }
+    allowExitRef.current = true;
+    clearTimers();
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+  }, [modoReal, bookingId, clearTimers, navigation]);
+
   const showCancelAlert = useCallback(
     (onConfirmExit: () => void) => {
       promptCancelarSolicitud({
         alertVisibleRef: alertOpenRef,
-        onBeforeShow: clearTimers,
+        // En backend el poll sigue corriendo: no se detiene al preguntar.
+        onBeforeShow: modoReal ? undefined : clearTimers,
         onSeguirBuscando: () => {
+          if (modoReal) {
+            void consultarReserva();
+            return;
+          }
           if (!showSpecialOptions) {
             runSimulationRef.current(completedStepsRef.current);
           }
         },
-        onConfirmCancel: onConfirmExit,
+        onConfirmCancel: modoReal ? () => void cancelarYVolver() : onConfirmExit,
       });
     },
-    [clearTimers, showSpecialOptions]
+    [clearTimers, showSpecialOptions, modoReal, consultarReserva, cancelarYVolver]
   );
 
+  // --- Arranque ------------------------------------------------------------
   useEffect(() => {
-    runSimulation(0);
-    return () => clearTimers();
-  }, [runSimulation, clearTimers]);
+    if (!modoReal) {
+      runSimulation(0);
+      return () => clearTimers();
+    }
+
+    let unsubscribeStatus: (() => void) | undefined;
+    let cancelled = false;
+
+    // La reserva se creó en la pantalla anterior: el primer paso ya está hecho.
+    setCompletedSteps(1);
+
+    (async () => {
+      const session = await loadClientSession();
+      if (cancelled) return;
+      if (session?.token && session.token !== 'offline-local') {
+        connectClientRealtime(session.token);
+        joinClientBookingRoom(String(bookingId));
+        unsubscribeStatus = onBookingStatus((id) => {
+          if (String(id) !== String(bookingId)) return;
+          void consultarReserva();
+        });
+      }
+      await consultarReserva();
+      if (cancelled) return;
+      pollingRef.current = setInterval(() => {
+        void consultarReserva();
+      }, POLL_MS);
+    })();
+
+    return () => {
+      cancelled = true;
+      unsubscribeStatus?.();
+      clearTimers();
+      disconnectClientRealtime();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modoReal, bookingId]);
+
+  // Countdown de la oferta (solo modo real).
+  useEffect(() => {
+    if (!modoReal || !expiraEn) return;
+    const tick = () => {
+      const rest = Math.max(0, Math.ceil((expiraEn - Date.now()) / 1000));
+      setSegundos(rest);
+      if (rest === 0) void consultarReserva();
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+    return () => {
+      if (countdownRef.current) {
+        clearInterval(countdownRef.current);
+        countdownRef.current = null;
+      }
+    };
+  }, [modoReal, expiraEn, consultarReserva]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (e) => {
@@ -155,9 +340,10 @@ export default function MatchingScreen({ navigation, route }: Props) {
     return unsubscribe;
   }, [navigation, showCancelAlert, resetToHome]);
 
-  const handleCancelPress = () => {
+  // Cancelar la reserva real (backend) o cerrar la búsqueda (demo).
+  const handleCancelPress = useCallback(() => {
     showCancelAlert(resetToHome);
-  };
+  }, [showCancelAlert, resetToHome]);
 
   const handleExpandRadio = () => {
     allowExitRef.current = true;
@@ -173,10 +359,63 @@ export default function MatchingScreen({ navigation, route }: Props) {
     });
   };
 
+  // Reintento real: se crea una reserva nueva (ronda 1 otra vez) y se vuelve
+  // a buscar. La reserva anterior ya expiró, así que no se cancela.
+  const handleReintentar = useCallback(async () => {
+    if (!modoReal) return;
+    try {
+      const reserva = await getBookingService().crearReserva({
+        serviceId: servicioId,
+        addressText: 'Dirección a confirmar',
+        lat: MOCK_CLIENT_LOCATION.latitude,
+        lng: MOCK_CLIENT_LOCATION.longitude,
+      });
+      allowExitRef.current = true;
+      clearTimers();
+      setShowSpecialOptions(false);
+      setEstadoReal('buscando');
+      setRondaReal(1);
+      setErrorReal(null);
+      navigation.replace('Matching', {
+        categoriaId,
+        categoriaNombre,
+        servicioId,
+        radioKm: 3,
+        rejectionCount: 0,
+        rejectedIds: [],
+        bookingId: reserva.bookingId,
+      });
+    } catch {
+      setErrorReal('No pudimos crear una nueva solicitud. Intenta de nuevo.');
+    }
+  }, [modoReal, servicioId, categoriaId, categoriaNombre, clearTimers, navigation]);
+
+  const radioActual = modoReal ? (RADIO_POR_RONDA[rondaReal] ?? radioKm) : radioKm;
+  const segundosTexto =
+    segundos === null
+      ? null
+      : `${Math.floor(segundos / 60)}:${String(segundos % 60).padStart(2, '0')}`;
+
   const noMoreProsMessage =
-    radioKm === 6
+    !modoReal && radioKm === 6
       ? 'No hay más profesionales disponibles en un radio de 6 km.'
       : undefined;
+
+  const tituloSinResultados =
+    modoReal && estadoReal === 'cancelado'
+      ? 'Solicitud cancelada'
+      : modoReal && estadoReal === 'error'
+        ? 'Problema de conexión'
+        : 'No encontramos profesionales disponibles';
+
+  const cuerpoSinResultados =
+    modoReal && estadoReal === 'cancelado'
+      ? 'Tu solicitud se cerró sin costo.'
+      : modoReal && estadoReal === 'error'
+        ? errorReal ?? 'Intenta de nuevo en un momento.'
+        : modoReal
+          ? 'Ampliamos la búsqueda hasta 6 km. Puedes intentarlo de nuevo o cancelar sin costo.'
+          : noMoreProsMessage;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -190,7 +429,7 @@ export default function MatchingScreen({ navigation, route }: Props) {
                 ? 'Búsqueda detenida'
                 : completedSteps >= 3
                   ? 'Profesional encontrado'
-                  : `Buscando a ${radioKm} km`
+                  : `Buscando a ${radioActual} km`
             }
           />
         </View>
@@ -198,7 +437,7 @@ export default function MatchingScreen({ navigation, route }: Props) {
         {!showSpecialOptions ? (
           <View style={styles.checklist}>
             {CHECKLIST_LABELS.map((label, index) => {
-              const text = typeof label === 'function' ? label(radioKm) : label;
+              const text = typeof label === 'function' ? label(radioActual) : label;
               const done = completedSteps > index;
               return (
                 <View key={text} style={styles.checkRow}>
@@ -214,18 +453,22 @@ export default function MatchingScreen({ navigation, route }: Props) {
           </View>
         ) : (
           <View style={styles.specialBlock}>
-            {rejectionCount >= 3 ? (
-              <Text style={styles.specialTitle}>Límite de rechazos alcanzado</Text>
-            ) : (
-              <Text style={styles.specialTitle}>No encontramos profesionales disponibles</Text>
-            )}
-            {noMoreProsMessage ? (
-              <Text style={styles.specialBody}>{noMoreProsMessage}</Text>
+            <Text style={styles.specialTitle}>{tituloSinResultados}</Text>
+            {cuerpoSinResultados ? (
+              <Text style={styles.specialBody}>{cuerpoSinResultados}</Text>
             ) : null}
-            {radioKm === 3 ? (
+            {!modoReal && radioKm === 3 ? (
               <Button
                 label="Ampliar radio a 6 km"
                 onPress={handleExpandRadio}
+                variant="accent"
+                style={styles.actionButton}
+              />
+            ) : null}
+            {modoReal && estadoReal === 'expirado' ? (
+              <Button
+                label="Intentar de nuevo"
+                onPress={handleReintentar}
                 variant="accent"
                 style={styles.actionButton}
               />
@@ -235,6 +478,15 @@ export default function MatchingScreen({ navigation, route }: Props) {
             </TouchableOpacity>
           </View>
         )}
+
+        {modoReal && !showSpecialOptions && segundosTexto ? (
+          <View style={styles.countdownRow}>
+            <MaterialCommunityIcons name="timer-outline" size={18} color={colors.honey} />
+            <Text style={styles.countdownText}>
+              La oferta cierra en {segundosTexto} · ronda {rondaReal} de 2
+            </Text>
+          </View>
+        ) : null}
 
         {rejectionCount > 0 && !showSpecialOptions ? (
           <Text style={styles.rejectionHint}>Rechazos: {rejectionCount} de 3</Text>
@@ -303,6 +555,16 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginBottom: 0,
+  },
+  countdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  countdownText: {
+    fontSize: 13,
+    color: colors.textOnNavyMuted,
   },
   outlineButton: {
     borderWidth: 1,

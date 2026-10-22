@@ -85,6 +85,20 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
     cargar().finally(() => setLoading(false));
   }, [cargar]);
 
+  const irAlServicio = useCallback(() => {
+    permitirSalida.current = true;
+    navigation.replace('ProfessionalServiceInProgressPlaceholder', {
+      profesionalId: params.profesionalId,
+      solicitudId: params.solicitudId,
+      nombre: params.nombre,
+      email: params.email,
+      estadoSolicitud: params.estadoSolicitud,
+      onboardingPaso: params.onboardingPaso,
+      servicioIds: params.servicioIds,
+      solicitudEntranteId: params.solicitudEntranteId,
+    });
+  }, [navigation, params]);
+
   useEffect(() => {
     if (!params.profesionalId) {
       return;
@@ -96,21 +110,11 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
       }
       setSolicitud({ ...ev.solicitud });
       if (ev.solicitud.estado === 'LISTA_PARA_SERVICIO') {
-        permitirSalida.current = true;
-        navigation.replace('ProfessionalServiceInProgressPlaceholder', {
-          profesionalId: params.profesionalId,
-          solicitudId: params.solicitudId,
-          nombre: params.nombre,
-          email: params.email,
-          estadoSolicitud: params.estadoSolicitud,
-          onboardingPaso: params.onboardingPaso,
-          servicioIds: params.servicioIds,
-          solicitudEntranteId: params.solicitudEntranteId,
-        });
+        irAlServicio();
       }
     });
     return unsub;
-  }, [navigation, params]);
+  }, [navigation, params, irAlServicio]);
 
   useEffect(() => {
     const onAppState = (next: AppStateStatus) => {
@@ -242,6 +246,10 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
       });
       if (res.solicitud) {
         setSolicitud(res.solicitud);
+        if (res.solicitud.estado === 'LISTA_PARA_SERVICIO') {
+          irAlServicio();
+          return;
+        }
       }
       if (res.resultado === 'EXPIRADA') {
         expiracionEnviada.current = true;
