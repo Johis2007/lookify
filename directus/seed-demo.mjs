@@ -8,8 +8,9 @@
 //   - admin@lookify.app          (Administrator; lo crea Directus al arrancar)
 //
 // La contraseña de los usuarios demo se lee de DEMO_PASSWORD (definida en el
-// .env raíz, nunca en el repo). El script la reaplica en cada ejecución para
-// que el entorno de desarrollo sea reproducible.
+// .env raíz, nunca en el repo) y SOLO se usa al crear cuentas que faltan: el
+// script nunca sobrescribe la contraseña de una cuenta existente. El admin se
+// crea (si falta) con ADMIN_PASSWORD, nunca con DEMO_PASSWORD.
 //
 // Uso: npm run seed:demo
 //   Requiere: docker compose up -d postgres redis directus
@@ -19,7 +20,7 @@ import pg from 'pg';
 
 loadRootEnv(import.meta.url);
 
-const URL = process.env.DIRECTUS_URL || 'http://localhost:8055';
+const BASE_URL = process.env.DIRECTUS_URL || 'http://localhost:8055';
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD;
 
 const CLIENT_EMAIL = 'cliente.demo@lookify.app';
@@ -30,6 +31,55 @@ const PRO_LAT = 4.6545;
 const PRO_LNG = -74.0615;
 const PRO_SERVICE_NAME = 'Corte + peinado';
 
+const fail = (what, detail) => {
+  console.error(`ERROR en ${what}: ${detail}`);
+  process.exit(1);
+};
+
+// Guardas 4C-1: este seed crea cuentas con contraseña conocida, así que solo
+// puede correr contra una instancia de desarrollo local o de red privada.
+function isLocalOrPrivateHost(hostname) {
+  const h = hostname.toLowerCase().replace(/^\[|\]$/g, '');
+  if (h === 'localhost' || h === '::1' || h === '0.0.0.0') return true;
+  if (h === '::' || h.endsWith('.localhost')) return true;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+    const [a, b] = h.split('.').map(Number);
+    return (
+      a === 127 ||
+      a === 10 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254)
+    );
+  }
+  // IPv6 ULA (fc00::/7) y link-local (fe80::/10).
+  return /^f[cd][0-9a-f]{2}:/.test(h) || /^fe[89ab][0-9a-f]:/.test(h);
+}
+
+function assertSafeEnvironment() {
+  if (process.env.NODE_ENV === 'production') {
+    fail('entorno', 'seed:demo no puede ejecutarse con NODE_ENV=production');
+  }
+  for (const name of ['DIRECTUS_URL', 'PUBLIC_URL']) {
+    const raw = process.env[name];
+    if (!raw) continue;
+    let host;
+    try {
+      host = new URL(raw).hostname;
+    } catch {
+      fail('entorno', `${name} no es una URL válida: ${raw}`);
+    }
+    if (!isLocalOrPrivateHost(host)) {
+      fail(
+        'entorno',
+        `${name} apunta a "${host}" (no local/privada). Este seed solo corre contra localhost o IP privada.`,
+      );
+    }
+  }
+}
+
+assertSafeEnvironment();
+
 if (!DEMO_PASSWORD) {
   console.error(
     'Falta DEMO_PASSWORD en el .env raíz. Agrega una contraseña de desarrollo ' +
@@ -38,16 +88,11 @@ if (!DEMO_PASSWORD) {
   process.exit(1);
 }
 
-const fail = (what, detail) => {
-  console.error(`ERROR en ${what}: ${detail}`);
-  process.exit(1);
-};
-
 let TOKEN = '';
 const headers = () => ({ 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN });
 
 async function api(method, path, body) {
-  const r = await fetch(URL + path, {
+  const r = await fetch(BASE_URL + path, {
     method,
     headers: headers(),
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -64,7 +109,7 @@ async function api(method, path, body) {
 async function waitReady(tries = 60) {
   for (let i = 1; i <= tries; i++) {
     try {
-      const r = await fetch(`${URL}/server/ping`);
+      const r = await fetch(`${BASE_URL}/server/ping`);
       if (r.ok && (await r.text()).includes('pong')) {
         console.log(`Directus listo (${i} intento(s))`);
         return;
@@ -74,7 +119,7 @@ async function waitReady(tries = 60) {
     }
     await new Promise((r) => setTimeout(r, 5000));
   }
-  fail('waitReady', `Directus no responde en ${URL}`);
+  fail('waitReady', `Directus no responde en ${BASE_URL}`);
 }
 
 async function ensureAuth() {
@@ -92,7 +137,7 @@ async function ensureAuth() {
   if (!email || !password) {
     fail('auth', 'Define ADMIN_TOKEN o ADMIN_EMAIL/ADMIN_PASSWORD en el .env');
   }
-  const r = await fetch(`${URL}/auth/login`, {
+  const r = await fetch(`${BASE_URL}/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password }),
@@ -122,13 +167,9 @@ async function ensureUser({ email, firstName, role }) {
     `/users?filter[email][_eq]=${encodeURIComponent(email)}&fields=id,email&limit=1`
   );
   if (existing) {
-    const u = await api('PATCH', `/users/${existing.id}`, {
-      password: DEMO_PASSWORD,
-      role,
-      status: 'active',
-    });
-    if (u.status !== 200) fail(`PATCH user ${email}`, `HTTP ${u.status} ${JSON.stringify(u.data)?.slice(0, 200)}`);
-    console.log(`= usuario ${email} (${existing.id})`);
+    // No se toca: ni contraseña, ni rol, ni estado. Re-ejecutar el seed jamás
+    // debe cambiar credenciales de una cuenta ya existente (4C-1).
+    console.log(`= usuario ${email} (${existing.id}, existente sin cambios)`);
     return existing.id;
   }
   const c = await api('POST', '/users', {
@@ -147,9 +188,11 @@ async function ensureUser({ email, firstName, role }) {
 }
 
 async function ensureAdmin() {
+  // El admin NO es una cuenta demo: conserva ADMIN_PASSWORD y, si ya existe,
+  // no se modifica (ni contraseña ni rol).
   const adm = await findOne(`/users?filter[email][_eq]=${encodeURIComponent(ADMIN_EMAIL)}&fields=id,email&limit=1`);
   if (adm) {
-    console.log(`= admin ${ADMIN_EMAIL} (${adm.id})`);
+    console.log(`= admin ${ADMIN_EMAIL} (${adm.id}, existente sin cambios)`);
     return adm.id;
   }
   const password = process.env.ADMIN_PASSWORD;
