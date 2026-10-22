@@ -3,6 +3,7 @@ import {
   CrearReservaRequest,
   CrearReservaResponse,
   ReservaDetalle,
+  ReservaTracking,
 } from '../bookingService';
 import { ServiceError } from '../errors';
 
@@ -78,6 +79,20 @@ export function createMockBookingService(): BookingService {
         ronda: 1,
         profesional: null,
         servicioNombre: null,
+      };
+    },
+
+    async obtenerTracking(bookingId: string): Promise<ReservaTracking> {
+      const st = reservas.get(bookingId);
+      if (!st) throw new ServiceError('SOLICITUD_NO_ENCONTRADA');
+      // En modo demo el recorrido lo anima TrackingScreen; aquí no hay GPS.
+      return {
+        bookingId,
+        estado: st.estado,
+        profesionalId: st.profesional?.id ?? null,
+        ubicacion: null,
+        llegadaEn: null,
+        cliente: { lat: null, lng: null },
       };
     },
   };

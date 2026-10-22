@@ -115,6 +115,18 @@ export function emitBookingStatus(bookingId: string, status: string): void {
   }
 }
 
+/**
+ * GPS del profesional hacia UNA reserva (4C-2). El servidor deriva quién eres
+ * del token, exige que seas el pro asignado y que la reserva siga `accepted`.
+ */
+export function emitBookingLocation(bookingId: string, lat: number, lng: number): void {
+  try {
+    socket?.emit('location:update', { booking_id: bookingId, lat, lng });
+  } catch {
+    /* noop */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Socket del CLIENTE (4B): observa el estado de su propia reserva.
 // Es un socket aparte del del profesional: el cliente no emite prof:*.
@@ -171,6 +183,59 @@ export function onBookingStatus(cb: (bookingId: string, status: string) => void)
   return () => {
     try {
       clientSocket?.off('booking:status', handler);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
+/** Última posición del pro en su reserva (4C-2), solo a participantes. */
+export function onBookingLocation(
+  cb: (p: { bookingId: string; lat: number; lng: number; ts: number }) => void,
+): () => void {
+  if (!clientSocket) return () => undefined;
+  const handler = (p: {
+    booking_id?: string | number;
+    lat?: number;
+    lng?: number;
+    ts?: number;
+  }) => {
+    if (p?.booking_id === undefined || p?.booking_id === null) return;
+    if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+    cb({
+      bookingId: String(p.booking_id),
+      lat: p.lat,
+      lng: p.lng,
+      ts: typeof p.ts === 'number' ? p.ts : Date.now(),
+    });
+  };
+  clientSocket.on('booking:location', handler);
+  return () => {
+    try {
+      clientSocket?.off('booking:location', handler);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
+/** Avisos de la reserva (p. ej. la llegada del profesional). */
+export function onBookingEvent(
+  cb: (p: { bookingId: string; status: string; ts: number }) => void,
+): () => void {
+  if (!clientSocket) return () => undefined;
+  const handler = (p: { booking_id?: string | number; status?: string; ts?: number }) => {
+    if (p?.booking_id === undefined || p?.booking_id === null || !p.status) return;
+    cb({
+      bookingId: String(p.booking_id),
+      status: String(p.status),
+      ts: typeof p.ts === 'number' ? p.ts : Date.now(),
+    });
+  };
+  clientSocket.on('booking:event', handler);
+  return () => {
+    try {
+      clientSocket?.off('booking:event', handler);
     } catch {
       /* noop */
     }

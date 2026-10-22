@@ -59,12 +59,27 @@ export type ReservaDetalle = {
   servicioNombre: string | null;
 };
 
+/** Última posición conocida del pro (4C-2). */
+export type ReservaTracking = {
+  bookingId: string;
+  estado: EstadoReserva;
+  profesionalId: string | null;
+  /** null si aún no hay ninguna posición en Redis (o expiró el TTL). */
+  ubicacion: { lat: number; lng: number; ts: number } | null;
+  /** Epoch ms del evento 'llegada' (null si aún no llega). */
+  llegadaEn: number | null;
+  /** Coordenadas del destino (dirección de la reserva). */
+  cliente: { lat: number | null; lng: number | null };
+};
+
 export interface BookingService {
   crearReserva(input: CrearReservaRequest): Promise<CrearReservaResponse>;
   /** Estado actual de la reserva (poll del matching). */
   obtenerReserva(bookingId: string): Promise<ReservaDetalle>;
   /** Cancela la reserva del cliente. */
   cancelarReserva(bookingId: string): Promise<ReservaDetalle>;
+  /** Última posición del pro (respaldo por polling del tracking). */
+  obtenerTracking(bookingId: string): Promise<ReservaTracking>;
 }
 
 let implementation: BookingService = createMockBookingService();

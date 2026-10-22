@@ -5,6 +5,7 @@ import {
   EstadoReserva,
   ProfesionalPublico,
   ReservaDetalle,
+  ReservaTracking,
 } from '../bookingService';
 import { ServiceError } from '../errors';
 import { bffApi } from '../../lib/backend/bff';
@@ -154,6 +155,35 @@ export function createBackendBookingService(): BookingService {
         throw new ServiceError('UNKNOWN', 'No se pudo cancelar la reserva.');
       }
       return toDetalle(bookingId, normalizeFull(dto));
+    },
+
+    async obtenerTracking(bookingId: string): Promise<ReservaTracking> {
+      const token = await tokenCliente();
+      const dto = await bffApi<any>(
+        'GET',
+        `/api/bookings/${encodeURIComponent(bookingId)}/tracking`,
+        token,
+        undefined,
+        'VALIDATION',
+      );
+      const loc = dto?.location;
+      return {
+        bookingId: String(dto?.bookingId ?? bookingId),
+        estado: (dto?.status ?? 'accepted') as ReservaTracking['estado'],
+        profesionalId:
+          dto?.professionalId === null || dto?.professionalId === undefined
+            ? null
+            : String(dto.professionalId),
+        ubicacion:
+          loc && typeof loc.lat === 'number' && typeof loc.lng === 'number'
+            ? { lat: loc.lat, lng: loc.lng, ts: Number(loc.ts ?? Date.now()) }
+            : null,
+        llegadaEn: dto?.arrivedAt ? Date.parse(dto.arrivedAt) : null,
+        cliente: {
+          lat: typeof dto?.client?.lat === 'number' ? dto.client.lat : null,
+          lng: typeof dto?.client?.lng === 'number' ? dto.client.lng : null,
+        },
+      };
     },
   };
 }

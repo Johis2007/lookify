@@ -1033,12 +1033,12 @@ vuelve al matching con una reserva nueva. Sin backend, la pantalla queda igual q
 
 ### 6.5 Lo que sigue en mock
 
-- **Seguimiento (pantalla 8 del cliente):** el mapa y la animación del profesional siguen
-  siendo simulados (`MOCK_TRACKING_MS`). La app ya recibe el `bookingId` real y la ficha
-  real del profesional, pero **no** hay GPS del profesional ni posición real del cliente
-  en el mapa. El **rastreo en vivo** es el siguiente bloque (fase 4C), no está hecho.
+- **Seguimiento (pantalla 8 del cliente):** con `EXPO_PUBLIC_USE_BACKEND=true` **y**
+  `bookingId` ya usa posición real (ver 6.7). Sin backend sigue la animación simulada
+  (`MOCK_TRACKING_MS`); en ese modo no hay GPS real.
 - **Pantalla 9 del cliente** (servicio en progreso) y **pantalla 9 del profesional**
-  (servicio en curso + PIN) siguen mock.
+  (servicio en curso + PIN) siguen mock, salvo el envío de GPS foreground del pro en
+  «En camino» (ver 6.7).
 - **Pago y calificación** (pantalla 10) siguen mock.
 
 ### 6.6 Verificación
@@ -1046,4 +1046,29 @@ vuelve al matching con una reserva nueva. Sin backend, la pantalla queda igual q
 - `npm run typecheck` (servidor + app) limpio.
 - Tests del servidor: `node --env-file=.env --test --import tsx "apps/realtime-server/src/**/*.test.ts"` → **58/58**.
 - Prueba manual con **dos sesiones** (cliente + profesional) sobre el backend local.
+
+### 6.7 Rastreo en vivo (4C-2)
+
+- **Profesional (App Pro, pantalla 9):** mientras `etapa === 'EN_CAMINO'` envía GPS en
+  **primer plano** con `useLiveLocation` (cada **5 s** o **15 m**,
+  `maxAccuracyM` por defecto) vía `emitBookingLocation` → `location:update` con
+  `booking_id`. La tarjeta muestra «Compartiendo tu ubicación en vivo. Mantén la app
+  abierta.»; si se niega el permiso o falla el GPS, muestra el motivo. Al pasar a
+  `in_progress`/`completed` (PIN) deja de emitir.
+- **Cliente (pantalla 8):** `TrackingView` (compartida nativo/web; las pantallas solo
+  reexportan) escucha `booking:location` en la sala `booking:{id}` y pinta el marcador y
+  el rastro reales; además hace **polling de `GET /api/bookings/:id/tracking` cada 10 s**
+  como respaldo si el socket cae. Muestra «Última actualización hace X s», aviso rojo
+  **> 30 s** sin señal, ETA **aproximada a 20 km/h** y banner «El profesional llegó»
+  (`booking:event`/`arrivedAt`). Al recibir `in_progress`/`completed` navega a la
+  pantalla 9; en `cancelled`/`expired` vuelve a Home.
+- **Destino:** el servidor entrega `client.lat/lng` si la reserva tiene dirección
+  geocodificada; si no, se usa `MOCK_CLIENT_LOCATION` como referencia de distancia.
+- **Limitación deliberada del MVP:** no hay GPS en **segundo plano**. En iOS/Android el
+  sistema suspende la ubicación al cerrar/minimizar la app; seguimiento continuo requiere
+  un **dev build** con `expo-location` en background + foreground service (Android) y
+  `UIBackgroundModes` (iOS), fuera de este alcance. Mientras la app esté abierta el
+  rastreo funciona; el TTL de 120 s en Redis marca la posición como vencida.
+- **Web:** el mapa usa Leaflet; `TrackingScreen.web.tsx` ahora comparte la misma lógica
+  real (antes no tenía soporte de backend).
 
