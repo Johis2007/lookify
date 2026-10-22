@@ -9,7 +9,7 @@ import {
   SesionProfesional,
 } from '../../types/professionalAuth';
 import { resolvePostLoginRoute } from '../../navigation/professionalRoutes';
-import { api, loginDirectus, refreshAccessToken } from './directus';
+import { loginDirectus, refreshAccessToken } from './directus';
 import { bffApi } from './bff';
 import { BACKEND } from './config';
 import {
@@ -42,10 +42,10 @@ export type UniversalSession = {
   offline?: boolean;
 };
 
-type MeRow = { id: string; first_name?: string; last_name?: string; email?: string };
+type MeRow = { id: string; firstName?: string | null; lastName?: string | null };
 
 function displayName(me: MeRow, fallback: string): string {
-  return [me.first_name, me.last_name].filter(Boolean).join(' ').trim() || me.email || fallback;
+  return [me.firstName, me.lastName].filter(Boolean).join(' ').trim() || fallback;
 }
 
 async function esAdmin(token: string): Promise<boolean> {
@@ -58,7 +58,7 @@ export async function loginUniversal(email: string, password: string): Promise<U
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
   try {
     const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
-    const me = await api<MeRow>('GET', '/users/me?fields=id,first_name,last_name,email', accessToken);
+    const me = await bffApi<MeRow>('GET', '/api/users/me', accessToken);
     const nombre = displayName(me, cleanEmail);
     const refresh = refreshToken ? { refreshToken } : {};
 
@@ -194,7 +194,7 @@ async function validarToken(token: string): Promise<MeRow | null> {
     throw new ServiceError('NETWORK', 'Sesión offline.');
   }
   try {
-    return await api<MeRow>('GET', '/users/me?fields=id,first_name,last_name,email', token);
+    return await bffApi<MeRow>('GET', '/api/users/me', token);
   } catch (e) {
     // Sin red: se propaga para reanudar desde caché (modo offline).
     if (e instanceof ServiceError && e.code === 'NETWORK') throw e;

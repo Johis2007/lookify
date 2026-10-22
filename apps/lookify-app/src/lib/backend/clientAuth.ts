@@ -54,9 +54,11 @@ export async function logoutClient(): Promise<void> {
   await clearClientSession();
 }
 
-function toDisplayName(me: { first_name?: string; last_name?: string; email?: string }): string {
-  const full = [me.first_name, me.last_name].filter(Boolean).join(' ').trim();
-  return full || me.email || 'Cliente';
+type BffMe = { id: string; firstName?: string | null; lastName?: string | null };
+
+function toDisplayName(me: BffMe, fallback: string): string {
+  const full = [me.firstName, me.lastName].filter(Boolean).join(' ').trim();
+  return full || fallback || 'Cliente';
 }
 
 export async function ensureClientProfile(token: string, _userId: string, nombre: string, phone?: string): Promise<void> {
@@ -79,12 +81,8 @@ export async function loginClient(email: string, password: string): Promise<Clie
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
   try {
     const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
-    const me = await api<{ id: string; first_name?: string; last_name?: string; email?: string }>(
-      'GET',
-      '/users/me?fields=id,first_name,last_name,email',
-      accessToken,
-    );
-    const nombre = toDisplayName(me);
+    const me = await bffApi<BffMe>('GET', '/api/users/me', accessToken);
+    const nombre = toDisplayName(me, cleanEmail);
     await ensureClientProfile(accessToken, me.id, nombre);
     const session: ClientSession = {
       token: accessToken,
@@ -134,7 +132,7 @@ export async function registerClient(input: {
     role: BACKEND.appRoleId,
   });
   const { accessToken, refreshToken } = await loginDirectus(cleanEmail, input.password);
-  const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);
+  const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);
   await ensureClientProfile(accessToken, me.id, nombre, input.telefono);
   const session: ClientSession = {
     token: accessToken,

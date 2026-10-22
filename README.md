@@ -118,10 +118,17 @@ del JWT. El admin (`admin_access`) no se ve afectado.
 | `GET /api/professionals/me/reviews` · `/:id/reviews` | autenticado | Reseñas con solo el primer nombre del cliente |
 | `GET/POST/PUT /api/clients/me` | cliente | Perfil propio (upsert idempotente) |
 | `POST /api/bookings/:id/review` | cliente dueño | Reseña de reserva `completed`; única por reserva |
+| `GET/PATCH /api/users/me` | autenticado | Solo `firstName`, `lastName`, `phone`, `avatar`; nunca email/role/status |
+| `POST /api/files` | autenticado | Multipart `file` + `purpose` (`avatar\|portfolio\|certificate`); máx. 5 MB |
+| `GET /api/files/:id` | según archivo | Stream con `Authorization`; certificados solo dueño/admin |
+| `DELETE /api/files/:id` | dueño/admin | Borra el archivo propio (certificados ajenos → 404) |
 
 La migración `005`/`006` crea los índices únicos (un perfil por usuario, una
-reseña por reserva) y revoca esos permisos directos. Los archivos
-(`directus_files`) siguen siendo directos hasta la ola de archivos (2E-3).
+reseña por reserva) y revoca esos permisos directos. La `007` añade
+`directus_users.phone` y revoca `directus_files` y `directus_users` al App User:
+las imágenes se leen con header `Authorization` y `uploaded_by` sale siempre del
+JWT. Los avatares/portafolio puede verlos cualquier autenticado; los
+certificados solo su dueño o un admin.
 
 Cada transición hace un `UPDATE` condicional atómico (solo gana quien vea el
 estado previo correcto; doble aceptación → `409`) y escribe el `booking_events`

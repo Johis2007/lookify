@@ -6,7 +6,7 @@
 import { ProfessionalAuthService } from '../professionalAuthService';
 import { SesionProfesional } from '../../types/professionalAuth';
 import { ServiceError } from '../errors';
-import { api, loginDirectus } from '../../lib/backend/directus';
+import { loginDirectus } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
@@ -46,9 +46,9 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
       if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
       try {
         const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
-        const me = await api<{ id: string; first_name?: string; last_name?: string; email?: string }>(
+        const me = await bffApi<{ id: string; firstName?: string | null; lastName?: string | null }>(
           'GET',
-          '/users/me?fields=id,first_name,last_name,email',
+          '/api/users/me',
           accessToken,
         );
         const pro = await bffApi<ProEstado>(
@@ -63,7 +63,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
         });
         if (!pro) throw new ServiceError('VALIDATION', 'Esta cuenta no es de profesional.');
         const nombre =
-          pro.displayName || [me.first_name, me.last_name].filter(Boolean).join(' ') || cleanEmail;
+          pro.displayName || [me.firstName, me.lastName].filter(Boolean).join(' ') || cleanEmail;
         const { estado, onboarding } = await estadoDesdePro(accessToken, pro);
         await saveBackendSession({
           token: accessToken,

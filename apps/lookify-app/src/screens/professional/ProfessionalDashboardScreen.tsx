@@ -438,7 +438,10 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
           <View style={styles.profileRow}>
             <View style={styles.avatarWrap}>
               {panel.fotoPerfil ? (
-                <Image source={{ uri: panel.fotoPerfil.uri }} style={styles.avatarImage} />
+                <Image
+                  source={{ uri: panel.fotoPerfil.uri, headers: panel.fotoPerfil.headers }}
+                  style={styles.avatarImage}
+                />
               ) : (
                 <View style={styles.avatarFallback}>
                   <Text style={styles.avatarInitials}>{iniciales(panel.nombre)}</Text>

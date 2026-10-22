@@ -19,7 +19,7 @@ import {
   ObtenerServiciosDeSolicitudResponse,
 } from '../../types/professionalCertificates';
 import { ServiceError } from '../errors';
-import { api, assetUrl, uploadFile } from '../../lib/backend/directus';
+import { deleteFile, fileUrl, uploadFile } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import {
   backendSolicitudId,
@@ -133,7 +133,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       const solicitudId = backendSolicitudId(professionalId);
       return docs.map((d) =>
         aCertificado(d, solicitudId, {
-          uri: assetUrl(d.file) ?? '',
+          uri: fileUrl(d.file) ?? '',
           mimeType: 'image/jpeg',
           fileName: `certificado-${d.id}`,
           sizeBytes: 0,
@@ -150,7 +150,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       const existentes = await this.listarCertificados({ solicitudId: input.solicitudId });
       validarCobertura(form, delPro, existentes);
       await validarArchivo(form.archivo);
-      const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType);
+      const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType, 'certificate');
       const created = await bffApi<DDoc>('POST', '/api/professionals/me/documents', session.token, {
         file: fileId,
         docType: docTypePara(form.nombreTipo),
@@ -162,7 +162,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
         }),
       });
       return aCertificado(created, backendSolicitudId(professionalId), {
-        uri: assetUrl(fileId) ?? form.archivo.uri,
+        uri: fileUrl(fileId) ?? form.archivo.uri,
         mimeType: form.archivo.mimeType,
         fileName: form.archivo.fileName,
         sizeBytes: form.archivo.sizeBytes,
@@ -184,7 +184,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
         (d) => String(d.id) === input.certificadoId,
       );
       if (!anterior) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
-      const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType);
+      const fileId = await uploadFile(session.token, form.archivo.uri, form.archivo.fileName, form.archivo.mimeType, 'certificate');
       const updated = await bffApi<DDoc>(
         'PATCH',
         `/api/professionals/me/documents/${input.certificadoId}`,
@@ -201,10 +201,10 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
         },
       );
       if (anterior.file) {
-        await api('DELETE', `/files/${anterior.file}`, session.token).catch(() => undefined);
+        await deleteFile(session.token, anterior.file);
       }
       return aCertificado(updated, backendSolicitudId(professionalId), {
-        uri: assetUrl(fileId) ?? form.archivo.uri,
+        uri: fileUrl(fileId) ?? form.archivo.uri,
         mimeType: form.archivo.mimeType,
         fileName: form.archivo.fileName,
         sizeBytes: form.archivo.sizeBytes,
@@ -221,7 +221,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
       if (!doc) throw new ServiceError('CERTIFICADO_NO_ENCONTRADO');
       await bffApi('DELETE', `/api/professionals/me/documents/${input.certificadoId}`, session.token);
       if (doc.file) {
-        await api('DELETE', `/files/${doc.file}`, session.token).catch(() => undefined);
+        await deleteFile(session.token, doc.file);
       }
     },
 

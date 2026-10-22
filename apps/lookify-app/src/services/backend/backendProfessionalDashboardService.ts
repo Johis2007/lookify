@@ -18,7 +18,7 @@ import {
 } from '../../types/professionalDashboard';
 import { ResenaProfesional } from '../../types/professionalReview';
 import { ServiceError } from '../errors';
-import { assetUrl, uploadFile } from '../../lib/backend/directus';
+import { fileHeaders, fileUrl, uploadFile } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
 import {
   clearBackendSession,
@@ -99,7 +99,11 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
           precioBaseCop: s.priceBase ?? 0,
         })),
         fotoPerfil: pro.avatar
-          ? { uri: assetUrl(pro.avatar) ?? '', mimeType: 'image/jpeg' as FotoPerfilMimePermitido }
+          ? {
+              uri: fileUrl(pro.avatar) ?? '',
+              mimeType: 'image/jpeg' as FotoPerfilMimePermitido,
+              headers: fileHeaders(session.token),
+            }
           : null,
       };
     },
@@ -131,10 +135,22 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       if (tam === 'muy_grande') throw new ServiceError('ARCHIVO_MUY_GRANDE');
       if (tam === 'invalido') throw new ServiceError('ARCHIVO_INVALIDO');
       const mimeType = input.archivo.mimeType as FotoPerfilMimePermitido;
-      const fileId = await uploadFile(session.token, input.archivo.uri, `perfil-${professionalId}.jpg`, mimeType);
+      const fileId = await uploadFile(
+        session.token,
+        input.archivo.uri,
+        `perfil-${professionalId}.jpg`,
+        mimeType,
+        'avatar',
+      );
       await bffApi('PATCH', '/api/professionals/me', session.token, { avatar: fileId });
       // Directus no tiene revisión de foto (ver docs/adaptacion-backend.md).
-      return { fotoPerfil: { uri: assetUrl(fileId) ?? input.archivo.uri, mimeType } };
+      return {
+        fotoPerfil: {
+          uri: fileUrl(fileId) ?? input.archivo.uri,
+          mimeType,
+          headers: fileHeaders(session.token),
+        },
+      };
     },
 
     async registrarCierreSesion(input: RegistrarCierreSesionRequest): Promise<void> {

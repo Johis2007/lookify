@@ -15,7 +15,9 @@ import {
 } from './auth.js';
 import { createBookingsRouter } from './api/bookings.js';
 import { createClientsRouter } from './api/clients.js';
+import { createFilesRouter } from './api/files.js';
 import { createProfessionalsRouter } from './api/professionals.js';
+import { createUsersRouter } from './api/users.js';
 import { errorHandler } from './api/http.js';
 import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
 import { registerSocketHandlers, isValidLatLng } from './socket.js';
@@ -267,6 +269,8 @@ app.use(
 );
 app.use('/api/clients', createClientsRouter(pool));
 app.use('/api/professionals', createProfessionalsRouter(pool));
+app.use('/api/files', createFilesRouter(pool));
+app.use('/api/users', createUsersRouter(pool));
 app.use(errorHandler);
 
 // Batch cada 10s: Redis -> PostGIS (evita 1 write por ping).

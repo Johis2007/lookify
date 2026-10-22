@@ -109,18 +109,22 @@ export async function api<T = any>(
   return (data?.data ?? data) as T;
 }
 
-/** Sube un archivo local (picker) a /files de Directus. Devuelve el file id. */
+/** Sube un archivo local (picker) al BFF. Devuelve el file id. */
+export type UploadPurpose = 'avatar' | 'portfolio' | 'certificate';
+
 export async function uploadFile(
   token: string,
   uri: string,
   name: string,
   mimeType: string,
+  purpose: UploadPurpose,
 ): Promise<string> {
   const form = new FormData();
   form.append('file', { uri, name, type: mimeType } as any);
+  form.append('purpose', purpose);
   let res: Response;
   try {
-    res = await fetch(`${BACKEND.directusUrl}/files`, {
+    res = await fetch(`${BACKEND.bffUrl}/api/files`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -131,10 +135,26 @@ export async function uploadFile(
   const data = await readJsonSafe(res);
   if (!res.ok || !data?.data?.id) {
     if (res.status === 413) throw new ServiceError('ARCHIVO_MUY_GRANDE');
+    if (res.status === 400 && /mime/i.test(JSON.stringify(data))) {
+      throw new ServiceError('ARCHIVO_INVALIDO');
+    }
     throw toServiceError(res.status, data, 'VALIDATION');
   }
   return String(data.data.id);
 }
 
-export const assetUrl = (fileId?: string | null): string | undefined =>
-  fileId ? `${BACKEND.directusUrl}/assets/${fileId}` : undefined;
+/** Borra un archivo propio a través del BFF (best-effort). */
+export async function deleteFile(token: string, fileId?: string | null): Promise<void> {
+  if (!fileId) return;
+  await fetch(`${BACKEND.bffUrl}/api/files/${fileId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => undefined);
+}
+
+/** URL de lectura del BFF. Requiere `Authorization` al pintarla. */
+export const fileUrl = (fileId?: string | null): string | undefined =>
+  fileId ? `${BACKEND.bffUrl}/api/files/${fileId}` : undefined;
+export const fileHeaders = (token: string): Record<string, string> => ({
+  Authorization: `Bearer ${token}`,
+});

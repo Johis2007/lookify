@@ -133,14 +133,8 @@ const MATRIX = [
   // Reservas y eventos: TODO pasa por el BFF (/api/bookings*). El admin ve
   // reservas con su token.
   // Reseñas, perfiles de cliente y radar: solo por BFF / uso analítico interno.
-  // Archivos: subir avatar/certificados y ver (URLs del marketplace).
-  ['directus_files', 'create'],
-  ['directus_files', 'read'],
-  ['directus_files', 'delete'],
-  // Usuarios: lectura autenticada (Directus nunca expone password/token).
-  // (Sin reglas por fila: cualquier autenticado podría enumerar id/nombre/
-  // email. Residual documentado; mitigación real: licencia o endpoint propio.)
-  ['directus_users', 'read'],
+  // Archivos: TODO por BFF (/api/files), el App User no toca directus_files.
+  // Usuarios: TODO por BFF (/api/users/me), sin enumeración de correos.
 ];
 
 for (const [collection, action] of MATRIX) {
@@ -203,6 +197,15 @@ const REVOKE = [
   ['booking_events', 'create'],
   ['booking_events', 'update'],
   ['booking_events', 'delete'],
+  // Ola 2c: archivos y usuarios solo por BFF.
+  ['directus_files', 'read'],
+  ['directus_files', 'create'],
+  ['directus_files', 'update'],
+  ['directus_files', 'delete'],
+  ['directus_users', 'read'],
+  ['directus_users', 'create'],
+  ['directus_users', 'update'],
+  ['directus_users', 'delete'],
 ];
 for (const [collection, action] of REVOKE) {
   const q = `/permissions?filter[policy][_eq]=${appPolicy}&filter[collection][_eq]=${collection}&filter[action][_eq]=${action}&limit=100&fields=id`;

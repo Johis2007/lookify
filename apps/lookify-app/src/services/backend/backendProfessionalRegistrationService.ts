@@ -35,7 +35,7 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
         role: BACKEND.appRoleId,
       });
       const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
-      const me = await api<{ id: string }>('GET', '/users/me?fields=id', accessToken);
+      const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);
       // El perfil se crea por el BFF: deriva el user del token y fuerza
       // verification_status='pending' (no auto-verificación).
       const created = await bffApi<{ id: number }>('POST', '/api/professionals/me', accessToken, {
