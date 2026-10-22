@@ -135,6 +135,10 @@ de 1 mensaje cada 2 s por socket. La llegada (`POST .../events` con
   `npm run db:cleanup:gps` (o `-- --days=N`); prográmala con cron/Task Scheduler
   en producción. La última posición para el polling vive en Redis con TTL 120 s
   y se borra al iniciar/completar/cancelar la reserva.
+- **Retención de búsquedas de radar:** `radar_searches` es analítica interna
+  (el App User no tiene acceso directo). Se conserva **90 días** por defecto
+  (`RADAR_RETENTION_DAYS`); limpia con `npm run db:cleanup:radar`
+  (o `-- --days=N`).
 
 ## Problemas comunes
 

@@ -16,7 +16,8 @@
     "db:seed": "node directus/seed.mjs",
     "seed:demo": "node directus/seed-demo.mjs",
     "db:fresh": "npm run db:setup && npm run db:migrate && npm run db:seed",
-    "typecheck": "npx tsc --noEmit -p apps/realtime-server && npx tsc --noEmit -p apps/lookify-app"
+    "typecheck": "npx tsc --noEmit -p apps/realtime-server && npx tsc --noEmit -p apps/lookify-app",
+    "db:cleanup:radar": "node scripts/radar-cleanup.mjs"
   },
   "dependencies": {
     "express": "^5.2.1"

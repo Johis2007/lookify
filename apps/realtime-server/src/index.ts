@@ -14,6 +14,7 @@ import {
   type AuthedUser,
 } from './auth.js';
 import { createBookingsRouter } from './api/bookings.js';
+import { createClientsRouter } from './api/clients.js';
 import { createProfessionalsRouter } from './api/professionals.js';
 import { errorHandler } from './api/http.js';
 import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
@@ -264,6 +265,7 @@ app.use(
     },
   }),
 );
+app.use('/api/clients', createClientsRouter(pool));
 app.use('/api/professionals', createProfessionalsRouter(pool));
 app.use(errorHandler);
 

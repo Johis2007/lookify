@@ -7,6 +7,7 @@ import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
 import { api, loginDirectus } from './directus';
+import { bffApi } from './bff';
 import { findMockUser } from '../../data/mockUsers';
 
 export type ClientSession = {
@@ -58,18 +59,18 @@ function toDisplayName(me: { first_name?: string; last_name?: string; email?: st
   return full || me.email || 'Cliente';
 }
 
-export async function ensureClientProfile(token: string, userId: string, nombre: string, phone?: string): Promise<void> {
-  const rows = await api<{ id: number }[]>(
-    'GET',
-    `/items/client_profiles?filter[user][_eq]=${userId}&fields=id&limit=1`,
+export async function ensureClientProfile(token: string, _userId: string, nombre: string, phone?: string): Promise<void> {
+  // Ola 2a: el perfil se crea/actualiza solo por el BFF; el user sale del JWT.
+  await bffApi(
+    'POST',
+    '/api/clients/me',
     token,
-  ).catch(() => []);
-  if (rows.length > 0) return;
-  await api('POST', '/items/client_profiles', token, {
-    user: userId,
-    display_name: nombre,
-    ...(phone?.trim() ? { phone: phone.trim() } : {}),
-  }).catch(() => undefined);
+    {
+      displayName: nombre,
+      ...(phone?.trim() ? { phone: phone.trim() } : {}),
+    },
+    'VALIDATION',
+  ).catch(() => undefined);
 }
 
 /** Login cliente: Directus + perfil (se crea si falta). Sin red → offline. */

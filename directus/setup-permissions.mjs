@@ -134,16 +134,9 @@ const MATRIX = [
   // verification_status='pending'. Así se cierra la auto-verificación.
   // Reservas y eventos: TODO pasa por el BFF (/api/bookings*). El App User no
   // tiene acceso directo (ver REVOKE). El admin ve reservas con su token.
-  // Reseñas: ver y crear.
-  ['reviews', 'read'],
-  ['reviews', 'create'],
-  // Radar + eventos.
-  ['radar_searches', 'create'],
-  ['radar_searches', 'read'],
-  // Perfiles cliente (marca de rol) y documentos de verificación pro.
-  ['client_profiles', 'create'],
-  ['client_profiles', 'read'],
-  ['professional_documents', 'create'],
+  // Reseñas, perfiles de cliente y radar: solo por BFF / uso analítico interno
+  // (ver REVOKE). El App User no lee ni escribe directo.
+  // Documentos de verificación pro.
   ['professional_documents', 'read'],
   // Servicios del profesional (precios visibles; vínculo propio).
   ['professional_services', 'create'],
@@ -188,6 +181,19 @@ console.log(`app: ${MATRIX.length} permisos aplicados`);
 // (perfil profesional vía /api/professionals/me, sin auto-verificación).
 // Paso 2D: todo acceso a bookings/booking_events pasa por el BFF.
 const REVOKE = [
+  // Ola 2a: datos personales solo por BFF.
+  ['client_profiles', 'read'],
+  ['client_profiles', 'create'],
+  ['client_profiles', 'update'],
+  ['client_profiles', 'delete'],
+  ['radar_searches', 'read'],
+  ['radar_searches', 'create'],
+  ['radar_searches', 'update'],
+  ['radar_searches', 'delete'],
+  ['reviews', 'read'],
+  ['reviews', 'create'],
+  ['reviews', 'update'],
+  ['reviews', 'delete'],
   ['beauty_professionals', 'create'],
   ['beauty_professionals', 'update'],
   ['bookings', 'read'],

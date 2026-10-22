@@ -91,6 +91,14 @@ const EventBody = z.object({
   note: z.string().trim().max(500).optional(),
 });
 
+// Reseña del cliente: rating entero 1..5, comentario acotado.
+const ReviewBody = z
+  .object({
+    rating: z.number().int().min(1).max(5),
+    comment: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
 // ---------------------------------------------------------------------------
 // Tipos de fila
 // ---------------------------------------------------------------------------
@@ -549,6 +557,80 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
         emitEvent?.(booking.id, { status: 'llegada', ts: Date.now() });
       }
       res.status(201).json({ data: rows[0] });
+    }),
+  );
+
+  // POST /api/bookings/:id/review — el cliente dueño califica una reserva
+  // completada. Una sola reseña por reserva (índice único en la migración 005)
+  // y recálculo transaccional de rating_avg del profesional.
+  router.post(
+    '/:id/review',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const user = req.user!;
+      const bookingId = Number(req.params.id);
+      if (!Number.isInteger(bookingId) || bookingId <= 0) {
+        throw new HttpError(404, 'not_found');
+      }
+      const parsed = ReviewBody.safeParse(req.body);
+      if (!parsed.success) throw new HttpError(400, 'invalid_body');
+      const body = parsed.data;
+
+      try {
+        const review = await withTransaction(pool, async (client) => {
+          // FOR UPDATE evita dos reseñas simultáneas de la misma reserva.
+          const b = await client.query<{
+            id: number;
+            client: string | null;
+            professional: number | null;
+            status: string;
+          }>('SELECT id, client, professional, status FROM bookings WHERE id = $1 FOR UPDATE', [
+            bookingId,
+          ]);
+          const booking = b.rows[0];
+          if (!booking || booking.client !== user.userId) throw new HttpError(404, 'not_found');
+          if (booking.status !== 'completed') throw new HttpError(403, 'booking_not_completed');
+          if (booking.professional === null) throw new HttpError(409, 'booking_without_professional');
+
+          const inserted = await client.query<{
+            id: number;
+            booking: number;
+            professional: number;
+            rating: number;
+            comment: string | null;
+            created_at: Date;
+          }>(
+            `INSERT INTO reviews (booking, client, professional, rating, comment, created_at)
+             VALUES ($1,$2,$3,$4,$5,NOW())
+             RETURNING id, booking, professional, rating, comment, created_at`,
+            [booking.id, user.userId, booking.professional, body.rating, body.comment ?? null],
+          );
+
+          await client.query(
+            `UPDATE beauty_professionals
+                SET rating_avg = (
+                  SELECT COALESCE(AVG(rating), 0) FROM reviews WHERE professional = $1
+                )
+              WHERE id = $1`,
+            [booking.professional],
+          );
+
+          return inserted.rows[0];
+        });
+
+        res.status(201).json({
+          data: {
+            id: review.id,
+            bookingId: review.booking,
+            professionalId: review.professional,
+            rating: review.rating,
+            comment: review.comment,
+            createdAt: review.created_at,
+          },
+        });
+      } catch (e) {
+        if ((e as { code?: string }).code === '23505') throw new HttpError(409, 'review_exists');
+        throw e;
+      }
     }),
   );
 

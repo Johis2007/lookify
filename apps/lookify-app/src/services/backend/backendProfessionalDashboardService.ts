@@ -25,7 +25,7 @@ import {
   loadBackendSession,
   resolveProfessionalId,
 } from '../../lib/backend/session';
-import { DProfessional, DReview } from '../../lib/backend/mapping';
+import { DProfessional } from '../../lib/backend/mapping';
 import { disconnectRealtime, emitProOffline, ensureProOnline } from '../../lib/backend/realtime';
 import { resumenDiaBackend } from './backendProfessionalEarningsHistoryService';
 import { validarArchivoFotoPerfil } from '../../utils/profilePhotoFile';
@@ -56,18 +56,14 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
       const professionalId = await resolveProfessionalId(input.profesionalId, input.solicitudId);
       const pro = await assertHabilitado(session.token, professionalId);
 
-      const [reviews, conteo, servicios] = await Promise.all([
-        api<DReview[]>(
-          'GET',
-          `/items/reviews?filter[professional][_eq]=${professionalId}` +
-            `&fields=rating,comment,client&sort=-created_at&limit=3`,
-          session.token,
-        ),
-        api<unknown>(
-          'GET',
-          `/items/reviews?filter[professional][_eq]=${professionalId}&limit=1&meta=total_count`,
-          session.token,
-        ).catch(() => null),
+      const [resenas, servicios] = await Promise.all([
+        bffApi<{
+          reviews: { rating: number; comment: string | null; author: string }[];
+          total: number;
+        }>('GET', '/api/professionals/me/reviews', session.token).catch(() => ({
+          reviews: [],
+          total: 0,
+        })),
         api<{ service: { id: number; name: string; duration_min: number; price_base: number } }[]>(
           'GET',
           `/items/professional_services?filter[professional_id][_eq]=${professionalId}` +
@@ -76,32 +72,12 @@ export function createBackendProfessionalDashboardService(): ProfessionalDashboa
         ).catch(() => []),
       ]);
 
-      const totalResenas =
-        conteo && typeof conteo === 'object' && 'meta' in (conteo as Record<string, unknown>)
-          ? Number(
-              ((conteo as { meta?: { filter_count?: number; total_count?: number } }).meta
-                ?.filter_count ??
-                (conteo as { meta?: { filter_count?: number; total_count?: number } }).meta
-                  ?.total_count ??
-                0),
-            ) || 0
-          : 0;
-      const ultimasResenas: ResenaProfesional[] = await Promise.all(
-        reviews.map(async (r) => {
-          let autor = 'Cliente';
-          try {
-            const u = await api<{ first_name?: string }>(
-              'GET',
-              `/users/${r.client}?fields=first_name`,
-              session.token,
-            );
-            if (u?.first_name?.trim()) autor = u.first_name.trim();
-          } catch {
-            /* sin nombre: Cliente */
-          }
-          return { autor, texto: r.comment ?? '', estrellas: r.rating };
-        }),
-      );
+      const totalResenas = resenas.total;
+      const ultimasResenas: ResenaProfesional[] = resenas.reviews.slice(0, 3).map((r) => ({
+        autor: r.author,
+        texto: r.comment ?? '',
+        estrellas: r.rating,
+      }));
       const resumenDia = await resumenDiaBackend(session.token, professionalId);
 
       return {

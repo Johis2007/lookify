@@ -123,10 +123,74 @@ function toProfileDto(row: ProfessionalRow) {
   };
 }
 
+function toReviewDto(row: {
+  id: number;
+  rating: number;
+  comment: string | null;
+  created_at: Date | null;
+  author: string;
+}) {
+  return {
+    id: row.id,
+    rating: row.rating,
+    comment: row.comment,
+    author: row.author,
+    createdAt: row.created_at,
+  };
+}
+
+// Reseñas de un profesional con SOLO el primer nombre del cliente (nada de
+// email, id de usuario ni apellidos).
+async function listReviews(pool: pg.Pool, professionalId: number, limit = 20) {
+  const { rows } = await pool.query<{
+    id: number;
+    rating: number;
+    comment: string | null;
+    created_at: Date | null;
+    author: string;
+  }>(
+    `SELECT r.id, r.rating, r.comment, r.created_at,
+            COALESCE(NULLIF(btrim(split_part(u.first_name, ' ', 1)), ''), 'Cliente') AS author
+       FROM reviews r
+       LEFT JOIN directus_users u ON u.id = r.client
+      WHERE r.professional = $1
+      ORDER BY r.created_at DESC
+      LIMIT $2`,
+    [professionalId, limit],
+  );
+  const total = await pool.query<{ count: string }>(
+    'SELECT COUNT(*)::text AS count FROM reviews WHERE professional = $1',
+    [professionalId],
+  );
+  return { reviews: rows.map(toReviewDto), total: Number(total.rows[0]?.count ?? 0) };
+}
+
 export function createProfessionalsRouter(pool: pg.Pool): Router {
   const router = Router();
   router.use(requireAuth);
   router.use(rateLimit());
+
+  // GET /api/professionals/me/reviews — dashboard del pro del token.
+  router.get(
+    '/me/reviews',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const professionalId = await resolveOwnProfessionalId(pool, req.user!.userId);
+      if (professionalId === null) throw new HttpError(404, 'not_found');
+      res.json({ data: await listReviews(pool, professionalId) });
+    }),
+  );
+
+  // GET /api/professionals/:id/reviews — consulta autenticada (dato público).
+  router.get(
+    '/:id/reviews',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const id = Number(req.params.id);
+      if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
+      const exists = await pool.query('SELECT 1 FROM beauty_professionals WHERE id = $1', [id]);
+      if (!exists.rows[0]) throw new HttpError(404, 'not_found');
+      res.json({ data: await listReviews(pool, id) });
+    }),
+  );
 
   // GET /api/professionals/me — perfil del profesional del token.
   router.get(
