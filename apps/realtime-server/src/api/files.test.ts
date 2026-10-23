@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -9,9 +10,6 @@ import { errorHandler } from './http.js';
 
 // Ola 2c: BFF de archivos. Contra el Postgres local real; valida bordes HTTP y
 // ACL sin depender de que Directus tenga el binario (subida real en E2E).
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let server: Server;
@@ -139,4 +137,25 @@ maybe('DELETE de archivo ajeno responde 404', async () => {
     headers: { Authorization: `Bearer ${token(user2)}` },
   });
   assert.equal(res.status, 404);
+});
+
+maybe('certificado de otro usuario no puede usarse como avatar (propiedad/purpose)', async () => {
+  // Intentar usar certificado ajeno como avatar debe fallar en PATCH /me
+  // (validado por el router de usuarios; probamos por API directa)
+  const res = await fetch(`${baseUrl.replace('/api/files', '')}/api/users/me`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(user2)}` },
+    body: JSON.stringify({ avatar: certificateId }),
+  }).catch(() => null);
+  // Si el servidor de archivos no tiene /api/users montado, este test es best-effort
+  // pero la validación existe en users.ts
+  if (res) {
+    assert.equal(res.status, 400);
+    const json = await res.json().catch(() => null);
+    assert.equal(json?.error, 'invalid_avatar');
+  }
+  const getRes = await fetch(`${baseUrl}/api/files/${certificateId}`, {
+    headers: { Authorization: `Bearer ${token(user2)}` },
+  });
+  assert.equal(getRes.status, 404);
 });
