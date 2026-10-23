@@ -27,14 +27,62 @@ const CLIENT_EMAIL = 'cliente.demo@lookify.app';
 const PRO_EMAIL = 'pro.demo@lookify.app';
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'admin@lookify.app';
 const PRO_DISPLAY_NAME = 'Pro Demo';
-const PRO_LAT = 4.6545;
-const PRO_LNG = -74.0615;
 const PRO_SERVICE_NAME = 'Corte + peinado';
+const ADDITIONAL_PROS = [
+  {
+    email: 'pro.demo2@lookify.app',
+    displayName: 'Pro Demo 2',
+    bio: 'Profesional de demostracion (corte y peinado).',
+    distanceM: 450,
+    bearingDeg: 45,
+  },
+  {
+    email: 'pro.demo3@lookify.app',
+    displayName: 'Pro Demo 3',
+    bio: 'Profesional de demostracion (corte y peinado).',
+    distanceM: 650,
+    bearingDeg: 225,
+  },
+];
 
 const fail = (what, detail) => {
   console.error(`ERROR en ${what}: ${detail}`);
   process.exit(1);
 };
+
+function parseCoord(name, min, max) {
+  const raw = process.env[name];
+  if (!raw || !raw.trim()) fail(name, 'Falta en el .env raiz (ver .env.example)');
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < min || value > max) {
+    fail(name, `Valor fuera de rango [${min}, ${max}]: ${raw}`);
+  }
+  return value;
+}
+
+const DEMO_LAT = parseCoord('DEMO_LAT', -90, 90);
+const DEMO_LNG = parseCoord('DEMO_LNG', -180, 180);
+
+function destination(lat, lng, distanceM, bearingDeg) {
+  const R = 6371000;
+  const bearing = (bearingDeg * Math.PI) / 180;
+  const lat1 = (lat * Math.PI) / 180;
+  const lng1 = (lng * Math.PI) / 180;
+  const angular = distanceM / R;
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angular) + Math.cos(lat1) * Math.sin(angular) * Math.cos(bearing),
+  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angular) * Math.cos(lat1),
+      Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2),
+    );
+  return {
+    lat: (lat2 * 180) / Math.PI,
+    lng: (((lng2 * 180) / Math.PI + 540) % 360) - 180,
+  };
+}
 
 // Guardas 4C-1: este seed crea cuentas con contraseña conocida, así que solo
 // puede correr contra una instancia de desarrollo local o de red privada.
@@ -216,12 +264,12 @@ async function ensureAdmin() {
   return c.data.data.id;
 }
 
-async function ensureProProfile(userId) {
+async function ensureProProfile(userId, displayName = PRO_DISPLAY_NAME) {
   const existing = await findOne(
     `/items/beauty_professionals?filter[user][_eq]=${encodeURIComponent(userId)}&fields=id,verification_status,is_online&limit=1`
   );
   const body = {
-    display_name: PRO_DISPLAY_NAME,
+    display_name: displayName,
     bio: 'Profesional de demostración (barbería y peluquería).',
     verification_status: 'verified',
     is_online: true,
@@ -231,14 +279,14 @@ async function ensureProProfile(userId) {
   if (existing) {
     const u = await api('PATCH', `/items/beauty_professionals/${existing.id}`, body);
     if (u.status !== 200) fail('PATCH perfil demo', `HTTP ${u.status} ${JSON.stringify(u.data)?.slice(0, 200)}`);
-    console.log(`= perfil pro demo (id ${existing.id}, verificado y online)`);
+    console.log(`= perfil ${displayName} (id ${existing.id}, verificado y online)`);
     return Number(existing.id);
   }
   const c = await api('POST', '/items/beauty_professionals', { user: userId, ...body });
   if (![200, 201].includes(c.status) || !c.data?.data?.id) {
     fail('POST perfil demo', `HTTP ${c.status} ${JSON.stringify(c.data)?.slice(0, 200)}`);
   }
-  console.log(`+ perfil pro demo (id ${c.data.data.id}, verificado y online)`);
+  console.log(`+ perfil ${displayName} (id ${c.data.data.id}, verificado y online)`);
   return Number(c.data.data.id);
 }
 
@@ -267,14 +315,14 @@ async function ensureServiceOffered(pool, professionalId) {
   return service;
 }
 
-async function ensureLocation(pool, professionalId) {
+async function ensureLocation(pool, professionalId, lat, lng) {
   await pool.query(
     `INSERT INTO professional_locations (professional_id, geom, updated_at)
      VALUES ($1, ST_SetSRID(ST_MakePoint($2, $3), 4326), NOW())
      ON CONFLICT (professional_id) DO UPDATE SET geom = EXCLUDED.geom, updated_at = NOW()`,
-    [professionalId, PRO_LNG, PRO_LAT]
+    [professionalId, lng, lat]
   );
-  console.log(`= ubicación del pro demo (${PRO_LAT}, ${PRO_LNG})`);
+  console.log(`= ubicación del pro demo (${lat.toFixed(6)}, ${lng.toFixed(6)})`);
 }
 
 await waitReady();
@@ -286,15 +334,39 @@ const clientId = await ensureUser({ email: CLIENT_EMAIL, firstName: 'Cliente', r
 const proUserId = await ensureUser({ email: PRO_EMAIL, firstName: 'Pro', role: roleId });
 const professionalId = await ensureProProfile(proUserId);
 
+const additionalPros = [];
+for (const spec of ADDITIONAL_PROS) {
+  const point = destination(DEMO_LAT, DEMO_LNG, spec.distanceM, spec.bearingDeg);
+  const userId = await ensureUser({ email: spec.email, firstName: 'Pro', role: roleId });
+  const profileId = await ensureProProfile(userId, spec.displayName);
+  additionalPros.push({ ...spec, userId, professionalId: profileId, lat: point.lat, lng: point.lng });
+}
+
 if (!process.env.DATABASE_URL) fail('DATABASE_URL', 'Falta en el .env raíz');
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 try {
-  const service = await ensureServiceOffered(pool, professionalId);
-  await ensureLocation(pool, professionalId);
+  const pros = [
+    {
+      email: PRO_EMAIL,
+      userId: proUserId,
+      professionalId,
+      lat: DEMO_LAT,
+      lng: DEMO_LNG,
+      distanceM: 0,
+    },
+    ...additionalPros,
+  ];
+  for (const pro of pros) {
+    const service = await ensureServiceOffered(pool, pro.professionalId);
+    await ensureLocation(pool, pro.professionalId, pro.lat, pro.lng);
+    console.log(
+      `  ${pro.email}: perfil ${pro.professionalId}, servicio ${service.id}, ` +
+        `${pro.distanceM} m (${pro.lat.toFixed(6)}, ${pro.lng.toFixed(6)})`,
+    );
+  }
   console.log('');
   console.log('SEED:DEMO OK');
   console.log(`  cliente: ${CLIENT_EMAIL} (${clientId})`);
-  console.log(`  pro:     ${PRO_EMAIL} (${proUserId}) -> perfil ${professionalId}, servicio ${service.id}`);
   console.log(`  admin:   ${ADMIN_EMAIL}${adminId ? ` (${adminId})` : ''}`);
   console.log('  contraseña: el valor de DEMO_PASSWORD del .env');
 } finally {
