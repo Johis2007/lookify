@@ -538,7 +538,6 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
         throw new HttpError(403, 'forbidden_event');
       }
       if (!user.isAdmin) {
-        const isClient = booking.client !== null && booking.client === user.userId;
         const ownPro = await resolveOwnProfessionalId(pool, user.userId);
         const isPro = ownPro !== null && ownPro === booking.professional;
         const permitido =

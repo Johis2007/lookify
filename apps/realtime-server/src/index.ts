@@ -50,7 +50,7 @@ const logWarn = (msg: string, extra?: Record<string, unknown>) => logger.warn(ex
 // Variables obligatorias: sin ellas el servidor no puede autenticar ni hablar
 // con la base. Fallamos temprano con un mensaje accionable (exit 1), no en
 // silencio. DIRECTUS_SECRET debe ser el mismo SECRET de Directus (firma los JWT).
-const REQUIRED_ENV: Array<{ key: string; hint: string }> = [
+const REQUIRED_ENV: { key: string; hint: string }[] = [
   { key: 'DIRECTUS_SECRET', hint: 'el mismo DIRECTUS_SECRET/SECRET de Directus (firma los JWT)' },
   { key: 'DATABASE_URL', hint: 'cadena de conexión de Postgres (postgres://user:pass@host:5432/db)' },
   { key: 'REDIS_URL', hint: 'cadena de conexión de Redis (redis://host:6379)' },

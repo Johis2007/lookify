@@ -139,7 +139,7 @@ export function createFilesRouter(pool: pg.Pool): Router {
 
       const uploadedRes = await adminFetch('/files', { method: 'POST', body: form });
       const uploadedJson = (await uploadedRes.json().catch(() => null)) as
-        | { data?: { id?: string } | Array<{ id?: string }> }
+        | { data?: { id?: string } | { id?: string }[] }
         | null;
       const uploaded = Array.isArray(uploadedJson?.data)
         ? uploadedJson?.data[0]

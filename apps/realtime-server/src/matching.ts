@@ -213,8 +213,8 @@ export async function avanzarOExpirar(
 export async function sweepMatching(deps: MatchSweepDeps): Promise<number> {
   const { pool } = deps;
   const conn = await pool.connect();
-  const nuevasOfertas: Array<{ bookingId: number; professionalId: number; clientId: string }> = [];
-  const expiradas: Array<{ bookingId: number; clientId: string }> = [];
+  const nuevasOfertas: { bookingId: number; professionalId: number; clientId: string }[] = [];
+  const expiradas: { bookingId: number; clientId: string }[] = [];
   let processed = 0;
   try {
     await conn.query('BEGIN');
@@ -297,8 +297,8 @@ async function conTransaccionMatch(
 ): Promise<MatchResult> {
   const { pool } = deps;
   const conn = await pool.connect();
-  const nuevasOfertas: Array<{ bookingId: number; professionalId: number; clientId: string }> = [];
-  const expiradas: Array<{ bookingId: number; clientId: string }> = [];
+  const nuevasOfertas: { bookingId: number; professionalId: number; clientId: string }[] = [];
+  const expiradas: { bookingId: number; clientId: string }[] = [];
   let result: MatchResult = { tipo: 'nada' };
   try {
     await conn.query('BEGIN');
