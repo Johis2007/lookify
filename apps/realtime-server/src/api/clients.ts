@@ -64,6 +64,16 @@ function toDto(row: ClientRow) {
   };
 }
 
+async function assertOwnAvatar(pool: pg.Pool, userId: string, fileId: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM directus_files
+      WHERE id = $1 AND uploaded_by = $2 AND description = 'lookify:avatar'
+      LIMIT 1`,
+    [fileId, userId],
+  );
+  if (!rows[0]) throw new HttpError(400, 'invalid_avatar');
+}
+
 export function createClientsRouter(pool: pg.Pool): Router {
   const router = Router();
   router.use(requireAuth);
@@ -85,6 +95,9 @@ export function createClientsRouter(pool: pg.Pool): Router {
     const parsed = UpsertClientBody.safeParse(req.body ?? {});
     if (!parsed.success) throw new HttpError(400, 'invalid_body');
     const body = parsed.data as Record<string, unknown>;
+    if (typeof body.avatar === 'string') {
+      await assertOwnAvatar(pool, req.user!.userId, body.avatar);
+    }
 
     const existing = await pool.query<ClientRow>(
       `SELECT ${CLIENT_FIELDS} FROM client_profiles WHERE "user" = $1 LIMIT 1`,

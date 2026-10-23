@@ -221,6 +221,16 @@ function toPublicProfileDto(row: PublicProfileRow) {
   };
 }
 
+async function assertOwnAvatar(pool: pg.Pool, userId: string, fileId: string): Promise<void> {
+  const { rows } = await pool.query(
+    `SELECT 1 FROM directus_files
+      WHERE id = $1 AND uploaded_by = $2 AND description = 'lookify:avatar'
+      LIMIT 1`,
+    [fileId, userId],
+  );
+  if (!rows[0]) throw new HttpError(400, 'invalid_avatar');
+}
+
 function toReviewDto(row: {
   id: number;
   rating: number;
@@ -504,6 +514,9 @@ export function createProfessionalsRouter(pool: pg.Pool): Router {
       const parsed = PatchProfileBody.safeParse(req.body);
       if (!parsed.success) throw new HttpError(400, 'invalid_body');
       const body = parsed.data as Record<string, unknown>;
+      if (typeof body.avatar === 'string') {
+        await assertOwnAvatar(pool, user.userId, body.avatar);
+      }
 
       // Estado actual del perfil propio: necesario para aplicar los gates de
       // negocio (ponerse online / reenviar a revisión) ANTES de escribir.
