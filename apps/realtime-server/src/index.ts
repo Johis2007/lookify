@@ -17,6 +17,7 @@ import { createBookingsRouter } from './api/bookings.js';
 import { createClientsRouter } from './api/clients.js';
 import { createFilesRouter } from './api/files.js';
 import { createProfessionalsRouter } from './api/professionals.js';
+import { createRegisterRouter } from './api/register.js';
 import { createUsersRouter } from './api/users.js';
 import { errorHandler } from './api/http.js';
 import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
@@ -267,6 +268,7 @@ app.use(
     },
   }),
 );
+app.use('/api/auth', createRegisterRouter());
 app.use('/api/clients', createClientsRouter(pool));
 app.use('/api/professionals', createProfessionalsRouter(pool));
 app.use('/api/files', createFilesRouter(pool));

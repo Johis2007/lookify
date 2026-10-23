@@ -9,7 +9,7 @@ import { toServiceError } from './directus';
 export async function bffApi<T = any>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   path: string,
-  token: string,
+  token: string | null,
   body?: unknown,
   notFoundCode: Parameters<typeof toServiceError>[2] = 'VALIDATION',
 ): Promise<T> {
@@ -18,7 +18,7 @@ export async function bffApi<T = any>(
     res = await fetch(BACKEND.bffUrl + path, {
       method,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

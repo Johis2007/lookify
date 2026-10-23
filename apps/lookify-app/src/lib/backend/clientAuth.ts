@@ -1,8 +1,8 @@
 // src/lib/backend/clientAuth.ts
-// Auth de cliente contra Directus: login + registro público (igual que
-// mobile-web) + perfil client_profiles. Sesión propia en SecureStore.
+// Auth de cliente contra Directus: login + registro por BFF (sin token) +
+// perfil client_profiles. Sesión propia en SecureStore.
 
-import { api, loginDirectus, revokeRefreshToken } from './directus';
+import { loginDirectus, revokeRefreshToken } from './directus';
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
@@ -123,12 +123,10 @@ export async function registerClient(input: {
   const nombre = input.nombre.trim();
   const cleanEmail = input.email.trim();
   if (!nombre || !cleanEmail || !input.password) throw new ServiceError('VALIDATION');
-  await api('POST', '/users', null, {
+  await bffApi('POST', '/api/auth/register', null, {
     email: cleanEmail,
     password: input.password,
-    first_name: nombre,
-    // Rol directo: el flow de asignación no se ejecuta en esta instancia.
-    role: BACKEND.appRoleId,
+    firstName: nombre,
   });
   const { accessToken, refreshToken } = await loginDirectus(cleanEmail, input.password);
   const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);

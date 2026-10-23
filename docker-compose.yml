@@ -1,3 +1,5 @@
+name: lookify-main
+
 services:
   postgres:
     image: postgis/postgis:16-3.4
@@ -78,8 +80,10 @@ services:
       CORS_ORIGIN: ${CORS_ORIGIN:-*}
       # Fase 7: MISMO SECRET que Directus (firma los JWT). Sin él no arranca.
       DIRECTUS_SECRET: ${DIRECTUS_SECRET}
-      # Token estático de mínimo privilegio (solo directus_files), generado
-      # por directus/setup-permissions.mjs.
+      DIRECTUS_URL: http://directus:8055
+      APP_ROLE_ID: ${APP_ROLE_ID}
+      # Token estático de mínimo privilegio (registro + directus_files),
+      # generado por directus/setup-permissions.mjs.
       DIRECTUS_TOKEN: ${DIRECTUS_TOKEN}
 
 volumes:

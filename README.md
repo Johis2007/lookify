@@ -49,7 +49,10 @@ npm run db:fresh
 #   npm run db:migrate  # SQL PostGIS + constraints (psql en el contenedor)
 #   npm run db:seed     # catálogo: 5 categorías + 6 servicios (idempotente)
 
-# 5. Realtime + app
+# 5. Datos demo: cliente + 3 profesionales verificados cerca del centro demo
+npm run seed:demo
+
+# 6. Realtime + app
 npm run dev:realtime          # servidor Socket.IO :4001 (otra terminal)
 npm run env:lan               # fija las IPs LAN en apps/lookify-app/.env
 npm run dev:app               # Expo: web + QR para móvil
@@ -68,6 +71,9 @@ inician sesión solos con esas credenciales si no defines `ADMIN_TOKEN`.
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` | Admin inicial que Directus crea solo en el primer arranque; los scripts la usan para autenticarse |
 | `PUBLIC_URL` | URL pública de Directus |
 | `DIRECTUS_URL` / `ADMIN_TOKEN` | Solo scripts `db:*`: a dónde conectarse y con qué token (si `ADMIN_TOKEN` está vacío, hacen login con el admin) |
+| `DIRECTUS_TOKEN` | Token del servicio `bff-service` (registro + archivos); lo escribe `db:setup` |
+| `APP_ROLE_ID` | Rol App User para el registro del servidor; lo escribe `db:setup` en `.env` |
+| `DEMO_LAT` / `DEMO_LNG` | Centro de demo para `seed:demo`; sin valores el seed se niega |
 | `EXPO_PUBLIC_DIRECTUS_URL` / `EXPO_PUBLIC_SOCKET_URL` | URLs primaria que compila la app (se generan con `npm run env:lan`) |
 | `EXPO_PUBLIC_DIRECTUS_URLS` / `EXPO_PUBLIC_SOCKET_URLS` | Fallbacks multi-red (casa/universidad) que la app prueba en orden |
 | `EXPO_PUBLIC_GOOGLE_MAPS_KEY` | Key de Maps SDK (Android + iOS); vacía = mapa gris en el build nativo |
@@ -116,6 +122,7 @@ del JWT. El admin (`admin_access`) no se ve afectado.
 | `GET/PUT /api/professionals/me/services` | pro | Servicios ofrecidos; `PUT` reemplaza en transacción y valida el catálogo |
 | `GET/POST/PATCH/DELETE /api/professionals/me/documents/:id` | pro | Documentos propios; alta forzada a `status='pending'` |
 | `GET /api/professionals/me/reviews` · `/:id/reviews` | autenticado | Reseñas con solo el primer nombre del cliente |
+| `POST /api/auth/register` | pǧblico | Registro por BFF; fija rol App User y `status=active`; rate limit por IP |
 | `GET/POST/PUT /api/clients/me` | cliente | Perfil propio (upsert idempotente) |
 | `POST /api/bookings/:id/review` | cliente dueño | Reseña de reserva `completed`; única por reserva |
 | `GET/PATCH /api/users/me` | autenticado | Solo `firstName`, `lastName`, `phone`, `avatar`; nunca email/role/status |
@@ -146,13 +153,19 @@ de 1 mensaje cada 2 s por socket. La llegada (`POST .../events` con
 `status: 'llegada'`) se anuncia como `booking:event` en la misma sala.
 
 
+El registro de la app pasa por `POST /api/auth/register` (BFF). La policy
+`Public` queda sin permisos, as�� que ya no se puede crear usuarios directo en
+Directus. El servicio `bff-service` solo tiene `create` en `directus_users`
+(Directus libre solo admite `fields:['*']`); el BFF aplica zod estricto y fija
+`role`/`status` del lado servidor.
+
 ## Notas de BD
 
 - Todo es **idempotente**: `db:setup`, `db:migrate` y `db:seed` pueden
   repetirse sin duplicar ni romper nada. El seed verifica conteos al final y
   falla si el catálogo quedó incompleto.
-- El seed **no crea usuarios demo**: la licencia gratuita de Directus limita a
-  3 seats y cada usuario extra puede bloquear el registro real (`LIMIT_EXCEEDED`).
+- `db:seed` solo crea el cat��logo. `seed:demo` crea el cliente y 3 profesionales
+  demo; la licencia gratuita de Directus limita los seats (`LIMIT_EXCEEDED`).
 - El flow `validate-booking-no-overlap` (`directus/flows/`) se importa manual:
   Directus Studio > Flows > Import.
 - `directus/snapshots/schema.json` es respaldo del esquema; la fuente de verdad
@@ -173,7 +186,7 @@ de 1 mensaje cada 2 s por socket. La llegada (`POST .../events` con
 | Síntoma | Causa / solución |
 |---|---|
 | `db:*` dice que Directus no responde | Espera al primer arranque (~1 min) o revisa `docker compose logs directus` |
-| `Correo o contraseña incorrectos` en login nuevo | Activa registro público: el seed/setup ya pone `public_registration=true` |
-| `Cupo de usuarios lleno` (`LIMIT_EXCEEDED`) | Límite de 3 seats de la licencia gratuita: libera usuarios o licencia Directus |
+| `Correo o contraseña incorrectos` en login nuevo | El registro de la app usa `POST /api/auth/register` (BFF), no el registro público de Directus. |
+| `Cupo de usuarios lleno` (`LIMIT_EXCEEDED`) | Límite de seats de Directus: libera usuarios o usa una licencia mayor. |
 | Mapa gris en build nativo | Falta `EXPO_PUBLIC_GOOGLE_MAPS_KEY` (ver `.env.example`) |
 | La app no conecta en otra Wi-Fi | Corre `npm run env:lan` y reinicia Expo |

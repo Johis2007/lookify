@@ -15,7 +15,6 @@ import {
 import { ServiceError } from '../errors';
 import { api, loginDirectus } from '../../lib/backend/directus';
 import { bffApi } from '../../lib/backend/bff';
-import { BACKEND } from '../../lib/backend/config';
 import {
   backendSolicitudId,
   loadBackendSession,
@@ -26,13 +25,12 @@ import { connectRealtime } from '../../lib/backend/realtime';
 export function createBackendProfessionalRegistrationService(): ProfessionalRegistrationService {
   return {
     async registrarProfesional(datos: RegistrarProfesionalRequest): Promise<RegistrarProfesionalResponse> {
-      // Registro público (sin token), igual que mobile-web. Incluye el rol
-      // App directo porque el flow de asignación no se ejecuta aquí.
-      await api('POST', '/users', null, {
+      // Registro por BFF (sin token). El servidor fija el rol App User; el
+      // cliente nunca envía role/policies/token.
+      await bffApi('POST', '/api/auth/register', null, {
         email: datos.email.trim(),
         password: datos.password,
-        first_name: datos.nombre.trim(),
-        role: BACKEND.appRoleId,
+        firstName: datos.nombre.trim(),
       });
       const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);

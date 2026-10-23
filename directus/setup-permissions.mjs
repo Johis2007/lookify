@@ -9,9 +9,8 @@
 //   (Si la instancia cayera en LIMIT_EXCEEDED, la solución real es licencia
 //   Directus, que además desbloquea reglas granulares.)
 // Por eso:
-// - Public (sin login): SOLO crear usuarios para registro. El rol se asigna
-//   vía settings.public_registration_role (forzado por Directus, probado en
-//   código fuente: el payload no puede escalar a admin).
+// - Public (sin login): SIN permisos. El registro pasa por el BFF
+//   POST /api/auth/register; el servidor fija el rol App User.
 // - Rol "App User": catálogo + flujos propios (lecturas/escrituras que la app
 //   necesita). El alcance por fila NO se puede forzar aquí:
 //   - Lecturas sensibles (address/GPS) las limita el canal realtime (ACL real).
@@ -19,8 +18,7 @@
 //     documentado (requiere cuenta + API; ya no Internet abierto).
 //   - Camino definitivo: licencia con reglas custom o proxy BFF.
 // - Admin (admin_access): omite estas reglas, sin cambios.
-// - Registro público asigna el rol App User y los sin-rol se migran (si seats
-//   lo permite; si no, ver SQL en el paso 6).
+// - El BFF crea los usuarios con rol App User; Public no puede crear.
 import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -125,7 +123,7 @@ let publicId;
   if (!publicId) throw new Error('Sin policy Public');
 }
 
-// 4. PUBLIC: cerrar todo, dejar solo registro (presets fuerzan role+status).
+// 4. PUBLIC: sin permisos. El registro de usuarios pasa por el BFF.
 {
   const g = await api('GET', `/permissions?filter[policy][_eq]=${publicId}&fields=id&limit=100`);
   if (g.status !== 200) fail('GET public perms', g);
@@ -133,15 +131,7 @@ let publicId;
     const d = await api('DELETE', `/permissions/${row.id}`);
     if (d.status !== 200 && d.status !== 204) fail('DELETE public perm', d);
   }
-  console.log('public: permisos abiertos eliminados');
-  const c = await api('POST', '/permissions', {
-    policy: publicId,
-    collection: 'directus_users',
-    action: 'create',
-    fields: ['*'], // la instancia solo acepta wildcard (ver header)
-  });
-  if (![200, 201, 204].includes(c.status)) fail('POST public users create', c);
-  console.log('public: solo registro (POST /users; rol por public_registration_role)');
+  console.log('public: sin permisos (registro por BFF)');
 }
 
 // 5. APP: matriz mínima. TODO plano ['*']: esta instancia rechaza listas de
@@ -242,35 +232,13 @@ for (const [collection, action] of REVOKE) {
   }
 }
 
-// 6. Registro público asigna el rol + migrar usuarios sin rol.
-// NOTA seats: esta instancia limita usuarios por licencia; si el API responde
-// LIMIT_EXCEEDED, migra por SQL:
-//   UPDATE directus_users SET role='<roleId>' WHERE role IS NULL;
-{
-  const s = await api('PATCH', '/settings', { public_registration_role: roleId });
-  if (s.status !== 200) fail('PATCH settings', s);
-  const g = await api('GET', '/users?filter[role][_null]=true&fields=id&limit=500');
-  if (g.status !== 200) fail('GET users sin rol', g);
-  const ids = (g.data?.data ?? []).map((u) => u.id);
-  if (ids.length) {
-    const b = await api('PATCH', '/users', { keys: ids, data: { role: roleId } });
-    if (b.status !== 200 && b.status !== 204) {
-      const limited = JSON.stringify(b.data).includes('LIMIT_EXCEEDED');
-      console.log(
-        limited
-          ? `AVISO seats: no se pudo migrar por API (${ids.length} pendientes). Usa el SQL de arriba.`
-          : fail('PATCH users rol', b)
-      );
-    } else {
-      console.log(`migrados ${ids.length} usuarios al rol App User`);
-    }
-  }
-  console.log('registro público -> rol App User');
-}
+// 6. El BFF asigna el rol App User al registrar; Public no crea usuarios.
+// No se usa settings.public_registration_role.
 
-// 7. Servicio de mínimo privilegio para el BFF (directus_files únicamente).
-// Se crea un usuario + policy propio, admin_access/app_access false, solo CRUD sobre directus_files.
-// Se genera un token estático y se guarda SOLO en el .env raíz (DIRECTUS_TOKEN).
+// 7. Servicio minimo del BFF: create en directus_users (registro) y CRUD en
+// directus_files. Sin read/update/delete sobre usuarios.
+// Compromiso: esta instancia solo admite fields ['*']; el BFF controla el body
+// con zod estricto y fija role/status del lado servidor.
 {
   const svcEmail = 'bff-service@lookify.app';
   const listUsers = async () => {
@@ -297,7 +265,7 @@ for (const [collection, action] of REVOKE) {
       name: 'Lookify BFF Service',
       app_access: false,
       admin_access: false,
-      description: 'Servicio mínimo para el BFF: solo directus_files',
+      description: 'Servicio minimo del BFF: registro de usuarios y archivos',
     });
     if (![200, 201, 204].includes(cp.status)) fail('POST bff-service policy', cp);
     svcPolicy = cp.data?.data?.id || (await findByName('/policies', 'Lookify BFF Service'));
@@ -326,14 +294,32 @@ for (const [collection, action] of REVOKE) {
     }
   }
 
-  // Token estático del usuario de servicio (NO del admin que ejecuta el
-  // script). Idempotente: si el .env ya tiene un token válido del bff-service,
-  // se conserva sin rotarlo.
+  {
+    const q = `/permissions?filter[policy][_eq]=${svcPolicy}&filter[collection][_eq]=directus_users&fields=id,action&limit=100`;
+    const ex = await api('GET', q);
+    if (ex.status !== 200) fail('GET perm bff-users', ex);
+    const rows = ex.data?.data ?? [];
+    const create = rows.find((row) => row.action === 'create');
+    const payload = { policy: svcPolicy, collection: 'directus_users', action: 'create', fields: ['*'] };
+    if (create) {
+      const r = await api('PATCH', `/permissions/${create.id}`, payload);
+      if (r.status !== 200) fail('PATCH perm bff-users create', r);
+    } else {
+      const r = await api('POST', '/permissions', payload);
+      if (![200, 201, 204].includes(r.status)) fail('POST perm bff-users create', r);
+    }
+    for (const row of rows) {
+      if (row.action === 'create') continue;
+      const d = await api('DELETE', `/permissions/${row.id}`);
+      if (d.status !== 200 && d.status !== 204) fail(`DELETE perm bff-users ${row.action}`, d);
+    }
+  }
+
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
   const envPath = join(root, '.env');
   const existingToken = readEnvValue('DIRECTUS_TOKEN');
   if (await tokenBelongsTo(existingToken, svcUser)) {
-    console.log('DIRECTUS_TOKEN existente válido (bff-service); no se rota');
+    console.log('DIRECTUS_TOKEN existente valido (bff-service); no se rota');
   } else {
     const token = randomBytes(32).toString('hex');
     const patch = await api('PATCH', `/users/${svcUser}`, { token });
@@ -349,27 +335,22 @@ for (const [collection, action] of REVOKE) {
     writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
     console.log('DIRECTUS_TOKEN escrito en .env (bff-service)');
   }
-  console.log('bff-service: mínimo privilegio (solo directus_files CRUD)');
+  console.log('bff-service: create users + archivos (sin lectura de usuarios)');
 }
 
-// 8. Sincronizar EXPO_PUBLIC_APP_ROLE_ID en apps/lookify-app/.env.
-// Este rol cambia por instancia; sin esto habría que copiarlo a mano y el
-// registro fallaría (rol inexistente). Upsert sin tocar el resto de líneas.
+// 8. APP_ROLE_ID para el servidor (nunca en el cliente).
 {
   const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const envPath = join(root, 'apps', 'lookify-app', '.env');
-  const line = `EXPO_PUBLIC_APP_ROLE_ID=${roleId}`;
+  const envPath = join(root, '.env');
+  const line = `APP_ROLE_ID=${roleId}`;
   let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
   let replaced = false;
   lines = lines.map((l) => {
-    if (/^EXPO_PUBLIC_APP_ROLE_ID=/.test(l)) {
-      replaced = true;
-      return line;
-    }
+    if (/^APP_ROLE_ID=/.test(l)) { replaced = true; return line; }
     return l;
   });
   if (!replaced) lines.push(line);
   writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
-  console.log(`EXPO_PUBLIC_APP_ROLE_ID=${roleId} -> apps/lookify-app/.env`);
+  console.log(`APP_ROLE_ID=${roleId} -> .env raiz`);
 }
 console.log('PERMISSIONS OK (modelo seguro)');
