@@ -84,12 +84,17 @@ lines = lines.map((line) => {
     seen.add('socketList');
     return `EXPO_PUBLIC_SOCKET_URLS=${socketUrls}`;
   }
+  if (/^EXPO_PUBLIC_BFF_URL=/.test(line)) {
+    seen.add('bff');
+    return `EXPO_PUBLIC_BFF_URL=http://${primary}:4001`;
+  }
   return line;
 });
 if (!seen.has('directus')) lines.push(`EXPO_PUBLIC_DIRECTUS_URL=http://${primary}:8055`);
 if (!seen.has('directusList')) lines.push(`EXPO_PUBLIC_DIRECTUS_URLS=${directusUrls}`);
 if (!seen.has('socket')) lines.push(`EXPO_PUBLIC_SOCKET_URL=http://${primary}:4001`);
 if (!seen.has('socketList')) lines.push(`EXPO_PUBLIC_SOCKET_URLS=${socketUrls}`);
+if (!seen.has('bff')) lines.push(`EXPO_PUBLIC_BFF_URL=http://${primary}:4001`);
 writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
 
 console.log(`[${hostname()}] .env sincronizado (primaria ${primary}, fallback ${ips.length} red(es)):`);
@@ -97,4 +102,5 @@ console.log(`  EXPO_PUBLIC_DIRECTUS_URL=http://${primary}:8055`);
 console.log(`  EXPO_PUBLIC_DIRECTUS_URLS=${directusUrls}`);
 console.log(`  EXPO_PUBLIC_SOCKET_URL=http://${primary}:4001`);
 console.log(`  EXPO_PUBLIC_SOCKET_URLS=${socketUrls}`);
+console.log(`  EXPO_PUBLIC_BFF_URL=http://${primary}:4001`);
 console.log('Reinicia el dev server: npm run dev:app');
