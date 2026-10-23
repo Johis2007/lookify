@@ -1,9 +1,9 @@
-﻿import { HttpError } from './http.js';
+import { HttpError } from './http.js';
 
 // Credencial de servicio del BFF para hablar con Directus. El App User pierde
-// create/read/delete sobre directus_files y read sobre directus_users, así que
-// el BFF usa un token de servicio (DIRECTUS_TOKEN o login ADMIN_EMAIL/PASSWORD).
-// Nunca se expone al cliente ni se acepta del body.
+// create/read/delete sobre directus_files, así que el BFF usa un token de
+// servicio con MÍNIMO PRIVILEGIO (solo directus_files). Nunca se expone al cliente
+// ni se acepta del body. SIN fallback a ADMIN_EMAIL/ADMIN_PASSWORD.
 
 function directusUrl(): string {
   return (
@@ -13,52 +13,28 @@ function directusUrl(): string {
   ).replace(/\/$/, '');
 }
 
-type Cached = { token: string; expiresAt: number };
-let cached: Cached | null = null;
+const STATIC_TOKEN = process.env.DIRECTUS_TOKEN?.trim();
 
-async function loginAdmin(): Promise<Cached> {
-  const email = process.env.ADMIN_EMAIL;
-  const password = process.env.ADMIN_PASSWORD;
-  if (!email || !password) {
-    throw new HttpError(500, 'directus_credentials_missing');
-  }
-  const res = await fetch(`${directusUrl()}/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  const json = (await res.json().catch(() => null)) as
-    | { data?: { access_token?: string; expires?: number } }
-    | null;
-  const token = json?.data?.access_token;
-  if (!res.ok || !token) throw new HttpError(502, 'directus_auth_failed');
-  const ttlMs = Number(json?.data?.expires || 900_000);
-  return { token, expiresAt: Date.now() + Math.max(30_000, ttlMs - 60_000) };
+if (!STATIC_TOKEN) {
+  throw new Error(
+    'Falta DIRECTUS_TOKEN en el entorno del realtime-server. Usa un token estático de mínimo privilegio (solo directus_files) generado por directus/setup-permissions.mjs. El fallback a ADMIN_EMAIL/ADMIN_PASSWORD ha sido eliminado por seguridad.',
+  );
 }
 
-export async function adminToken(force = false): Promise<string> {
-  const staticToken = process.env.DIRECTUS_TOKEN?.trim();
-  if (staticToken) return staticToken;
-  if (!force && cached && cached.expiresAt > Date.now()) return cached.token;
-  cached = await loginAdmin();
-  return cached.token;
+export async function adminToken(_force = false): Promise<string> {
+  return STATIC_TOKEN as string;
 }
 
-/** fetch a Directus con token de servicio; reintenta una vez si expiró. */
+/** fetch a Directus con token de servicio de mínimo privilegio. */
 export async function adminFetch(
   path: string,
   init: RequestInit = {},
-  retry = true,
+  _retry = true,
 ): Promise<Response> {
   const token = await adminToken();
   const headers = new Headers(init.headers);
   headers.set('authorization', `Bearer ${token}`);
-  const res = await fetch(`${directusUrl()}${path}`, { ...init, headers });
-  if (res.status === 401 && retry && !process.env.DIRECTUS_TOKEN) {
-    await adminToken(true);
-    return adminFetch(path, init, false);
-  }
-  return res;
+  return fetch(`${directusUrl()}${path}`, { ...init, headers });
 }
 
 export { directusUrl };

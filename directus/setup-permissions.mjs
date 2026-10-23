@@ -244,7 +244,90 @@ for (const [collection, action] of REVOKE) {
   console.log('registro público -> rol App User');
 }
 
-// 7. Sincronizar EXPO_PUBLIC_APP_ROLE_ID en apps/lookify-app/.env.
+// 7. Servicio de mínimo privilegio para el BFF (directus_files únicamente).
+// Se crea un usuario + policy propio, admin_access/app_access false, solo CRUD sobre directus_files.
+// Se genera un token estático y se guarda SOLO en el .env raíz (DIRECTUS_TOKEN).
+{
+  const svcEmail = 'bff-service@lookify.internal';
+  let svcUser = await findByName('/users?fields=id,email&limit=1000', svcEmail);
+  if (!svcUser) {
+    // Intentamos encontrar por email directo
+    const gu = await api('GET', `/users?filter[email][_eq]=${encodeURIComponent(svcEmail)}&fields=id,email&limit=1`);
+    svcUser = gu.data?.data?.[0]?.id;
+  }
+  if (!svcUser) {
+    const cu = await api('POST', '/users', {
+      email: svcEmail,
+      first_name: 'BFF',
+      last_name: 'Service',
+      status: 'active',
+    });
+    if (![200, 201, 204].includes(cu.status)) fail('POST bff-service user', cu);
+    const gu2 = await api('GET', `/users?filter[email][_eq]=${encodeURIComponent(svcEmail)}&fields=id,email&limit=1`);
+    svcUser = gu2.data?.data?.[0]?.id;
+  }
+  if (!svcUser) throw new Error('Sin usuario bff-service');
+
+  let svcPolicy = await findByName('/policies', 'Lookify BFF Service');
+  if (!svcPolicy) {
+    const cp = await api('POST', '/policies', {
+      name: 'Lookify BFF Service',
+      app_access: false,
+      admin_access: false,
+      description: 'Servicio mínimo para el BFF: solo directus_files',
+    });
+    if (![200, 201, 204].includes(cp.status)) fail('POST bff-service policy', cp);
+    svcPolicy = cp.data?.data?.id || (await findByName('/policies', 'Lookify BFF Service'));
+  }
+  if (!svcPolicy) throw new Error('Sin policy Lookify BFF Service');
+
+  const sa = await api('GET', `/access?filter[policy][_eq]=${svcPolicy}&filter[user][_eq]=${svcUser}&fields=id&limit=1`);
+  if (sa.status !== 200) fail('GET access bff-service', sa);
+  if (!(sa.data?.data ?? []).length) {
+    const ca = await api('POST', '/access', { policy: svcPolicy, user: svcUser });
+    if (![200, 201, 204].includes(ca.status)) fail('POST access bff-service', ca);
+  }
+
+  for (const action of ['read', 'create', 'update', 'delete']) {
+    const q = `/permissions?filter[policy][_eq]=${svcPolicy}&filter[collection][_eq]=directus_files&filter[action][_eq]=${action}&limit=1&fields=id`;
+    const ex = await api('GET', q);
+    if (ex.status !== 200) fail(`GET perm bff-files ${action}`, ex);
+    const row = ex.data?.data?.[0];
+    const payload = { policy: svcPolicy, collection: 'directus_files', action, fields: ['*'] };
+    if (row) {
+      const r = await api('PATCH', `/permissions/${row.id}`, payload);
+      if (r.status !== 200) fail(`PATCH perm bff-files ${action}`, r);
+    } else {
+      const r = await api('POST', '/permissions', payload);
+      if (![200, 201, 204].includes(r.status)) fail(`POST perm bff-files ${action}`, r);
+    }
+  }
+
+  // Generar token estático
+  const gt = await api('POST', '/users/me/tokens', { name: 'bff-service-static', expires: null });
+  if (![200, 201, 204].includes(gt.status)) {
+    console.log('Aviso: no se pudo generar token estático vía API (puede requerir versión/permiso). Crea uno manualmente en Directus y ponlo en .env como DIRECTUS_TOKEN.');
+  } else {
+    const token = gt.data?.data?.token || gt.data?.token;
+    if (token) {
+      const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+      const envPath = join(root, '.env');
+      const line = `DIRECTUS_TOKEN=${token}`;
+      let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+      let replaced = false;
+      lines = lines.map((l) => {
+        if (/^DIRECTUS_TOKEN=/.test(l)) { replaced = true; return line; }
+        return l;
+      });
+      if (!replaced) lines.push(line);
+      writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
+      console.log('DIRECTUS_TOKEN escrito en .env (bff-service)');
+    }
+  }
+  console.log('bff-service: mínimo privilegio (solo directus_files CRUD)');
+}
+
+// 8. Sincronizar EXPO_PUBLIC_APP_ROLE_ID en apps/lookify-app/.env.
 // Este rol cambia por instancia; sin esto habría que copiarlo a mano y el
 // registro fallaría (rol inexistente). Upsert sin tocar el resto de líneas.
 {
