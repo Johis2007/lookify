@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -10,11 +11,6 @@ import { errorHandler } from './http.js';
 // Tests del BFF de reservas (Paso 2B). Corren contra el Postgres local real:
 // crean fixtures propias y las borran al final. El JWT se firma con el mismo
 // DIRECTUS_SECRET, igual que Directus. Si no hay DATABASE_URL, se saltan.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
-
 let pool: pg.Pool;
 let server: Server;
 let baseUrl: string;
@@ -35,10 +31,10 @@ let pendingBookingId: number;
 
 // Eventos emitidos por el router (para comprobar que no se duplican).
 const emitted: {
-  offer: Array<{ bookingId: number; professionalId: number }>;
-  taken: Array<{ bookingId: number; professionalId: number }>;
+  offer: { bookingId: number; professionalId: number }[];
+  taken: { bookingId: number; professionalId: number }[];
   expired: number[];
-  status: Array<{ bookingId: number; status: string }>;
+  status: { bookingId: number; status: string }[];
 } = { offer: [], taken: [], expired: [], status: [] };
 
 function token(userId: string, isAdmin = false): string {

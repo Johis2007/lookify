@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from './infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -14,9 +15,6 @@ import { readLastPosition, trackingKey } from './tracking.js';
 
 // 4C-2: rastreo en vivo por reserva. HTTP + socket contra el Postgres real,
 // con un Redis en memoria para comprobar claves y TTL lógico.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let httpServer: Server;

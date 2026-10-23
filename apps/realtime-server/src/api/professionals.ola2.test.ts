@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -9,9 +10,6 @@ import { errorHandler } from './http.js';
 
 // Ola 2b: perfil público, servicios y documentos solo por BFF. Contra el
 // Postgres local; crea un segundo profesional temporal y limpia al final.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 const PRO_ID = 121;
 
 let pool: pg.Pool;

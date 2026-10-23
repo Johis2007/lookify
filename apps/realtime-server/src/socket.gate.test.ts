@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from './infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { Server as SocketServer } from 'socket.io';
@@ -11,9 +12,6 @@ import { verifyAccessToken } from './auth.js';
 // 2B-ter: el gate de "profesional verificado" también aplica al socket.
 // Un pro 'pending' NO puede emitir prof:online (ni entrar a su room ni
 // publicar GPS), aunque tenga perfil y conexión autenticada.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let httpServer: Server;

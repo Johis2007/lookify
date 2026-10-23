@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -9,9 +10,6 @@ import { errorHandler } from './http.js';
 
 // Tests del BFF de perfil profesional (Paso 2B-bis): cerrar la
 // auto-verificación. Contra el Postgres local real; limpia sus fixtures.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let server: Server;

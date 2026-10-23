@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from './infra.js';
 import assert from 'node:assert/strict';
 import pg from 'pg';
 import { resolveOwnVerifiedProfessionalId } from './auth.js';
@@ -9,9 +10,6 @@ import { resolveOwnVerifiedProfessionalId } from './auth.js';
 //    es 'verified'.
 //  - La consulta de /realtime/nearby (idéntica a index.ts) excluye a los
 //    profesionales no verificados aunque estén online y con GPS.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let verifiedUser: string;
