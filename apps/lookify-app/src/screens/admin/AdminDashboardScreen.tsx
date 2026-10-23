@@ -56,7 +56,10 @@ export default function AdminDashboardScreen({ navigation }: Props) {
   }, [navigation]);
 
   useEffect(() => {
-    load().catch(() => setLoading(false));
+    const id = setTimeout(() => {
+      load().catch(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [load]);
 
   const handleLogout = async () => {

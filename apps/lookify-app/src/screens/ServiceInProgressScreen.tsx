@@ -65,8 +65,10 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
   const [progressServicio, setProgressServicio] = useState(0);
   const [pinValidado, setPinValidado] = useState(false);
 
-  faseRef.current = fase;
-  pinValidadoRef.current = pinValidado;
+  useEffect(() => {
+    faseRef.current = fase;
+    pinValidadoRef.current = pinValidado;
+  }, [fase, pinValidado]);
 
   const paymentParams = useMemo(
     () => ({
@@ -183,12 +185,17 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
   }, [clearTimers, onPinValidadoMock, schedule]);
 
   const startSimulationRef = useRef(startSimulation);
-  startSimulationRef.current = startSimulation;
+  useEffect(() => {
+    startSimulationRef.current = startSimulation;
+  }, [startSimulation]);
 
   useEffect(() => {
     if (!datosValidos) return;
-    startSimulation();
-    return () => clearTimers();
+    const id = setTimeout(() => startSimulation(), 0);
+    return () => {
+      clearTimeout(id);
+      clearTimers();
+    };
   }, [datosValidos, startSimulation, clearTimers]);
 
   const showCancelarServicioAlert = useCallback(() => {

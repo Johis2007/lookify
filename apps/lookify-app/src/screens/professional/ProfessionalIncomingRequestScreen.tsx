@@ -61,7 +61,7 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errorAccion, setErrorAccion] = useState<string | null>(null);
-  const [tickNow, setTickNow] = useState(Date.now());
+  const [tickNow, setTickNow] = useState(() => Date.now());
 
   const cargar = useCallback(async () => {
     if (!params.profesionalId || !params.solicitudEntranteId) {
@@ -81,8 +81,10 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
   }, [navigation, params.profesionalId, params.solicitudEntranteId]);
 
   useEffect(() => {
-    setLoading(true);
-    cargar().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      cargar().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [cargar]);
 
   const irAlServicio = useCallback(() => {
@@ -132,6 +134,7 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
     }
     const id = setInterval(() => setTickNow(Date.now()), 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solicitud?.estado, solicitud?.id]);
 
   useEffect(() => {

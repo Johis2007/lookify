@@ -13,7 +13,6 @@ import {
   CertificadoFormPayload,
   CertificadoProfesional,
   EliminarCertificadoRequest,
-  EnviarSolicitudVerificacionRequest,
   EnviarSolicitudVerificacionResponse,
   ObtenerServiciosDeSolicitudRequest,
   ObtenerServiciosDeSolicitudResponse,
@@ -121,7 +120,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
     async obtenerServiciosDeSolicitud(input: ObtenerServiciosDeSolicitudRequest): Promise<ObtenerServiciosDeSolicitudResponse> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
+      await resolveProfessionalId(undefined, input.solicitudId);
       return { servicioIds: await serviciosDelPro(session.token) };
     },
 
@@ -214,7 +213,7 @@ export function createBackendProfessionalCertificateService(): ProfessionalCerti
     async eliminarCertificado(input: EliminarCertificadoRequest): Promise<void> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
+      await resolveProfessionalId(undefined, input.solicitudId);
       const doc = (await documentosDelPro(session.token)).find(
         (d) => String(d.id) === input.certificadoId,
       );

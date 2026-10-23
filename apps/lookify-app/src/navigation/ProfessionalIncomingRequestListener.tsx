@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigation, useNavigationState } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from './AppNavigator';
@@ -49,12 +49,15 @@ export default function ProfessionalIncomingRequestListener() {
   const [disponible, setDisponible] = useState(false);
 
   const sessionRef = useRef(session);
-  sessionRef.current = session;
   const routeNameRef = useRef(routeName);
-  routeNameRef.current = routeName;
   const incomingIdRef = useRef(incomingIdOnScreen);
-  incomingIdRef.current = incomingIdOnScreen;
   const ultimaSolicitudPresentadaRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    sessionRef.current = session;
+    routeNameRef.current = routeName;
+    incomingIdRef.current = incomingIdOnScreen;
+  }, [session, routeName, incomingIdOnScreen]);
 
   useEffect(() => {
     if (routeName !== 'ProfessionalIncomingRequest') {
@@ -64,7 +67,6 @@ export default function ProfessionalIncomingRequestListener() {
 
   useEffect(() => {
     if (!profesionalId) {
-      setDisponible(false);
       return;
     }
     let cancelled = false;

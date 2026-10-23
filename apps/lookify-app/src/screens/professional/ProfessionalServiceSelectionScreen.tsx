@@ -79,7 +79,8 @@ export default function ProfessionalServiceSelectionScreen({ navigation, route }
       resetProfessionalSession(navigation, 'ProfessionalLogin');
       return;
     }
-    cargarCatalogo();
+    const id = setTimeout(() => cargarCatalogo(), 0);
+    return () => clearTimeout(id);
   }, [params.solicitudId, navigation, cargarCatalogo]);
 
   const confirmarCerrarSesion = useCallback(() => {

@@ -139,11 +139,14 @@ export default function TrackingView({ navigation, route }: Props) {
   // Distancia recta pro → cliente (destino de la reserva).
   useEffect(() => {
     if (!proCoord) return;
-    setDistanciaRestanteKm(
-      redondearDistanciaKm(
-        distanciaKm(proCoord.latitude, proCoord.longitude, clientCoord.latitude, clientCoord.longitude)
-      )
-    );
+    const id = setTimeout(() => {
+      setDistanciaRestanteKm(
+        redondearDistanciaKm(
+          distanciaKm(proCoord.latitude, proCoord.longitude, clientCoord.latitude, clientCoord.longitude)
+        )
+      );
+    }, 0);
+    return () => clearTimeout(id);
   }, [proCoord, clientCoord]);
 
   const applyPosition = useCallback((lat: number, lng: number, ts: number) => {
@@ -292,36 +295,39 @@ export default function TrackingView({ navigation, route }: Props) {
   useEffect(() => {
     if (modoReal || !datosValidos) return;
 
-    elapsedRef.current = 0;
-    setProCoord(startCoord);
-    setTrail([startCoord]);
-    setDistanciaRestanteKm(distanciaInicialParam);
-    clientCoordRef.current = MOCK_CLIENT_LOCATION;
+    const id = setTimeout(() => {
+      elapsedRef.current = 0;
+      setProCoord(startCoord);
+      setTrail([startCoord]);
+      setDistanciaRestanteKm(distanciaInicialParam);
+      clientCoordRef.current = MOCK_CLIENT_LOCATION;
 
-    tickIdRef.current = setInterval(() => {
-      if (alertOpenRef.current) return;
+      tickIdRef.current = setInterval(() => {
+        if (alertOpenRef.current) return;
 
-      elapsedRef.current += TICK_MS;
-      const t = Math.min(1, elapsedRef.current / MOCK_TRACKING_MS);
+        elapsedRef.current += TICK_MS;
+        const t = Math.min(1, elapsedRef.current / MOCK_TRACKING_MS);
 
-      const lat = lerp(startCoord.latitude, MOCK_CLIENT_LOCATION.latitude, t);
-      const lon = lerp(startCoord.longitude, MOCK_CLIENT_LOCATION.longitude, t);
-      const next = { latitude: lat, longitude: lon };
-      setProCoord(next);
-      setTrail((prev) => [...prev.slice(-39), next]);
+        const lat = lerp(startCoord.latitude, MOCK_CLIENT_LOCATION.latitude, t);
+        const lon = lerp(startCoord.longitude, MOCK_CLIENT_LOCATION.longitude, t);
+        const next = { latitude: lat, longitude: lon };
+        setProCoord(next);
+        setTrail((prev) => [...prev.slice(-39), next]);
 
-      setDistanciaRestanteKm(
-        redondearDistanciaKm(
-          distanciaKm(lat, lon, MOCK_CLIENT_LOCATION.latitude, MOCK_CLIENT_LOCATION.longitude)
-        )
-      );
+        setDistanciaRestanteKm(
+          redondearDistanciaKm(
+            distanciaKm(lat, lon, MOCK_CLIENT_LOCATION.latitude, MOCK_CLIENT_LOCATION.longitude)
+          )
+        );
 
-      if (t >= 1) {
-        goToServiceInProgress();
-      }
-    }, TICK_MS);
+        if (t >= 1) {
+          goToServiceInProgress();
+        }
+      }, TICK_MS);
+    }, 0);
 
     return () => {
+      clearTimeout(id);
       if (tickIdRef.current) {
         clearInterval(tickIdRef.current);
         tickIdRef.current = null;

@@ -5,7 +5,6 @@
 
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
-import { BACKEND } from './config';
 import { api, loginDirectus, refreshAccessToken, revokeRefreshToken } from './directus';
 
 export type AdminSession = {

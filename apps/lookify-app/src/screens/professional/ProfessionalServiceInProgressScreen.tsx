@@ -119,9 +119,11 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   const [desfaseMs, setDesfaseMs] = useState(0);
   const [tickNow, setTickNow] = useState(() => Date.now());
 
-  etapaRef.current = servicio?.etapa ?? null;
-  eligiendoMotivoRef.current = eligiendoMotivo;
-  loadErrorRef.current = loadError;
+  useEffect(() => {
+    etapaRef.current = servicio?.etapa ?? null;
+    eligiendoMotivoRef.current = eligiendoMotivo;
+    loadErrorRef.current = loadError;
+  }, [servicio?.etapa, eligiendoMotivo, loadError]);
 
   const aplicarReloj = useCallback((ahoraServidor: number) => {
     setDesfaseMs(ahoraServidor - Date.now());
@@ -187,8 +189,10 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   }, [aplicarReloj, navigation, profesionalId, solicitudEntranteId, volverAlPanel]);
 
   useEffect(() => {
-    setLoading(true);
-    cargar().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      cargar().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [cargar]);
 
   useEffect(() => {
@@ -219,6 +223,7 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   useEffect(() => {
     if (!enCamino || !servicioId || !gpsLocation) return;
     emitBookingLocation(servicioId, gpsLocation.latitude, gpsLocation.longitude);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enCamino, servicioId, gpsLocation?.latitude, gpsLocation?.longitude]);
 
   useEffect(() => {
@@ -245,10 +250,13 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   useEffect(() => {
     if (!abrirMotivosCancelacion || !servicio || motivosAutoAbiertos.current) return;
     if (servicio.etapa === 'EN_CAMINO' || servicio.etapa === 'LLEGUE') {
-      motivosAutoAbiertos.current = true;
-      setMotivo(null);
-      setEligiendoMotivo(true);
-      navigation.setParams({ abrirMotivosCancelacion: false });
+      const id = setTimeout(() => {
+        motivosAutoAbiertos.current = true;
+        setMotivo(null);
+        setEligiendoMotivo(true);
+        navigation.setParams({ abrirMotivosCancelacion: false });
+      }, 0);
+      return () => clearTimeout(id);
     }
   }, [abrirMotivosCancelacion, navigation, servicio]);
 

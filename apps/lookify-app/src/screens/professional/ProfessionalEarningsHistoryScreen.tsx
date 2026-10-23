@@ -162,6 +162,8 @@ function HistorialRow({ item }: { item: HistorialIngresosItem }) {
 
 export default function ProfessionalEarningsHistoryScreen({ navigation, route }: Props) {
   const params = route.params;
+  const profesionalId = params?.profesionalId;
+  const solicitudId = params?.solicitudId;
   const queryGen = useRef(0);
   const loadingMoreGuard = useRef(false);
   const sembradoDev = useRef(false);
@@ -177,12 +179,12 @@ export default function ProfessionalEarningsHistoryScreen({ navigation, route }:
   const [loadingMore, setLoadingMore] = useState(false);
 
   const validarSesion = useCallback((): boolean => {
-    if (!params?.profesionalId || !params?.solicitudId) {
+    if (!profesionalId || !solicitudId) {
       resetProfessionalSession(navigation, 'ProfessionalLogin');
       return false;
     }
     return true;
-  }, [navigation, params?.profesionalId, params?.solicitudId]);
+  }, [navigation, profesionalId, solicitudId]);
 
   const cargarPaginaInicial = useCallback(
     async (periodoActivo: PeriodoHistorialIngresos, modo: 'normal' | 'refresh') => {
@@ -280,7 +282,10 @@ export default function ProfessionalEarningsHistoryScreen({ navigation, route }:
   const omitirRecargaEnPrimerFoco = useRef(true);
 
   useEffect(() => {
-    void cargarPaginaInicial(periodo, 'normal');
+    const id = setTimeout(() => {
+      void cargarPaginaInicial(periodo, 'normal');
+    }, 0);
+    return () => clearTimeout(id);
   }, [periodo, cargarPaginaInicial]);
 
   useFocusEffect(

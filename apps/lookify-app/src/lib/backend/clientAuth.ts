@@ -2,11 +2,10 @@
 // Auth de cliente contra Directus: login + registro público (igual que
 // mobile-web) + perfil client_profiles. Sesión propia en SecureStore.
 
-import { revokeRefreshToken } from './directus';
+import { api, loginDirectus, revokeRefreshToken } from './directus';
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
-import { api, loginDirectus } from './directus';
 import { bffApi } from './bff';
 import { findMockUser } from '../../data/mockUsers';
 

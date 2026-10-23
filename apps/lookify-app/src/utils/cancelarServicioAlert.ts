@@ -49,7 +49,6 @@ export function promptCancelarServicio({
 /** Mock hasta que exista backend / push al profesional. */
 export function mockNotificarProfesionalCancelacion(professionalId: string): void {
   if (__DEV__) {
-    // eslint-disable-next-line no-console
     console.log(`[mock] Profesional ${professionalId} notificado: el cliente canceló el servicio.`);
   }
 }

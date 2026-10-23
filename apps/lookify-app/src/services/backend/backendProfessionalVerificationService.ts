@@ -143,7 +143,7 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
     async reenviarCodigoActivacion(input: ReenviarCodigoActivacionRequest): Promise<ReenviarCodigoActivacionResponse> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
+      await resolveProfessionalId(undefined, input.solicitudId);
       const pro = await leerPro(session.token);
       if (pro.verificationStatus !== 'verified') throw new ServiceError('REENVIO_NO_DISPONIBLE');
       return { emailEnmascarado: maskEmail(session.email), reenvioDisponibleEnMs: null, reenviosRestantes: 0 };
@@ -170,7 +170,7 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
     async obtenerAvisoCorreccion(input: ObtenerAvisoCorreccionRequest): Promise<ObtenerAvisoCorreccionResponse> {
       const session = await loadBackendSession();
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
-      const professionalId = await resolveProfessionalId(undefined, input.solicitudId);
+      await resolveProfessionalId(undefined, input.solicitudId);
       const pro = await leerPro(session.token);
       return { motivoRechazo: pro.verificationNote ?? null };
     },

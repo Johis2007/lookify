@@ -17,7 +17,6 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { colors, radius, spacing, typography } from '../../theme/colors';
@@ -117,7 +116,9 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
   const servicioActivoRef = useRef<ServicioEnCurso | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
 
-  servicioActivoRef.current = servicioActivo;
+  useEffect(() => {
+    servicioActivoRef.current = servicioActivo;
+  }, [servicioActivo]);
 
   const refrescarSolicitudActiva = useCallback(async () => {
     if (!params.profesionalId) {
@@ -247,8 +248,10 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
   }, [navigation, params.profesionalId, params.solicitudId]);
 
   useEffect(() => {
-    setLoading(true);
-    cargarPanel().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      cargarPanel().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [cargarPanel]);
 
   useFocusEffect(

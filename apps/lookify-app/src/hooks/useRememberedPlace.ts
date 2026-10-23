@@ -71,7 +71,9 @@ export function useRememberedPlace(live: LiveCoords | null): {
 } {
   const [stored, setStored] = useState<RememberedPlace | null>(null);
   const storedRef = useRef<RememberedPlace | null>(null);
-  storedRef.current = stored;
+  useEffect(() => {
+    storedRef.current = stored;
+  }, [stored]);
 
   useEffect(() => {
     void loadStored().then(setStored);

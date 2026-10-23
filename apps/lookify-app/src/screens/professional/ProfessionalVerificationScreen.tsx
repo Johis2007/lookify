@@ -84,7 +84,7 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
   const [activando, setActivando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [tickNow, setTickNow] = useState(Date.now());
+  const [tickNow, setTickNow] = useState(() => Date.now());
   const [demoCodigoVisible, setDemoCodigoVisible] = useState<string | null>(null);
 
   const confirmarCerrarSesion = useCallback(() => {
@@ -136,8 +136,10 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
   }, [navigation, params.solicitudId]);
 
   useEffect(() => {
-    setLoading(true);
-    cargarEstado().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      cargarEstado().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [cargarEstado]);
 
   useEffect(() => {

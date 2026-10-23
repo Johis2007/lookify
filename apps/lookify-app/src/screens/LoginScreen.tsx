@@ -35,7 +35,6 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   // Un solo login: si hay sesión guardada válida, entra directo a su vista.
   useEffect(() => {
     if (!isBackendEnabled()) {
-      setResuming(false);
       return;
     }
     let alive = true;

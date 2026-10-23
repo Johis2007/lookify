@@ -42,7 +42,6 @@ export default function ServiceSelectionScreen({
 
   useEffect(() => {
     let activo = true;
-    setCargando(true);
     getCatalogService()
       .listarServiciosPorCategoria()
       .then((categorias) => {

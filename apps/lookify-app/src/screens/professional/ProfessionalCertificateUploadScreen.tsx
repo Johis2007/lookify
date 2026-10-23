@@ -227,7 +227,8 @@ export default function ProfessionalCertificateUploadScreen({ navigation, route 
   }, [navigation, params.solicitudId, params.servicioIds]);
 
   useEffect(() => {
-    cargarDatos();
+    const id = setTimeout(() => cargarDatos(), 0);
+    return () => clearTimeout(id);
   }, [cargarDatos]);
 
   useEffect(() => {

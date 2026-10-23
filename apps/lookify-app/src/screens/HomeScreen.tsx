@@ -6,7 +6,7 @@
 // concede el permiso, el mapa se centra en su GPS real y dibuja su recorrido
 // (Polyline) con distancia acumulada. Si lo niega, se usa el punto mock.
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -68,17 +68,22 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
 
   // Recorrido propio (rastro GPS): acumula fixes en vivo, distancia en km.
   const [trail, setTrail] = useState<{ latitude: number; longitude: number }[]>([]);
+  const trailRef = useRef<{ latitude: number; longitude: number }[]>([]);
   const [walkKm, setWalkKm] = useState(0);
   useEffect(() => {
     if (!live) return;
     const point = { latitude: live.latitude, longitude: live.longitude };
-    setTrail((prev) => {
-      if (prev.length > 0) {
-        const last = prev[prev.length - 1];
+    const id = setTimeout(() => {
+      const prev = trailRef.current;
+      const last = prev[prev.length - 1];
+      if (last) {
         setWalkKm((d) => d + distanciaKm(last.latitude, last.longitude, point.latitude, point.longitude));
       }
-      return [...prev.slice(-499), point];
-    });
+      const next = [...prev.slice(-499), point];
+      trailRef.current = next;
+      setTrail(next);
+    }, 0);
+    return () => clearTimeout(id);
   }, [live]);
 
   // Profesionales reales cercanos (backend). Se refresca por zona (~100 m),

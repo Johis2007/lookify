@@ -5,7 +5,7 @@ import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { colors, spacing, typography } from '../theme/colors';
+import { colors, typography } from '../theme/colors';
 
 const BACK_ICON: keyof typeof MaterialCommunityIcons.glyphMap = 'arrow-left';
 

@@ -71,28 +71,39 @@ export default function AdminVerificationScreen({ navigation }: Props) {
   }, [filter, navigation]);
 
   useEffect(() => {
-    load().catch(() => setLoading(false));
+    const id = setTimeout(() => {
+      load().catch(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [load]);
 
   const selected = items.find((p) => p.id === selectedId) ?? items[0] ?? null;
 
   useEffect(() => {
     let alive = true;
-    setDocs([]);
-    if (!selected) return;
-    fetchProDocuments(selected.id)
-      .then((d) => {
-        if (alive) setDocs(d);
-      })
-      .catch(() => undefined);
+    const id = setTimeout(() => {
+      setDocs([]);
+      if (!selected) return;
+      fetchProDocuments(selected.id)
+        .then((d) => {
+          if (alive) setDocs(d);
+        })
+        .catch(() => undefined);
+    }, 0);
     return () => {
       alive = false;
+      clearTimeout(id);
     };
-  }, [selected?.id]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, items]);
 
   useEffect(() => {
-    setNote(filter === 'pending' ? '' : selected?.verification_note ?? '');
-  }, [filter, selected?.id]);
+    const id = setTimeout(() => {
+      setNote(filter === 'pending' ? '' : selected?.verification_note ?? '');
+    }, 0);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter, selectedId]);
 
   const decide = async (status: 'verified' | 'rejected') => {
     if (!selected || acting) return;

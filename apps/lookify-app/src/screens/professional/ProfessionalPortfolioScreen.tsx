@@ -184,8 +184,10 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
   }, [navigation, params.profesionalId, params.solicitudId]);
 
   useEffect(() => {
-    setLoading(true);
-    recargar().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      recargar().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [recargar]);
 
   useEffect(() => {

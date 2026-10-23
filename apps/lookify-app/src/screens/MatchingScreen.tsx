@@ -236,7 +236,9 @@ export default function MatchingScreen({ navigation, route }: Props) {
   );
 
   const runSimulationRef = useRef(runSimulation);
-  runSimulationRef.current = runSimulation;
+  useEffect(() => {
+    runSimulationRef.current = runSimulation;
+  }, [runSimulation]);
 
   // Cancelar la reserva real (backend) o cerrar la búsqueda (demo).
   const cancelarYVolver = useCallback(async () => {
@@ -276,15 +278,18 @@ export default function MatchingScreen({ navigation, route }: Props) {
   // --- Arranque ------------------------------------------------------------
   useEffect(() => {
     if (!modoReal) {
-      runSimulation(0);
-      return () => clearTimers();
+      const id = setTimeout(() => runSimulation(0), 0);
+      return () => {
+        clearTimeout(id);
+        clearTimers();
+      };
     }
 
     let unsubscribeStatus: (() => void) | undefined;
     let cancelled = false;
 
     // La reserva se creó en la pantalla anterior: el primer paso ya está hecho.
-    setCompletedSteps(1);
+    const completedId = setTimeout(() => setCompletedSteps(1), 0);
 
     (async () => {
       const session = await loadClientSession();
@@ -305,6 +310,7 @@ export default function MatchingScreen({ navigation, route }: Props) {
     })();
 
     return () => {
+      clearTimeout(completedId);
       cancelled = true;
       unsubscribeStatus?.();
       clearTimers();

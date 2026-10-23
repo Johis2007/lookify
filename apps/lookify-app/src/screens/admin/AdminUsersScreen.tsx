@@ -79,12 +79,16 @@ export default function AdminUsersScreen({ navigation }: Props) {
   }, [navigation, page, q, tab]);
 
   useEffect(() => {
-    setLoading(true);
-    load().catch(() => setLoading(false));
+    const id = setTimeout(() => {
+      setLoading(true);
+      load().catch(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [load]);
 
   useEffect(() => {
-    setPage(0);
+    const id = setTimeout(() => setPage(0), 0);
+    return () => clearTimeout(id);
   }, [tab, q]);
 
   const visible = users.filter((u) => {
@@ -104,7 +108,11 @@ export default function AdminUsersScreen({ navigation }: Props) {
   }, []);
 
   useEffect(() => {
-    if (selected) loadDossier(selected).catch(() => undefined);
+    if (!selected) return;
+    const id = setTimeout(() => {
+      loadDossier(selected).catch(() => undefined);
+    }, 0);
+    return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected?.id]);
 
