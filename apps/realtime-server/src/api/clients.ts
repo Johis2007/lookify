@@ -143,6 +143,7 @@ export function createClientsRouter(pool: pg.Pool): Router {
 
   router.post('/me', upsert);
   router.put('/me', upsert);
+  router.patch('/me', upsert);
 
   return router;
 }

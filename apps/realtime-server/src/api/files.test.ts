@@ -6,6 +6,9 @@ import express from 'express';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
 import { createFilesRouter } from './files.js';
+import { createClientsRouter } from './clients.js';
+import { createProfessionalsRouter } from './professionals.js';
+import { createUsersRouter } from './users.js';
 import { errorHandler } from './http.js';
 
 // Ola 2c: BFF de archivos. Contra el Postgres local real; valida bordes HTTP y
@@ -68,6 +71,9 @@ before(async () => {
   app.use(express.json());
   app.locals.directusSecret = SECRET;
   app.use('/api/files', createFilesRouter(pool));
+  app.use('/api/users', createUsersRouter(pool));
+  app.use('/api/clients', createClientsRouter(pool));
+  app.use('/api/professionals', createProfessionalsRouter(pool));
   app.use(errorHandler);
   server = createServer(app);
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -139,23 +145,36 @@ maybe('DELETE de archivo ajeno responde 404', async () => {
   assert.equal(res.status, 404);
 });
 
-maybe('certificado de otro usuario no puede usarse como avatar (propiedad/purpose)', async () => {
-  // Intentar usar certificado ajeno como avatar debe fallar en PATCH /me
-  // (validado por el router de usuarios; probamos por API directa)
-  const res = await fetch(`${baseUrl.replace('/api/files', '')}/api/users/me`, {
+async function patchAvatar(path: string, userId: string) {
+  const res = await fetch(`${baseUrl}${path}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(user2)}` },
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token(userId)}` },
     body: JSON.stringify({ avatar: certificateId }),
-  }).catch(() => null);
-  // Si el servidor de archivos no tiene /api/users montado, este test es best-effort
-  // pero la validación existe en users.ts
-  if (res) {
-    assert.equal(res.status, 400);
-    const json = await res.json().catch(() => null);
-    assert.equal(json?.error, 'invalid_avatar');
-  }
-  const getRes = await fetch(`${baseUrl}/api/files/${certificateId}`, {
+  });
+  return { status: res.status, json: await res.json().catch(() => null) };
+}
+
+maybe('certificado ajeno no se acepta como avatar en /api/users/me', async () => {
+  const r = await patchAvatar('/api/users/me', user2);
+  assert.equal(r.status, 400);
+  assert.equal(r.json?.error, 'invalid_avatar');
+});
+
+maybe('certificado ajeno no se acepta como avatar en /api/clients/me', async () => {
+  const r = await patchAvatar('/api/clients/me', user2);
+  assert.equal(r.status, 400);
+  assert.equal(r.json?.error, 'invalid_avatar');
+});
+
+maybe('certificado ajeno no se acepta como avatar en /api/professionals/me', async () => {
+  const r = await patchAvatar('/api/professionals/me', user2);
+  assert.equal(r.status, 400);
+  assert.equal(r.json?.error, 'invalid_avatar');
+});
+
+maybe('el certificado ajeno no se puede leer por /api/files', async () => {
+  const res = await fetch(`${baseUrl}/api/files/${certificateId}`, {
     headers: { Authorization: `Bearer ${token(user2)}` },
   });
-  assert.equal(getRes.status, 404);
+  assert.equal(res.status, 404);
 });
