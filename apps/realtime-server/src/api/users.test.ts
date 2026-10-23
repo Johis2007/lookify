@@ -1,4 +1,5 @@
-import test, { before, after } from 'node:test';
+import { before, after } from 'node:test';
+import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
@@ -8,9 +9,6 @@ import { createUsersRouter } from './users.js';
 import { errorHandler } from './http.js';
 
 // Ola 2c: /api/users/me sin exponer email/role/status ni permitir escalada.
-const DATABASE_URL = process.env.DATABASE_URL;
-const SECRET = process.env.DIRECTUS_SECRET;
-const maybe = DATABASE_URL && SECRET ? test : test.skip;
 
 let pool: pg.Pool;
 let server: Server;
@@ -83,8 +81,15 @@ maybe('PATCH /me actualiza phone y firstName', async () => {
   assert.equal(r.json.data.firstName, 'Cliente');
 });
 
-maybe('PATCH con email/role/status responde 400 (strict)', async () => {
-  for (const body of [{ email: 'x@y.z' }, { role: 'admin' }, { status: 'active' }]) {
+maybe('PATCH con email/role/status/password/policies responde 400 (strict)', async () => {
+  for (const body of [
+    { email: 'x@y.z' },
+    { role: 'admin' },
+    { status: 'active' },
+    { password: 'hack' },
+    { policies: ['x'] },
+    { first_name: 'x' },
+  ]) {
     const r = await api('PATCH', '/api/users/me', body);
     assert.equal(r.status, 400, JSON.stringify(body));
     assert.equal(r.json.error, 'invalid_body');
