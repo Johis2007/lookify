@@ -21,6 +21,7 @@
 // - Admin (admin_access): omite estas reglas, sin cambios.
 // - Registro público asigna el rol App User y los sin-rol se migran (si seats
 //   lo permite; si no, ver SQL en el paso 6).
+import { randomBytes } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -45,6 +46,29 @@ async function findByName(path, name) {
   const g = await api('GET', `${path}?fields=id,name&limit=100`);
   if (g.status !== 200) fail(`GET ${path}`, g);
   return (g.data?.data ?? []).find((x) => x.name === name)?.id;
+}
+
+function readEnvValue(key) {
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const envPath = join(root, '.env');
+  if (!existsSync(envPath)) return null;
+  const line = readFileSync(envPath, 'utf8')
+    .split(/\r?\n/)
+    .find((l) => l.startsWith(`${key}=`));
+  return line ? line.slice(key.length + 1).trim() : null;
+}
+
+// Un token estático de Directus se valida consultando /users/me con ese token.
+// El endpoint devuelve al menos el id; se compara con el usuario de servicio
+// esperado (el email no siempre está expuesto a esa policy).
+async function tokenBelongsTo(token, userId) {
+  if (!token) return false;
+  const r = await fetch(URL + '/users/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return false;
+  const body = await r.json().catch(() => null);
+  return body?.data?.id === userId;
 }
 
 // 1. Rol App User (idempotente).
@@ -248,13 +272,13 @@ for (const [collection, action] of REVOKE) {
 // Se crea un usuario + policy propio, admin_access/app_access false, solo CRUD sobre directus_files.
 // Se genera un token estático y se guarda SOLO en el .env raíz (DIRECTUS_TOKEN).
 {
-  const svcEmail = 'bff-service@lookify.internal';
-  let svcUser = await findByName('/users?fields=id,email&limit=1000', svcEmail);
-  if (!svcUser) {
-    // Intentamos encontrar por email directo
-    const gu = await api('GET', `/users?filter[email][_eq]=${encodeURIComponent(svcEmail)}&fields=id,email&limit=1`);
-    svcUser = gu.data?.data?.[0]?.id;
-  }
+  const svcEmail = 'bff-service@lookify.app';
+  const listUsers = async () => {
+    const r = await api('GET', '/users?fields=id,email&limit=200');
+    if (r.status !== 200) fail('GET users bff-service', r);
+    return r.data?.data ?? [];
+  };
+  let svcUser = (await listUsers()).find((u) => u.email === svcEmail)?.id;
   if (!svcUser) {
     const cu = await api('POST', '/users', {
       email: svcEmail,
@@ -263,8 +287,7 @@ for (const [collection, action] of REVOKE) {
       status: 'active',
     });
     if (![200, 201, 204].includes(cu.status)) fail('POST bff-service user', cu);
-    const gu2 = await api('GET', `/users?filter[email][_eq]=${encodeURIComponent(svcEmail)}&fields=id,email&limit=1`);
-    svcUser = gu2.data?.data?.[0]?.id;
+    svcUser = (await listUsers()).find((u) => u.email === svcEmail)?.id;
   }
   if (!svcUser) throw new Error('Sin usuario bff-service');
 
@@ -303,26 +326,28 @@ for (const [collection, action] of REVOKE) {
     }
   }
 
-  // Generar token estático
-  const gt = await api('POST', '/users/me/tokens', { name: 'bff-service-static', expires: null });
-  if (![200, 201, 204].includes(gt.status)) {
-    console.log('Aviso: no se pudo generar token estático vía API (puede requerir versión/permiso). Crea uno manualmente en Directus y ponlo en .env como DIRECTUS_TOKEN.');
+  // Token estático del usuario de servicio (NO del admin que ejecuta el
+  // script). Idempotente: si el .env ya tiene un token válido del bff-service,
+  // se conserva sin rotarlo.
+  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const envPath = join(root, '.env');
+  const existingToken = readEnvValue('DIRECTUS_TOKEN');
+  if (await tokenBelongsTo(existingToken, svcUser)) {
+    console.log('DIRECTUS_TOKEN existente válido (bff-service); no se rota');
   } else {
-    const token = gt.data?.data?.token || gt.data?.token;
-    if (token) {
-      const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-      const envPath = join(root, '.env');
-      const line = `DIRECTUS_TOKEN=${token}`;
-      let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
-      let replaced = false;
-      lines = lines.map((l) => {
-        if (/^DIRECTUS_TOKEN=/.test(l)) { replaced = true; return line; }
-        return l;
-      });
-      if (!replaced) lines.push(line);
-      writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
-      console.log('DIRECTUS_TOKEN escrito en .env (bff-service)');
-    }
+    const token = randomBytes(32).toString('hex');
+    const patch = await api('PATCH', `/users/${svcUser}`, { token });
+    if (patch.status !== 200) fail('PATCH bff-service token', patch);
+    const line = `DIRECTUS_TOKEN=${token}`;
+    let lines = existsSync(envPath) ? readFileSync(envPath, 'utf8').split(/\r?\n/) : [];
+    let replaced = false;
+    lines = lines.map((l) => {
+      if (/^DIRECTUS_TOKEN=/.test(l)) { replaced = true; return line; }
+      return l;
+    });
+    if (!replaced) lines.push(line);
+    writeFileSync(envPath, lines.filter((l, i, a) => l !== '' || i === a.length - 1).join('\n'));
+    console.log('DIRECTUS_TOKEN escrito en .env (bff-service)');
   }
   console.log('bff-service: mínimo privilegio (solo directus_files CRUD)');
 }
