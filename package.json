@@ -10,6 +10,7 @@
     "dev:realtime": "npm --workspace apps/realtime-server run dev",
     "dev:app": "npm --workspace apps/lookify-app run start",
     "env:lan": "node scripts/sync-lan-env.mjs",
+    "dev:lan-proxy": "node scripts/lan-proxy.mjs 8055",
     "db:setup": "node scripts/db-setup.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:cleanup:gps": "node scripts/gps-cleanup.mjs",
