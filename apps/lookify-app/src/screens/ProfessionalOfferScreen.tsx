@@ -1,9 +1,6 @@
 // Pantalla 7: perfil del profesional y precio desglosado antes de aceptar.
-//  - Modo demo: profesional y precio del catálogo de ejemplo.
-//  - Modo backend (4B): ficha pública real (professionalPublic) y precio que
-//    calculó el servidor.
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -18,12 +15,10 @@ import Button from '../components/Button';
 import { CATEGORIAS, MOCK_PROFESSIONALS } from '../data/mockProfessionals';
 import { SERVICIOS_POR_CATEGORIA } from '../data/mockServices';
 import type { RootStackParamList } from '../navigation/AppNavigator';
-import { estimarMinutosLlegada, MOCK_CLIENT_LOCATION } from '../constants/geo';
+import { estimarMinutosLlegada } from '../constants/geo';
 import { redondearDistanciaKm } from '../utils/geo';
 import { calcularDesglose, formatCOP } from '../utils/pricing';
 import { promptCancelarSolicitud } from '../utils/cancelarSolicitudAlert';
-import { isBackendEnabled } from '../services/backend/initBackend';
-import { getBookingService } from '../services/bookingService';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProfessionalOffer'>;
 
@@ -50,8 +45,6 @@ function Stars({ rating }: { rating: number }) {
   );
 }
 
-type ServicioVista = { id: string; nombre: string; precio: number };
-
 export default function ProfessionalOfferScreen({ navigation, route }: Props) {
   const params = route.params;
   const {
@@ -65,69 +58,23 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
     distanciaKm: distanciaParam,
   } = params;
 
-  const modoReal = isBackendEnabled() && Boolean(params.profesional);
-
   const allowExitRef = useRef(false);
   const alertOpenRef = useRef(false);
-  const [trabajando, setTrabajando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const distanciaKm = useMemo(
     () => redondearDistanciaKm(distanciaParam),
     [distanciaParam]
   );
 
-  // Profesional: mock (demo) o ficha pública real (backend).
-  const professional = useMemo(() => {
-    if (modoReal && params.profesional) {
-      return {
-        id: params.profesional.id,
-        nombre: params.profesional.nombre,
-        calificacion: params.profesional.calificacion ?? 0,
-        totalResenas: null as number | null,
-        verificado: true,
-        portafolio: [] as string[],
-        resenaDestacada: null as { autor: string; texto: string; estrellas: number } | null,
-      };
-    }
-    const p = MOCK_PROFESSIONALS.find((m) => m.id === professionalId);
-    if (!p) return null;
-    return {
-      id: p.id,
-      nombre: p.nombre,
-      calificacion: p.calificacion,
-      totalResenas: p.totalResenas as number | null,
-      verificado: p.verificado,
-      portafolio: p.portafolio,
-      resenaDestacada: p.resenaDestacada,
-    };
-  }, [modoReal, params.profesional, professionalId]);
-
-  // Servicio: catálogo de ejemplo (demo) o el nombre/precio del servidor.
-  const servicio: ServicioVista | null = useMemo(() => {
-    if (modoReal) {
-      return {
-        id: servicioId,
-        nombre: params.servicioNombre ?? 'Servicio reservado',
-        precio: params.precioServidor ?? 0,
-      };
-    }
-    const s = SERVICIOS_POR_CATEGORIA[categoriaId]?.find((m) => m.id === servicioId);
-    return s ? { id: s.id, nombre: s.nombre, precio: s.precio } : null;
-  }, [modoReal, categoriaId, servicioId, params.servicioNombre, params.precioServidor]);
+  const professional = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
+  const servicio = SERVICIOS_POR_CATEGORIA[categoriaId]?.find((s) => s.id === servicioId);
 
   const datosValidos = Boolean(professional && servicio);
 
   const desglose = useMemo(() => {
     if (!professional || !servicio) return null;
-    if (modoReal) {
-      // El precio del servidor es la base; el domicilio se confirma al final.
-      const precio = params.precioServidor ?? servicio.precio;
-      return { precioServicio: precio, precioDomicilio: 0, precioTotal: precio };
-    }
-    const mock = MOCK_PROFESSIONALS.find((m) => m.id === professional.id);
-    return calcularDesglose(servicio.precio, mock?.ajustePrecio ?? 1, distanciaKm);
-  }, [professional, servicio, distanciaKm, modoReal, params.precioServidor]);
+    return calcularDesglose(servicio.precio, professional.ajustePrecio, distanciaKm);
+  }, [professional, servicio, distanciaKm]);
 
   const minutosLlegada = estimarMinutosLlegada(distanciaKm);
 
@@ -176,63 +123,27 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
       precioServicio: desglose.precioServicio,
       precioDomicilio: desglose.precioDomicilio,
       precioTotal: desglose.precioTotal,
-      ...(params.bookingId ? { bookingId: params.bookingId } : {}),
-      ...(params.profesional ? { profesional: params.profesional } : {}),
-      ...(params.servicioNombre ? { servicioNombre: params.servicioNombre } : {}),
     });
   };
 
-  // Demo: se busca otro profesional en la misma búsqueda.
-  // Backend: se cancela la reserva actual y se abre una nueva búsqueda.
-  const handleBuscarOtro = useCallback(async () => {
-    if (!modoReal) {
-      allowExitRef.current = true;
-      navigation.replace('Matching', {
-        categoriaId,
-        categoriaNombre,
-        servicioId,
-        radioKm,
-        rejectionCount: rejectionCount + 1,
-        rejectedIds: [...rejectedIds, professionalId],
-        ...(params.bookingId ? { bookingId: params.bookingId } : {}),
-      });
-      return;
-    }
-    setTrabajando(true);
-    setError(null);
-    try {
-      if (params.bookingId) {
-        await getBookingService().cancelarReserva(params.bookingId).catch(() => undefined);
-      }
-      const reserva = await getBookingService().crearReserva({
-        serviceId: servicioId,
-        addressText: 'Dirección a confirmar',
-        lat: MOCK_CLIENT_LOCATION.latitude,
-        lng: MOCK_CLIENT_LOCATION.longitude,
-      });
-      allowExitRef.current = true;
-      navigation.replace('Matching', {
-        categoriaId,
-        categoriaNombre,
-        servicioId,
-        radioKm: 3,
-        rejectionCount: 0,
-        rejectedIds: [],
-        bookingId: reserva.bookingId,
-      });
-    } catch {
-      setError('No pudimos abrir una nueva búsqueda. Intenta de nuevo.');
-    } finally {
-      setTrabajando(false);
-    }
-  }, [modoReal, categoriaId, categoriaNombre, servicioId, radioKm, rejectionCount, rejectedIds, professionalId, params.bookingId, navigation]);
+  const handleBuscarOtro = () => {
+    allowExitRef.current = true;
+    navigation.replace('Matching', {
+      categoriaId,
+      categoriaNombre,
+      servicioId,
+      radioKm,
+      rejectionCount: rejectionCount + 1,
+      rejectedIds: [...rejectedIds, professionalId],
+    });
+  };
 
   if (!datosValidos || !desglose || !professional || !servicio) {
     return null;
   }
 
   const categoriaLabel =
-    CATEGORIAS.find((c) => c.id === categoriaId)?.nombre ?? categoriaNombre;
+    CATEGORIAS.find((c) => c.id === professional.categoria)?.nombre ?? categoriaNombre;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -253,54 +164,30 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
               <View style={styles.ratingRow}>
                 <Stars rating={professional.calificacion} />
                 <Text style={styles.ratingValue}>
-                  {professional.calificacion > 0
-                    ? `${professional.calificacion.toFixed(1)}${
-                        professional.totalResenas !== null
-                          ? ` · ${professional.totalResenas} reseñas`
-                          : ''
-                      }`
-                    : 'Nuevo en Lookify'}
+                  {professional.calificacion.toFixed(1)} · {professional.totalResenas} reseñas
                 </Text>
               </View>
               <Text style={styles.meta}>
                 {distanciaKm.toFixed(1)} km · ~{minutosLlegada} min de llegada
               </Text>
-              {professional.verificado ? (
-                <View style={styles.verifiedRow}>
-                  <MaterialCommunityIcons
-                    name="shield-check-outline"
-                    size={14}
-                    color={colors.honey}
-                  />
-                  <Text style={styles.verifiedText}>Profesional verificado</Text>
-                </View>
-              ) : null}
             </View>
           </View>
 
-          {professional.portafolio.length > 0 ? (
-            <>
-              <Text style={styles.sectionTitle}>Portafolio</Text>
-              <View style={styles.portfolioGrid}>
-                {professional.portafolio.map((item) => (
-                  <View key={item} style={styles.portfolioCell}>
-                    <MaterialCommunityIcons name="image-outline" size={28} color={colors.textMuted} />
-                  </View>
-                ))}
+          <Text style={styles.sectionTitle}>Portafolio</Text>
+          <View style={styles.portfolioGrid}>
+            {professional.portafolio.map((item) => (
+              <View key={item} style={styles.portfolioCell}>
+                <MaterialCommunityIcons name="image-outline" size={28} color={colors.textMuted} />
               </View>
-            </>
-          ) : null}
+            ))}
+          </View>
 
-          {professional.resenaDestacada ? (
-            <>
-              <Text style={styles.sectionTitle}>Reseña destacada</Text>
-              <View style={styles.reviewCard}>
-                <Text style={styles.reviewAuthor}>{professional.resenaDestacada.autor}</Text>
-                <Stars rating={professional.resenaDestacada.estrellas} />
-                <Text style={styles.reviewBody}>{professional.resenaDestacada.texto}</Text>
-              </View>
-            </>
-          ) : null}
+          <Text style={styles.sectionTitle}>Reseña destacada</Text>
+          <View style={styles.reviewCard}>
+            <Text style={styles.reviewAuthor}>{professional.resenaDestacada.autor}</Text>
+            <Stars rating={professional.resenaDestacada.estrellas} />
+            <Text style={styles.reviewBody}>{professional.resenaDestacada.texto}</Text>
+          </View>
 
           <Text style={styles.sectionTitle}>Precio</Text>
           <View style={styles.priceBlock}>
@@ -308,41 +195,22 @@ export default function ProfessionalOfferScreen({ navigation, route }: Props) {
               <Text style={styles.priceLabel}>Servicio ({servicio.nombre})</Text>
               <Text style={styles.priceValue}>{formatCOP(desglose.precioServicio)}</Text>
             </View>
-            {!modoReal ? (
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Domicilio ({distanciaKm.toFixed(1)} km)</Text>
-                <Text style={styles.priceValue}>{formatCOP(desglose.precioDomicilio)}</Text>
-              </View>
-            ) : null}
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>Domicilio ({distanciaKm.toFixed(1)} km)</Text>
+              <Text style={styles.priceValue}>{formatCOP(desglose.precioDomicilio)}</Text>
+            </View>
             <View style={styles.priceDivider} />
             <View style={styles.priceRow}>
               <Text style={styles.priceTotalLabel}>Total</Text>
               <Text style={styles.priceTotalValue}>{formatCOP(desglose.precioTotal)}</Text>
             </View>
-            {modoReal ? (
-              <Text style={styles.priceNote}>
-                Precio calculado por el servidor. El domicilio se confirma al terminar el servicio.
-              </Text>
-            ) : null}
           </View>
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          <Button label="Aceptar profesional" onPress={handleAceptar} variant="accent" />
 
-          <Button
-            label={modoReal ? 'Ver seguimiento' : 'Aceptar profesional'}
-            onPress={handleAceptar}
-            variant="accent"
-            disabled={trabajando}
-          />
+          <Button label="Buscar otro profesional" onPress={handleBuscarOtro} variant="outline" />
 
-          <Button
-            label="Buscar otro profesional"
-            onPress={handleBuscarOtro}
-            variant="outline"
-            disabled={trabajando}
-          />
-
-          {rejectionCount === 2 && !modoReal ? (
+          {rejectionCount === 2 ? (
             <Text style={styles.thirdRejectHint}>
               Este sería tu tercer rechazo; después podrás ampliar el radio o cancelar
             </Text>
@@ -375,7 +243,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: colors.honey,
+    backgroundColor: colors.sand,
   },
   profileRow: {
     flexDirection: 'row',
@@ -425,16 +293,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: spacing.xs,
-  },
-  verifiedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: spacing.xs,
-  },
-  verifiedText: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   sectionTitle: {
     ...typography.heading,
@@ -505,18 +363,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: colors.navy,
-  },
-  priceNote: {
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-    lineHeight: 16,
-  },
-  errorText: {
-    ...typography.caption,
-    color: colors.error,
-    marginBottom: spacing.sm,
-    textAlign: 'center',
   },
   thirdRejectHint: {
     fontSize: 12,

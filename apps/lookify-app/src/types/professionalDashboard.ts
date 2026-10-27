@@ -20,8 +20,6 @@ export interface ServicioOfrecidoPanel {
 export interface FotoPerfilPanel {
   uri: string;
   mimeType: FotoPerfilMimePermitido;
-  /** Cabecera Authorization para leer el archivo vía BFF. */
-  headers?: Record<string, string>;
 }
 
 export interface PanelPrincipalResponse {

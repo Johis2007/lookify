@@ -184,10 +184,8 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
   }, [navigation, params.profesionalId, params.solicitudId]);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      recargar().finally(() => setLoading(false));
-    }, 0);
-    return () => clearTimeout(id);
+    setLoading(true);
+    recargar().finally(() => setLoading(false));
   }, [recargar]);
 
   useEffect(() => {
@@ -590,7 +588,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
         >
           {mostrarAviso ? (
             <View style={styles.avisoCard}>
-              <MaterialCommunityIcons name="information-outline" size={22} color={colors.honey} />
+              <MaterialCommunityIcons name="information-outline" size={22} color={colors.sand} />
               <Text style={styles.avisoText}>{PORTAFOLIO_AVISO_INFORMATIVO}</Text>
             </View>
           ) : null}
@@ -827,7 +825,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.md,
     borderLeftWidth: 4,
-    borderLeftColor: colors.honey,
+    borderLeftColor: colors.sand,
   },
   avisoText: {
     ...typography.body,
@@ -889,7 +887,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 4,
     top: 4,
-    backgroundColor: colors.honey,
+    backgroundColor: colors.sand,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: radius.sm,
@@ -928,7 +926,7 @@ const styles = StyleSheet.create({
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 42, 74, 0.45)',
+    backgroundColor: colors.overlayPrimary,
     justifyContent: 'flex-end',
   },
   modalSheet: {
@@ -1002,7 +1000,7 @@ const styles = StyleSheet.create({
   },
   videoPreviewBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.92)',
+    backgroundColor: colors.overlayDark,
     justifyContent: 'center',
   },
   videoPreviewClose: {

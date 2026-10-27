@@ -79,8 +79,7 @@ export default function ProfessionalServiceSelectionScreen({ navigation, route }
       resetProfessionalSession(navigation, 'ProfessionalLogin');
       return;
     }
-    const id = setTimeout(() => cargarCatalogo(), 0);
-    return () => clearTimeout(id);
+    cargarCatalogo();
   }, [params.solicitudId, navigation, cargarCatalogo]);
 
   const confirmarCerrarSesion = useCallback(() => {
@@ -272,7 +271,7 @@ const styles = StyleSheet.create({
   logoutLink: {
     marginTop: spacing.md,
     fontSize: 13,
-    color: colors.honey,
+    color: colors.sand,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },

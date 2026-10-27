@@ -2,27 +2,19 @@
 // Pantalla 4: Inicio. Muestra el mapa con profesionales cercanos (datos de
 // ejemplo por ahora), un selector de categorías, y el botón "Solicitar ahora".
 //
-// Ubicación en vivo con expo-location (sin API key de Google): si el usuario
-// concede el permiso, el mapa se centra en su GPS real y dibuja su recorrido
-// (Polyline) con distancia acumulada. Si lo niega, se usa el punto mock.
+// Usa PROVIDER_DEFAULT (no PROVIDER_GOOGLE) para no depender de una API key
+// de Google Maps todavía: en iOS usa Apple Maps, en Android el mapa del
+// sistema. Cuando tengas la API key, el cambio es una sola línea (ver TODO).
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import LookifyMap from '../components/LookifyMap';
-import { confirmNative } from '../components/ConfirmDialog';
+import MapView, { Marker, PROVIDER_DEFAULT } from 'react-native-maps';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
-import { clearClientSession } from '../lib/backend/clientAuth';
 import { MOCK_PROFESSIONALS, CATEGORIAS, CategoriaId } from '../data/mockProfessionals';
 import { MOCK_CLIENT_LOCATION } from '../constants/geo';
-import { useLiveLocation } from '../hooks/useLiveLocation';
-import { useRememberedPlace } from '../hooks/useRememberedPlace';
-import { distanciaKm } from '../utils/geo';
-import { getNearbyService } from '../services/nearbyService';
-import type { ProfesionalCercano } from '../services/nearbyService';
-import { isBackendEnabled } from '../services/backend/initBackend';
 
 // El ícono es presentación, por eso vive aquí y no en el archivo de datos
 // (que mañana se reemplaza por la respuesta del backend).
@@ -36,123 +28,22 @@ const CATEGORIA_ICONOS: Record<CategoriaId, keyof typeof MaterialCommunityIcons.
 interface HomeScreenProps {
   navigation: {
     navigate: (screen: string, params?: object) => void;
-    reset: (state: { index: number; routes: { name: string }[] }) => void;
   };
 }
 
-const INITIAL_COORD = {
+const INITIAL_REGION = {
   latitude: MOCK_CLIENT_LOCATION.latitude,
   longitude: MOCK_CLIENT_LOCATION.longitude,
-};
-
-/** Radio de búsqueda en el mapa (mismo que la ronda 2 del matching). */
-const RADIO_CERCANOS_KM = 6;
-
-type ProEnMapa = {
-  id: string;
-  nombre: string;
-  calificacion: number | null;
-  latitude: number;
-  longitude: number;
+  latitudeDelta: 0.02,
+  longitudeDelta: 0.02,
 };
 
 export default function HomeScreen({ navigation }: HomeScreenProps) {
   const [categoriaActiva, setCategoriaActiva] = useState<CategoriaId>('peluqueria');
-  const usandoBackend = isBackendEnabled();
-  const [cercanos, setCercanos] = useState<ProfesionalCercano[]>([]);
 
-  // GPS en vivo (expo-location, 2 s / 5 m) + punto recordado (ej. Soacha).
-  const { location: live, error: liveError } = useLiveLocation(true);
-  const place = useRememberedPlace(live);
-  const clientCoord = place.coords;
-
-  // Recorrido propio (rastro GPS): acumula fixes en vivo, distancia en km.
-  const [trail, setTrail] = useState<{ latitude: number; longitude: number }[]>([]);
-  const trailRef = useRef<{ latitude: number; longitude: number }[]>([]);
-  const [walkKm, setWalkKm] = useState(0);
-  useEffect(() => {
-    if (!live) return;
-    const point = { latitude: live.latitude, longitude: live.longitude };
-    const id = setTimeout(() => {
-      const prev = trailRef.current;
-      const last = prev[prev.length - 1];
-      if (last) {
-        setWalkKm((d) => d + distanciaKm(last.latitude, last.longitude, point.latitude, point.longitude));
-      }
-      const next = [...prev.slice(-499), point];
-      trailRef.current = next;
-      setTrail(next);
-    }, 0);
-    return () => clearTimeout(id);
-  }, [live]);
-
-  // Profesionales reales cercanos (backend). Se refresca por zona (~100 m),
-  // no por cada fix de GPS.
-  const coordKey = `${clientCoord.latitude.toFixed(3)},${clientCoord.longitude.toFixed(3)}`;
-  useEffect(() => {
-    if (!usandoBackend) return;
-    let activo = true;
-    getNearbyService()
-      .listarCercanos({
-        lat: clientCoord.latitude,
-        lng: clientCoord.longitude,
-        radioKm: RADIO_CERCANOS_KM,
-      })
-      .then((lista) => {
-        if (activo) setCercanos(lista);
-      })
-      .catch(() => {
-        if (activo) setCercanos([]);
-      });
-    return () => {
-      activo = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [usandoBackend, coordKey]);
-
-  const profesionalesEnMapa: ProEnMapa[] = usandoBackend
-    ? cercanos.map((p) => ({
-        id: p.id,
-        nombre: p.nombre,
-        calificacion: p.calificacion,
-        latitude: p.latitude,
-        longitude: p.longitude,
-      }))
-    : MOCK_PROFESSIONALS.filter((p) => p.categoria === categoriaActiva).map((p) => ({
-        id: p.id,
-        nombre: p.nombre,
-        calificacion: p.calificacion,
-        latitude: p.latitude,
-        longitude: p.longitude,
-      }));
-
-  const pins = profesionalesEnMapa.map((p) => ({
-    id: p.id,
-    latitude: p.latitude,
-    longitude: p.longitude,
-    title: `${p.nombre}${p.calificacion ? ` · ⭐ ${p.calificacion.toFixed(1)}` : ''}`,
-    color: colors.navy,
-  }));
-
-  // Al tocar un pin se avanza al flujo con la categoría de ese profesional.
-  const handleProPress = (id: string) => {
-    if (!usandoBackend) {
-      const pro = MOCK_PROFESSIONALS.find((p) => p.id === id);
-      if (!pro) return;
-      const categoria = CATEGORIAS.find((c) => c.id === pro.categoria);
-      navigation.navigate('ServiceSelection', {
-        categoriaId: pro.categoria,
-        categoriaNombre: categoria?.nombre,
-      });
-      return;
-    }
-    // Backend: la categoría la elige el cliente en el flujo de servicio.
-    const categoria = CATEGORIAS.find((c) => c.id === categoriaActiva);
-    navigation.navigate('ServiceSelection', {
-      categoriaId: categoriaActiva,
-      categoriaNombre: categoria?.nombre,
-    });
-  };
+  const profesionalesFiltrados = MOCK_PROFESSIONALS.filter(
+    (p) => p.categoria === categoriaActiva
+  );
 
   const handleSolicitar = () => {
     const categoria = CATEGORIAS.find((c) => c.id === categoriaActiva);
@@ -162,63 +53,17 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     });
   };
 
-  // Abre el mapa en vivo con ruta por calles hacia el primer profesional
-  // de la categoría activa (sin API key: OSRM + OSM).
-  const handleVerRuta = () => {
-    const dest = profesionalesEnMapa[0];
-    navigation.navigate('LiveRoute', {
-      latitude: dest?.latitude ?? MOCK_CLIENT_LOCATION.latitude + 0.01,
-      longitude: dest?.longitude ?? MOCK_CLIENT_LOCATION.longitude + 0.01,
-      nombre: dest ? dest.nombre : 'Destino demo',
-    });
-  };
-
-  const handleLogout = async () => {
-    const ok = await confirmNative(
-      'Cerrar sesión',
-      '¿Seguro que quieres salir de tu cuenta?',
-      'Salir',
-    );
-    if (!ok) return;
-    await clearClientSession();
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
-  };
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header con ubicación: nombre recordado (ej. Soacha) + coords */}
+      {/* Header con ubicación */}
       <View style={styles.header}>
         <View>
           <Text style={styles.headerLabel}>Ubicación actual</Text>
-          <Text style={styles.headerLocation}>
-            {place.hasFix
-              ? `${place.label} · ${place.coords.latitude.toFixed(5)}, ${place.coords.longitude.toFixed(5)}`
-              : 'Chapinero, Bogotá'}
-          </Text>
-          {live ? (
-            <Text style={styles.headerSub}>
-              En vivo · ±{Math.round(live.accuracy ?? 0)} m · {(live.speed ?? 0).toFixed(1)} m/s
-              {walkKm > 0 ? ` · ${walkKm.toFixed(2)} km` : ''}
-            </Text>
-          ) : place.hasFix ? (
-            <Text style={styles.headerSub}>Recordada · activando GPS…</Text>
-          ) : liveError ? (
-            <Text style={styles.headerSub}>{liveError} · usando punto aproximado</Text>
-          ) : null}
+          <Text style={styles.headerLocation}>Chapinero, Bogotá</Text>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.notifButton}>
-            <Text style={styles.notifIcon}>🔔</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.logoutButton}
-            onPress={handleLogout}
-            accessibilityRole="button"
-            accessibilityLabel="Cerrar sesión"
-          >
-            <MaterialCommunityIcons name="logout" size={18} color={colors.navy} />
-          </TouchableOpacity>
-        </View>
+        <TouchableOpacity style={styles.notifButton}>
+          <Text style={styles.notifIcon}>🔔</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Selector de categorías */}
@@ -249,47 +94,35 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         }}
       />
 
-      {/* Mapa unificado (nativo: react-native-maps + OSM · web: Leaflet).
-          La separación web/móvil vive en el componente, no en la pantalla:
-          Metro resuelve LookifyMap.native.tsx / LookifyMap.web.tsx. */}
+      {/* Mapa */}
       <View style={styles.mapContainer}>
-        <LookifyMap
-          initial={INITIAL_COORD}
-          pins={[
-            // Tu punto siempre visible (en vivo, recordado o mock).
-            {
-              id: 'yo',
-              latitude: clientCoord.latitude,
-              longitude: clientCoord.longitude,
-              title: place.isLive ? `Estás aquí · ${place.label}` : `${place.label} (recordada)`,
-              color: colors.honey,
-            },
-            ...pins,
-          ]}
-          trail={trail}
-          follow={place.hasFix ? clientCoord : null}
-          onProPress={handleProPress}
-        />
-        <View style={styles.liveBadge}>
-          <View style={[styles.liveDot, (live || place.hasFix) && styles.liveDotOn]} />
-          <Text style={styles.liveText}>
-            {live
-              ? `En vivo · ${profesionalesEnMapa.length} cerca`
-              : place.hasFix
-                ? `${place.label} · ${profesionalesEnMapa.length} cerca`
-                : `${profesionalesEnMapa.length} cerca · activando GPS…`}
-          </Text>
-        </View>
+        <MapView
+          provider={PROVIDER_DEFAULT}
+          // TODO: cuando tengas la API key de Google, cambia a:
+          // provider={PROVIDER_GOOGLE} y agrega la key en app.json (Android)
+          // / AndroidManifest / Info.plist según la guía de react-native-maps.
+          style={styles.map}
+          initialRegion={INITIAL_REGION}
+        >
+          {profesionalesFiltrados.map((p) => (
+            <Marker
+              key={p.id}
+              coordinate={{ latitude: p.latitude, longitude: p.longitude }}
+              title={p.nombre}
+              description={`⭐ ${p.calificacion}`}
+              pinColor={colors.navy}
+            />
+          ))}
+        </MapView>
       </View>
 
       {/* Resumen + acción principal */}
       <View style={styles.footer}>
         <Text style={styles.footerCount}>
-          {profesionalesEnMapa.length}{' '}
-          {profesionalesEnMapa.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
+          {profesionalesFiltrados.length}{' '}
+          {profesionalesFiltrados.length === 1 ? 'profesional' : 'profesionales'} cerca de ti
         </Text>
         <Button label="Solicitar ahora" onPress={handleSolicitar} />
-        <Button label="Ver ruta en vivo" variant="outline" onPress={handleVerRuta} />
       </View>
     </SafeAreaView>
   );
@@ -318,29 +151,11 @@ const styles = StyleSheet.create({
     color: colors.white,
     marginTop: 2,
   },
-  headerSub: {
-    fontSize: 11,
-    color: colors.textOnNavyMuted,
-    marginTop: 2,
-  },
   notifButton: {
     width: 36,
     height: 36,
     borderRadius: radius.full,
-    backgroundColor: colors.honey,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  logoutButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.full,
-    backgroundColor: colors.white,
+    backgroundColor: colors.sand,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -384,39 +199,12 @@ const styles = StyleSheet.create({
     marginHorizontal: spacing.lg,
     borderRadius: radius.lg,
     overflow: 'hidden',
-    // Fondo diagnóstico: si el mapa no renderiza se ve azul claro;
-    // si fallan los tiles se ve cuadrícula gris + logo Google.
-    backgroundColor: '#e8edf3',
   },
-  liveBadge: {
-    position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.navy,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.full,
-  },
-  liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: radius.full,
-    backgroundColor: colors.textSecondary,
-  },
-  liveDotOn: {
-    backgroundColor: colors.honey,
-  },
-  liveText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: '700',
+  map: {
+    flex: 1,
   },
   footer: {
     padding: spacing.lg,
-    gap: spacing.sm,
   },
   footerCount: {
     ...typography.heading,

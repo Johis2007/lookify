@@ -29,10 +29,3 @@ let implementation: ProfessionalCertificateService = createMockProfessionalCerti
 export function getProfessionalCertificateService(): ProfessionalCertificateService {
   return implementation;
 }
-
-/** Solo para tests o swap a implementación HTTP (ver initBackend). */
-export function setProfessionalCertificateServiceForTesting(
-  service: ProfessionalCertificateService,
-): void {
-  implementation = service;
-}

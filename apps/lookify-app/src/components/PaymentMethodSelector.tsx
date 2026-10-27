@@ -55,7 +55,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   optionSelected: {
-    borderColor: colors.honey,
+    borderColor: colors.sand,
     backgroundColor: colors.beige,
   },
   optionLabel: {

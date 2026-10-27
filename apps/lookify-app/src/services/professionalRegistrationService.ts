@@ -16,10 +16,3 @@ let implementation: ProfessionalRegistrationService = createMockProfessionalRegi
 export function getProfessionalRegistrationService(): ProfessionalRegistrationService {
   return implementation;
 }
-
-/** Solo para tests o swap a implementación HTTP (ver initBackend). */
-export function setProfessionalRegistrationServiceForTesting(
-  service: ProfessionalRegistrationService,
-): void {
-  implementation = service;
-}

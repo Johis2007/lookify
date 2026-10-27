@@ -6,9 +6,6 @@ import {
 } from '../../types/professionalRegistration';
 import { esServicioIdValido } from './catalogServicioIds';
 import {
-  findRegisteredByEmail,
-  isDocumentRegistered,
-  registerProfessionalRecord,
   setOnboardingPasoForSolicitud,
   setServiciosForSolicitud,
   solicitudExiste,
@@ -17,6 +14,11 @@ import { ServiceError } from '../errors';
 import { ProfessionalRegistrationService } from '../professionalRegistrationService';
 import { isEmailRegistered } from '../../data/mockUsers';
 import { MOCK_PROFESSIONAL_ACCOUNTS } from './mockProfessionalAccounts';
+import {
+  findRegisteredByEmail,
+  isDocumentRegistered,
+  registerProfessionalRecord,
+} from './mockProfessionalRegistryStore';
 
 const MOCK_REGISTRATION_LATENCY_MS = 650;
 const MOCK_GUARDAR_SERVICIOS_LATENCY_MS = 500;

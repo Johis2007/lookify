@@ -38,8 +38,6 @@ import {
   ServicioEnCurso,
 } from '../../types/professionalServiceInProgress';
 import { formatCOP } from '../../utils/pricing';
-import { useLiveLocation } from '../../hooks/useLiveLocation';
-import { emitBookingLocation } from '../../lib/backend/realtime';
 
 type Props = NativeStackScreenProps<
   ProfessionalStackParamList,
@@ -119,11 +117,9 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   const [desfaseMs, setDesfaseMs] = useState(0);
   const [tickNow, setTickNow] = useState(() => Date.now());
 
-  useEffect(() => {
-    etapaRef.current = servicio?.etapa ?? null;
-    eligiendoMotivoRef.current = eligiendoMotivo;
-    loadErrorRef.current = loadError;
-  }, [servicio?.etapa, eligiendoMotivo, loadError]);
+  etapaRef.current = servicio?.etapa ?? null;
+  eligiendoMotivoRef.current = eligiendoMotivo;
+  loadErrorRef.current = loadError;
 
   const aplicarReloj = useCallback((ahoraServidor: number) => {
     setDesfaseMs(ahoraServidor - Date.now());
@@ -189,10 +185,8 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   }, [aplicarReloj, navigation, profesionalId, solicitudEntranteId, volverAlPanel]);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      cargar().finally(() => setLoading(false));
-    }, 0);
-    return () => clearTimeout(id);
+    setLoading(true);
+    cargar().finally(() => setLoading(false));
   }, [cargar]);
 
   useEffect(() => {
@@ -210,21 +204,6 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   }, [cargar]);
 
   const servicioId = servicio?.id;
-  const enCamino = servicio?.etapa === 'EN_CAMINO';
-
-  // 4C-2: mientras va en camino comparte GPS en primer plano (5 s / 15 m).
-  // El servidor solo lo acepta en 'accepted' y lo corta al iniciar/finalizar.
-  const {
-    location: gpsLocation,
-    error: gpsError,
-    permission: gpsPermission,
-  } = useLiveLocation(Boolean(enCamino), { timeInterval: 5000, distanceInterval: 15 });
-
-  useEffect(() => {
-    if (!enCamino || !servicioId || !gpsLocation) return;
-    emitBookingLocation(servicioId, gpsLocation.latitude, gpsLocation.longitude);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enCamino, servicioId, gpsLocation?.latitude, gpsLocation?.longitude]);
 
   useEffect(() => {
     if (!__DEV__ || !servicioId || !profesionalId) {
@@ -250,13 +229,10 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   useEffect(() => {
     if (!abrirMotivosCancelacion || !servicio || motivosAutoAbiertos.current) return;
     if (servicio.etapa === 'EN_CAMINO' || servicio.etapa === 'LLEGUE') {
-      const id = setTimeout(() => {
-        motivosAutoAbiertos.current = true;
-        setMotivo(null);
-        setEligiendoMotivo(true);
-        navigation.setParams({ abrirMotivosCancelacion: false });
-      }, 0);
-      return () => clearTimeout(id);
+      motivosAutoAbiertos.current = true;
+      setMotivo(null);
+      setEligiendoMotivo(true);
+      navigation.setParams({ abrirMotivosCancelacion: false });
     }
   }, [abrirMotivosCancelacion, navigation, servicio]);
 
@@ -527,20 +503,6 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
                 </View>
               ) : null}
 
-              {enCamino ? (
-                <View style={styles.gpsBox}>
-                  <Text style={styles.gpsText}>
-                    {gpsPermission === 'denied'
-                      ? 'Activa el permiso de ubicación para compartir tu ruta con el cliente.'
-                      : gpsError
-                        ? gpsError
-                        : gpsLocation
-                          ? 'Compartiendo tu ubicación en vivo. Mantén la app abierta.'
-                          : 'Obteniendo tu ubicación…'}
-                  </Text>
-                </View>
-              ) : null}
-
               <View style={styles.priceBlock}>
                 <View style={styles.priceRow}>
                   <Text style={styles.priceLabel}>Precio base</Text>
@@ -692,7 +654,7 @@ const styles = StyleSheet.create({
   },
   pill: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.honey,
+    backgroundColor: colors.sand,
     borderRadius: radius.full,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
@@ -734,15 +696,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.textPrimary,
     lineHeight: 22,
-  },
-  gpsBox: {
-    backgroundColor: colors.beige,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-  },
-  gpsText: {
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   priceBlock: {
     marginTop: spacing.sm,
@@ -813,7 +766,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   reasonRowSelected: {
-    borderColor: colors.honey,
+    borderColor: colors.sand,
     backgroundColor: colors.beige,
   },
   radio: {
@@ -824,8 +777,8 @@ const styles = StyleSheet.create({
     borderColor: colors.navy,
   },
   radioSelected: {
-    backgroundColor: colors.honey,
-    borderColor: colors.honey,
+    backgroundColor: colors.sand,
+    borderColor: colors.sand,
   },
   reasonLabel: {
     flex: 1,
@@ -839,7 +792,7 @@ const styles = StyleSheet.create({
   },
   demoBox: {
     borderWidth: 1,
-    borderColor: colors.honey,
+    borderColor: colors.sand,
     borderRadius: radius.md,
     padding: spacing.md,
     gap: spacing.sm,
@@ -847,7 +800,7 @@ const styles = StyleSheet.create({
   },
   demoTitle: {
     fontWeight: '700',
-    color: colors.honey,
+    color: colors.sand,
     fontSize: 13,
   },
   demoPin: {

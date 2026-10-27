@@ -7,15 +7,13 @@ pantalla quedó descartado). Entrada pro desde Tipo de cuenta → `ProfessionalA
 (Login Profesional dentro del stack pro). **Siguiente paso inmediato:** pantallas pro 1 a 10
 completas; el siguiente paso (Admin Web o los pendientes de negocio) lo define el dueño del proyecto.
 
-**Commits recientes:** `7db63d8` — feat(pro) pantalla 10 historial de ingresos (`main`) ·
-`31a2da9` — feat(pro) pantalla 9 servicio en curso (`main`) · `3c5cc99` — docs(pro) contrato
-pantalla 8 (`main`).
+**Commits recientes:** `927e61f` — feat(brand) nuevo logo pin con tijeras (`main`) ·
+`bf712fc` — feat(theme) paleta verde petróleo y arena (`main`) ·
+`7db63d8` — feat(pro) pantalla 10 historial de ingresos (`main`).
 
-Fase actual: **frontend con backend opcional**. La app sigue siendo React Native +
-Expo SDK 57, pero ya existe una capa de servicios (`src/services/`) que se puede
-conectar al backend real. Con `EXPO_PUBLIC_USE_BACKEND=false` (default) todo es
-mock local, sin red; con `EXPO_PUBLIC_USE_BACKEND=true` se usan el BFF de reservas
-(`apps/realtime-server`) y el socket. Ver **sección 6** (fases 4A/4B).
+Fase actual: **frontend únicamente** (React Native + Expo SDK 57). El backend se
+construye después de cerrar todo el frontend. No hay autenticación real, base de
+datos ni llamadas HTTP: todos los datos son mocks locales.
 
 ---
 
@@ -93,8 +91,9 @@ cancelar sin costo (sin checklist). Éxito → `replace('ProfessionalOffer', …
 `promptCancelarSolicitud`; «Seguir buscando» reanuda el checklist donde iba.
 
 ### 7. Oferta de profesional — `src/screens/ProfessionalOfferScreen.tsx`
-Fondo beige, tarjeta con acento honey: perfil, portafolio, reseña destacada y
-desglose vía `src/utils/pricing.ts` (`formatCOP`). `distanciaKm` de la ruta (1 decimal)
+Fondo beige, tarjeta blanca con banda superior (`sheetAccent`, 4 px) en `sand`; iconos de
+estrellas de la reseña en `honey`; perfil, portafolio, reseña destacada y desglose vía
+`src/utils/pricing.ts` (`formatCOP`). `distanciaKm` de la ruta (1 decimal)
 para UI, domicilio y params; ETA con `VELOCIDAD_ESTIMADA_KM_H` en `constants/geo.ts`
 (mín. 1 min). «Aceptar» → `replace('Tracking', …)` con `allowExitRef` antes del
 `replace`. «Buscar otro» → `allowExitRef` +
@@ -102,8 +101,8 @@ para UI, domicilio y params; ETA con `VELOCIDAD_ESTIMADA_KM_H` en `constants/geo
 sin costo). Datos inválidos → `reset` Home.
 
 ### 8. Seguimiento en vivo — `src/screens/TrackingScreen.tsx`
-Mapa **`MapView` + `PROVIDER_DEFAULT`** (no placeholder), marcadores cliente (navy) y
-profesional (honey). En Expo Go (Android) el mapa puede verse en blanco por la API key
+Mapa **`MapView` + `PROVIDER_DEFAULT`** (no placeholder), marcadores cliente (`navy`) y
+profesional (`sand`). En Expo Go (Android) el mapa puede verse en blanco por la API key
 embebida vencida (problema conocido, no es bug del código). Pill «En camino», tarjeta
 inferior con ETA/distancia animados (`MOCK_TRACKING_MS` 12 s), profesional + servicio,
 Llamar/Mensaje (Alert mock), «Cancelar servicio» y atrás/gesto con
@@ -124,7 +123,8 @@ hasta validar PIN (`promptCancelarServicio`); después, `alertServicioEnCurso`. 
 `replace('PaymentRating', …)` sin PIN en params. **Verificada en celular USB.**
 
 ### 10. Pago y calificación — `src/screens/PaymentRatingScreen.tsx`
-Fondo beige, tarjeta blanca: check «Servicio finalizado», nombre servicio/profesional,
+Fondo beige, tarjeta blanca: banda superior (`sheetAccent`, 4 px) e ícono `check-circle` en
+`sand`; `StarRating` en honey; título «Servicio finalizado», nombre servicio/profesional,
 desglose desde params con `formatCOP` (servicio + domicilio = total, sin comisión visible).
 Método de pago visual (Efectivo / Tarjeta / Nequi; default Efectivo), hint «Pago simulado
 en esta versión». `StarRating` obligatorio, comentario opcional (250 chars). «Enviar
@@ -689,6 +689,63 @@ Login dejó las tarjetas y el botón fuera de la pantalla.
 en `AppNavigator.tsx`, que es el montaje que documenta la librería y lo que da
 contexto a los hooks de insets.
 
+### Paleta de colores
+
+Fuente de verdad: `src/theme/colors.ts`. **Opción C — verde petróleo y arena** (pedida por el
+profesor como paleta más unisex). Implementada en código en **`bf712fc`** (`feat(theme): nueva
+paleta verde petróleo y arena`), verificada en celular USB.
+
+Los **nombres de clave** `navy`, `honey` y `beige` se mantienen por compatibilidad; el renombre
+semántico de tokens (p. ej. `navy` → nombre que refleje verde petróleo) queda **pendiente — Fase 2**.
+
+| Token | Hex / valor | Uso |
+|-------|-------------|-----|
+| `navy` | `#1F4E5A` | Principal: cabeceras, fondos oscuros, botones primary, pin cliente en mapa |
+| `navyLight` | `#2E6A77` | Variante principal (p. ej. tracks de progreso) |
+| `beige` | `#FBF6EE` | Fondo claro de pantallas |
+| `border` | `#E8DCCB` | Bordes y separadores |
+| `textSecondary` | `#6B6A66` | Texto secundario (contraste sobre beige) |
+| `textOnNavyMuted` | `#BFD6DA` | Texto atenuado sobre fondo `navy` |
+| `honey` | `#D9A441` | **Solo estrellas / calificación** (`StarRating`, estrellas en oferta) |
+| `honeyLight` | `#F5C349` | Sin uso actual en pantallas (solo definido en `src/theme/colors.ts`; acentos claros en UI usan `sandLight`) |
+| `sand` | `#E2BE99` | Acento arena: botones `accent`, badges, chips, enlaces, pin profesional en mapa |
+| `sandLight` | `#EBD2B4` | Acento claro sobre fondos `navy` (íconos, marca en login) |
+| `overlayPrimary` | `rgba(31, 78, 90, 0.45)` | Backdrop modales (portafolio) |
+| `overlayDark` | `rgba(0, 0, 0, 0.92)` | Fondo modal video |
+| `overlayAvatar` | `rgba(0, 0, 0, 0.35)` | Overlay foto en panel pro |
+
+Sin cambio en Fase 1: `white`, `textPrimary`, `textMuted`, `textOnNavy`, `success`, `error`.
+
+**Branding nativo:** en `app.json`, `android.adaptiveIcon.backgroundColor` es **`#FBF6EE`**
+(alineado con `beige`). Los PNG de marca se actualizaron en **`927e61f`**; ver **Logo y marca** más abajo.
+
+### Logo y marca
+
+Identidad visual del pin con tijeras (sin ventana). Commit de código/assets: **`927e61f`**
+(`feat(brand): nuevo logo pin con tijeras`).
+
+**Archivos generados en `assets/`:** `icon.png`, `android-icon-foreground.png`,
+`android-icon-background.png`, `android-icon-monochrome.png`, `splash-icon.png`,
+`favicon.png` y `logo-lookify.png`.
+
+- **In-app:** `logo-lookify.png` — símbolo **crema** (`#FBF6EE`) sobre transparente, **96 px**
+  en cabecera verde petróleo (`navy`), en:
+  `LoginScreen`, `AccountTypeScreen`, `RegisterProfessionalScreen`, `ProfessionalLoginScreen`,
+  `ProfessionalServiceSelectionScreen`, `ProfessionalCertificateUploadScreen` y
+  `ProfessionalVerificationScreen`.
+- **Launcher e iconos nativos (por archivo):**
+  - `icon.png`: 1024×1024, símbolo verde petróleo `#1F4E5A` sobre fondo sólido crema `#FBF6EE`, sin transparencia.
+  - `android-icon-foreground.png`: símbolo verde petróleo sobre transparente, dentro del círculo seguro (máx. 337 px del centro).
+  - `android-icon-background.png`: plano sólido crema `#FBF6EE`.
+  - `android-icon-monochrome.png`: símbolo blanco sobre transparente.
+  - `splash-icon.png`: símbolo verde petróleo sobre transparente. **No** está enlazado en `app.json` (no hay plugin de splash).
+  - `favicon.png`: 48×48, verde petróleo sobre crema.
+- **Fuentes y regeneración:** `assets/brand/` (`logo-simple-source.png` activa;
+  `logo-source.png` histórico con ventana) y `scripts/generate-brand-assets.py` — ejecutar con
+  `py -3` (requiere **Pillow** y **numpy**); instrucciones en `assets/brand/README.md`.
+- **Expo Go:** solo se aprecia el logo in-app en cabeceras. El **ícono del launcher** y el
+  **splash nativo** no se ven en Expo Go; requieren **development build** o release.
+
 ### Categorías oficiales
 Coinciden con el catálogo del admin y no deben divergir:
 
@@ -954,121 +1011,3 @@ de deuda y/o tope de deuda que bloquea aceptar nuevos servicios en efectivo.
 | Uñas | Premium | 50.000 | 90 |
 
 IDs en código: `pel-1`…`pel-4`, `bar-1`…`bar-4`, `maq-1`…`maq-3`, `una-1`…`una-3`.
-
----
-
-## 6. Fase backend 4A/4B (app ↔ realtime-server)
-
-El backend que se está construyendo es **`apps/realtime-server`** (Express + Socket.io +
-PostGIS). La app lo consume **por el BFF REST** (`/api/*`) y **por socket**; el modelo de
-reservas es **claim**: la reserva se crea sin profesional y el primero que la acepta se la
-queda.
-
-**Interruptor:** `EXPO_PUBLIC_USE_BACKEND=true` (ver `apps/lookify-app/.env`). En `false`
-todo sigue en mock, sin cambios de comportamiento. `initBackend()` se llama en `App.tsx`
-solo si el backend está activo; es el punto donde se registran las implementaciones
-reales de los servicios.
-
-### 6.1 Servicios nuevos (4B)
-
-| Archivo | Rol |
-|---|---|
-| `src/services/nearbyService.ts` | Interfaz `NearbyService` + `ProfesionalCercano` (id, nombre, calificación, avatar, lat/lng, distanciaKm) y swap de implementación. |
-| `src/services/mock/mockNearbyService.ts` | Fallback demo: deriva de `MOCK_PROFESSIONALS`, sin red. |
-| `src/services/backend/backendNearbyService.ts` | `GET {SOCKET_URL}/realtime/nearby?lat&lng&radius&limit` (Bearer). `radius` va en **metros** (el servidor lo acota a 100–20.000 m). Calcula la distancia en km y guarda la última lista (`getUltimoListadoCercanos`) para la pantalla de Oferta. |
-
-**Inicio (`HomeScreen.tsx` y `HomeScreen.web.tsx`):** con backend, los pines del mapa y el
-contador «N cerca» salen de `/realtime/nearby` (radio 6 km, refresco por zona de ~100 m);
-sin backend, siguen los mocks por categoría. En web no hay GPS en vivo: se consulta
-desde el punto de referencia (`MOCK_CLIENT_LOCATION`).
-
-### 6.2 Matching real (pantalla 6)
-
-`MatchingScreen.tsx` mantiene la simulación local cuando **no** hay `bookingId` (modo
-demo intacto) y cambia a modo real si `EXPO_PUBLIC_USE_BACKEND=true` **y** llega un
-`bookingId`:
-
-- **Creación de la reserva:** `POST /api/bookings` (cliente, sin profesional) → el servidor
-  calcula precio, `expiresAt` (60 s) y `matchRound` (1).
-- **Estado:** `GET /api/bookings/:id` cada **5 s** (`POLL_MS`) + avisos por socket
-  (`booking:status` en la sala `booking:{id}`, con re-unión a la sala al reconectar).
-  El socket es **aparte** del del profesional (`connectClientRealtime` en
-  `src/lib/backend/realtime.ts`): el cliente no emite `prof:*`.
-- **Estados de UI:** buscando → **aceptado** (pasa a la Oferta con la ficha pública del
-  profesional), **expirado** (ampliar radio / cancelar sin costo) y **cancelado**.
-  Un fallo puntual de red no cierra la búsqueda: solo tras **3 fallos seguidos** se
-  muestra el estado de error.
-- **Cancelar:** confirma con la alerta compartida (`promptCancelarSolicitud`) y luego
-  `POST /api/bookings/:id/cancel` (reserva sin asignar). La alerta **no** detiene el poll
-  en modo real.
-- **Reintentar:** crea una **reserva nueva** (ronda 1) y reemplaza la pantalla; la
-  anterior ya expiró, así que no se cancela.
-- **Rondas:** las amplía el servidor (3 km → 6 km → `expired`), no la app. La app solo
-  refleja `matchRound` en el checklist.
-
-### 6.3 Oferta real (pantalla 7)
-
-`ProfessionalOfferScreen.tsx` recibe del matching la **ficha pública** del profesional
-(`id`, `displayName`, `avatar`, `rating` de `professionalPublic`), el **precio del
-servidor** (`price_snapshot`) y el **nombre del servicio**. Con backend, «Aceptar» lleva a
-**Seguimiento** con el `bookingId` real y «Buscar otro profesional» cancela la reserva y
-vuelve al matching con una reserva nueva. Sin backend, la pantalla queda igual que antes
-(mock).
-
-### 6.4 Solicitud entrante real (App Pro, pantalla 8)
-
-`backendProfessionalIncomingRequestService.ts` se reescribió sobre el modelo claim:
-
-- Las ofertas del profesional son **`GET /api/bookings/pro/available`** (vista reducida:
-  servicio, precio, distancia redondeada a 100 m y zona a ~500 m; **nunca** la dirección
-  exacta). Antes se usaba `GET /api/bookings/:id`, que da 404 para candidatos sin asignar.
-- **Aceptar** = `POST /api/bookings/:id/accept` (el primero que acepta se queda la
-  reserva); **rechazar** = `POST /api/bookings/:id/reject`.
-- El socket `booking:taken` retira la oferta de la lista del candidato; el listener
-  (`ProfessionalIncomingRequestListener`) **además** hace **polling de respaldo cada 12 s**
-  (`POLL_OFERTAS_MS`) por si el socket no llegó.
-- `procesarExpiracion` **no decide sola**: consulta el servidor; si la oferta sigue viva
-  devuelve `PENDIENTE`, si ya no está y la reserva está `accepted` devuelve `ACEPTADA`, y
-  si no → `EXPIRADA`. Se agregó `PENDIENTE` a `ResultadoRespuestaPro`.
-
-### 6.5 Lo que sigue en mock
-
-- **Seguimiento (pantalla 8 del cliente):** con `EXPO_PUBLIC_USE_BACKEND=true` **y**
-  `bookingId` ya usa posición real (ver 6.7). Sin backend sigue la animación simulada
-  (`MOCK_TRACKING_MS`); en ese modo no hay GPS real.
-- **Pantalla 9 del cliente** (servicio en progreso) y **pantalla 9 del profesional**
-  (servicio en curso + PIN) siguen mock, salvo el envío de GPS foreground del pro en
-  «En camino» (ver 6.7).
-- **Pago y calificación** (pantalla 10) siguen mock.
-
-### 6.6 Verificación
-
-- `npm run typecheck` (servidor + app) limpio.
-- Tests del servidor: `node --env-file=.env --test --import tsx "apps/realtime-server/src/**/*.test.ts"` → **58/58**.
-- Prueba manual con **dos sesiones** (cliente + profesional) sobre el backend local.
-
-### 6.7 Rastreo en vivo (4C-2)
-
-- **Profesional (App Pro, pantalla 9):** mientras `etapa === 'EN_CAMINO'` envía GPS en
-  **primer plano** con `useLiveLocation` (cada **5 s** o **15 m**,
-  `maxAccuracyM` por defecto) vía `emitBookingLocation` → `location:update` con
-  `booking_id`. La tarjeta muestra «Compartiendo tu ubicación en vivo. Mantén la app
-  abierta.»; si se niega el permiso o falla el GPS, muestra el motivo. Al pasar a
-  `in_progress`/`completed` (PIN) deja de emitir.
-- **Cliente (pantalla 8):** `TrackingView` (compartida nativo/web; las pantallas solo
-  reexportan) escucha `booking:location` en la sala `booking:{id}` y pinta el marcador y
-  el rastro reales; además hace **polling de `GET /api/bookings/:id/tracking` cada 10 s**
-  como respaldo si el socket cae. Muestra «Última actualización hace X s», aviso rojo
-  **> 30 s** sin señal, ETA **aproximada a 20 km/h** y banner «El profesional llegó»
-  (`booking:event`/`arrivedAt`). Al recibir `in_progress`/`completed` navega a la
-  pantalla 9; en `cancelled`/`expired` vuelve a Home.
-- **Destino:** el servidor entrega `client.lat/lng` si la reserva tiene dirección
-  geocodificada; si no, se usa `MOCK_CLIENT_LOCATION` como referencia de distancia.
-- **Limitación deliberada del MVP:** no hay GPS en **segundo plano**. En iOS/Android el
-  sistema suspende la ubicación al cerrar/minimizar la app; seguimiento continuo requiere
-  un **dev build** con `expo-location` en background + foreground service (Android) y
-  `UIBackgroundModes` (iOS), fuera de este alcance. Mientras la app esté abierta el
-  rastreo funciona; el TTL de 120 s en Redis marca la posición como vencida.
-- **Web:** el mapa usa Leaflet; `TrackingScreen.web.tsx` ahora comparte la misma lógica
-  real (antes no tenía soporte de backend).
-

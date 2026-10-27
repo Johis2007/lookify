@@ -17,12 +17,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { colors, radius, spacing, typography } from '../../theme/colors';
 import Button from '../../components/Button';
 import StarRating from '../../components/StarRating';
-import { BACKEND } from '../../lib/backend/config';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
 import { getProfessionalDashboardService } from '../../services/professionalDashboardService';
@@ -116,9 +116,7 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
   const servicioActivoRef = useRef<ServicioEnCurso | null>(null);
   const [demoBusy, setDemoBusy] = useState(false);
 
-  useEffect(() => {
-    servicioActivoRef.current = servicioActivo;
-  }, [servicioActivo]);
+  servicioActivoRef.current = servicioActivo;
 
   const refrescarSolicitudActiva = useCallback(async () => {
     if (!params.profesionalId) {
@@ -248,10 +246,8 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
   }, [navigation, params.profesionalId, params.solicitudId]);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      cargarPanel().finally(() => setLoading(false));
-    }, 0);
-    return () => clearTimeout(id);
+    setLoading(true);
+    cargarPanel().finally(() => setLoading(false));
   }, [cargarPanel]);
 
   useFocusEffect(
@@ -441,10 +437,7 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
           <View style={styles.profileRow}>
             <View style={styles.avatarWrap}>
               {panel.fotoPerfil ? (
-                <Image
-                  source={{ uri: panel.fotoPerfil.uri, headers: panel.fotoPerfil.headers }}
-                  style={styles.avatarImage}
-                />
+                <Image source={{ uri: panel.fotoPerfil.uri }} style={styles.avatarImage} />
               ) : (
                 <View style={styles.avatarFallback}>
                   <Text style={styles.avatarInitials}>{iniciales(panel.nombre)}</Text>
@@ -498,7 +491,7 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
                 value={disponible}
                 onValueChange={handleToggleDisponibilidad}
                 disabled={toggleBusy}
-                trackColor={{ false: colors.textSecondary, true: colors.honey }}
+                trackColor={{ false: colors.textSecondary, true: colors.sand }}
                 thumbColor={colors.white}
                 accessibilityRole="switch"
                 accessibilityLabel="Disponible u ocupado"
@@ -591,8 +584,7 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
             )}
           </View>
 
-          {/* DEMO solo en mocks: en backend la solicitud llega por socket. */}
-          {__DEV__ && !BACKEND.enabled ? (
+          {__DEV__ ? (
             <Button
               label="DEMO — simular solicitud entrante"
               variant="outline"
@@ -672,7 +664,7 @@ const styles = StyleSheet.create({
   },
   avatarOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: colors.overlayAvatar,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -714,7 +706,7 @@ const styles = StyleSheet.create({
   },
   cardDisponible: {
     borderWidth: 2,
-    borderColor: colors.honey,
+    borderColor: colors.sand,
   },
   cardOcupado: {
     borderWidth: 2,

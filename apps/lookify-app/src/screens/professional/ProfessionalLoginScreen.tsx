@@ -9,7 +9,6 @@ import { colors, radius, spacing } from '../../theme/colors';
 import Button from '../../components/Button';
 import TextField from '../../components/TextField';
 import BackHeader from '../../components/BackHeader';
-import { BACKEND } from '../../lib/backend/config';
 import { loginValido, validarContrasenaLogin, validarCorreo } from '../../utils/validators';
 import { getProfessionalAuthService } from '../../services/professionalAuthService';
 import { ServiceError } from '../../services/errors';
@@ -159,8 +158,7 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
               style={styles.submitButton}
             />
 
-            {/* Cuentas demo solo en mocks: en backend se usan cuentas reales. */}
-            {__DEV__ && !BACKEND.enabled ? (
+            {__DEV__ ? (
               <Text style={styles.devHint}>
                 Demo: pro.aprobado@lookify.test, pro.aprobado-nuevo@lookify.test,
                 pro.revision@lookify.test, pro.rechazado@lookify.test,
@@ -203,11 +201,11 @@ const styles = StyleSheet.create({
   brand: {
     fontSize: 22,
     fontWeight: '600',
-    color: colors.honeyLight,
+    color: colors.sandLight,
   },
   tagline: {
     fontSize: 14,
-    color: colors.honey,
+    color: colors.sand,
     marginTop: spacing.sm,
     textAlign: 'center',
     paddingHorizontal: spacing.md,

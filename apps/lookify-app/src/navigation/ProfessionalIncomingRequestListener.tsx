@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigation, useNavigationState } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from './AppNavigator';
@@ -10,13 +10,10 @@ import {
 } from './professionalSessionFromState';
 import { getProfessionalIncomingRequestService } from '../services/professionalIncomingRequestService';
 import { getProfessionalDashboardService } from '../services/professionalDashboardService';
-import { getActiveSolicitudKnown } from '../services/incomingActive';
+import { getActiveSolicitud } from '../services/mock/mockProfessionalIncomingRequestStore';
 import { SolicitudEntrante } from '../types/professionalIncomingRequest';
-import { BACKEND } from '../lib/backend/config';
 
 const DISPONIBILIDAD_POLL_MS = 1500;
-/** Respaldo del socket: cada cuánto se revisan ofertas vivas (backend). */
-const POLL_OFERTAS_MS = 12000;
 
 function esSolicitudVigente(s: SolicitudEntrante | null): s is SolicitudEntrante {
   return (
@@ -49,15 +46,12 @@ export default function ProfessionalIncomingRequestListener() {
   const [disponible, setDisponible] = useState(false);
 
   const sessionRef = useRef(session);
+  sessionRef.current = session;
   const routeNameRef = useRef(routeName);
+  routeNameRef.current = routeName;
   const incomingIdRef = useRef(incomingIdOnScreen);
+  incomingIdRef.current = incomingIdOnScreen;
   const ultimaSolicitudPresentadaRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    sessionRef.current = session;
-    routeNameRef.current = routeName;
-    incomingIdRef.current = incomingIdOnScreen;
-  }, [session, routeName, incomingIdOnScreen]);
 
   useEffect(() => {
     if (routeName !== 'ProfessionalIncomingRequest') {
@@ -67,6 +61,7 @@ export default function ProfessionalIncomingRequestListener() {
 
   useEffect(() => {
     if (!profesionalId) {
+      setDisponible(false);
       return;
     }
     let cancelled = false;
@@ -101,38 +96,23 @@ export default function ProfessionalIncomingRequestListener() {
 
     const svc = getProfessionalIncomingRequestService();
 
-    const presentarActiva = async () => {
-      try {
-        const activa = await svc.obtenerSolicitudActiva({ profesionalId });
-        if (!esSolicitudVigente(activa)) {
-          return;
-        }
-        if (routeNameRef.current === 'ProfessionalIncomingRequest') {
-          return;
-        }
-        if (ultimaSolicitudPresentadaRef.current === activa.id) {
-          return;
-        }
-        const sess = sessionRef.current;
-        if (!sess) {
-          return;
-        }
-        ultimaSolicitudPresentadaRef.current = activa.id;
-        abrirSolicitudEntranteEnStackPro(navigation, sess, activa.id);
-      } catch {
-        /* sin ofertas vivas: se reintenta en el siguiente ciclo */
+    void svc.obtenerSolicitudActiva({ profesionalId }).then((activa) => {
+      if (!esSolicitudVigente(activa)) {
+        return;
       }
-    };
-
-    void presentarActiva();
-
-    // Respaldo del socket: con backend las ofertas se difunden por socket,
-    // pero un poll lento cubre reconexiones y entregas perdidas.
-    const pollId = BACKEND.enabled
-      ? setInterval(() => {
-          void presentarActiva();
-        }, POLL_OFERTAS_MS)
-      : null;
+      if (routeNameRef.current === 'ProfessionalIncomingRequest') {
+        return;
+      }
+      if (ultimaSolicitudPresentadaRef.current === activa.id) {
+        return;
+      }
+      const sess = sessionRef.current;
+      if (!sess) {
+        return;
+      }
+      ultimaSolicitudPresentadaRef.current = activa.id;
+      abrirSolicitudEntranteEnStackPro(navigation, sess, activa.id);
+    });
 
     const unsub = svc.suscribirseASolicitudesEntrantes({ profesionalId }, (evento) => {
       if (evento.tipo !== 'NUEVA') {
@@ -150,7 +130,7 @@ export default function ProfessionalIncomingRequestListener() {
         return;
       }
 
-      const activaStore = getActiveSolicitudKnown(profesionalId);
+      const activaStore = getActiveSolicitud(profesionalId);
       if (esSolicitudVigente(activaStore) && activaStore.id !== evento.solicitud.id) {
         return;
       }
@@ -167,10 +147,7 @@ export default function ProfessionalIncomingRequestListener() {
       abrirSolicitudEntranteEnStackPro(navigation, sess, evento.solicitud.id);
     });
 
-    return () => {
-      if (pollId) clearInterval(pollId);
-      unsub();
-    };
+    return unsub;
   }, [profesionalId, disponible, navigation]);
 
   return null;

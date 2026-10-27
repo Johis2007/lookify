@@ -65,10 +65,8 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
   const [progressServicio, setProgressServicio] = useState(0);
   const [pinValidado, setPinValidado] = useState(false);
 
-  useEffect(() => {
-    faseRef.current = fase;
-    pinValidadoRef.current = pinValidado;
-  }, [fase, pinValidado]);
+  faseRef.current = fase;
+  pinValidadoRef.current = pinValidado;
 
   const paymentParams = useMemo(
     () => ({
@@ -185,17 +183,12 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
   }, [clearTimers, onPinValidadoMock, schedule]);
 
   const startSimulationRef = useRef(startSimulation);
-  useEffect(() => {
-    startSimulationRef.current = startSimulation;
-  }, [startSimulation]);
+  startSimulationRef.current = startSimulation;
 
   useEffect(() => {
     if (!datosValidos) return;
-    const id = setTimeout(() => startSimulation(), 0);
-    return () => {
-      clearTimeout(id);
-      clearTimers();
-    };
+    startSimulation();
+    return () => clearTimers();
   }, [datosValidos, startSimulation, clearTimers]);
 
   const showCancelarServicioAlert = useCallback(() => {
@@ -242,7 +235,7 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        <MaterialCommunityIcons name="timer-outline" size={56} color={colors.honeyLight} />
+        <MaterialCommunityIcons name="timer-outline" size={56} color={colors.sandLight} />
 
         <Text style={styles.title}>{servicio.nombre}</Text>
         <Text style={styles.subtitle}>Duración acordada: {duracionLabel}</Text>
@@ -294,7 +287,7 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
                 <MaterialCommunityIcons
                   name={done ? 'check-circle' : 'circle-outline'}
                   size={22}
-                  color={done ? colors.honey : colors.textOnNavyMuted}
+                  color={done ? colors.sand : colors.textOnNavyMuted}
                 />
                 <Text style={[styles.checkText, done && styles.checkTextDone]}>{label}</Text>
               </View>
@@ -359,7 +352,7 @@ const styles = StyleSheet.create({
   pinDigit: {
     fontSize: 40,
     fontWeight: '700',
-    color: colors.honey,
+    color: colors.sand,
     letterSpacing: 2,
     minWidth: 36,
     textAlign: 'center',
@@ -394,7 +387,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.honey,
+    backgroundColor: colors.sand,
     borderRadius: radius.full,
   },
   progressLabel: {

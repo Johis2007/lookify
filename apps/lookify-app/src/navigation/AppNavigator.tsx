@@ -16,7 +16,6 @@ import ServiceSelectionScreen from '../screens/ServiceSelectionScreen';
 import MatchingScreen from '../screens/MatchingScreen';
 import ProfessionalOfferScreen from '../screens/ProfessionalOfferScreen';
 import TrackingScreen from '../screens/TrackingScreen';
-import LiveRouteScreen from '../screens/LiveRouteScreen';
 import ServiceInProgressScreen from '../screens/ServiceInProgressScreen';
 import PaymentRatingScreen from '../screens/PaymentRatingScreen';
 import ClientTermsReadScreen from '../screens/ClientTermsReadScreen';
@@ -24,9 +23,7 @@ import ClientPrivacyReadScreen from '../screens/ClientPrivacyReadScreen';
 import ProfessionalStackNavigator, {
   ProfessionalStackParamList,
 } from './ProfessionalStackNavigator';
-import AdminStackNavigator, { AdminStackParamList } from './AdminStackNavigator';
 import { CategoriaId } from '../data/mockProfessionals';
-import { ProfesionalPublico } from '../services/bookingService';
 
 export type MatchingRouteParams = {
   categoriaId: CategoriaId;
@@ -35,19 +32,11 @@ export type MatchingRouteParams = {
   radioKm: 3 | 6;
   rejectionCount: number;
   rejectedIds: string[];
-  /** id de la reserva real (BFF); ausente en modo demo. */
-  bookingId?: string;
 };
 
 export type ProfessionalOfferRouteParams = MatchingRouteParams & {
   professionalId: string;
   distanciaKm: number;
-  /** Ficha pública real del profesional (backend). */
-  profesional?: ProfesionalPublico;
-  /** Precio calculado por el servidor (backend). */
-  precioServidor?: number | null;
-  /** Nombre real del servicio (backend). */
-  servicioNombre?: string | null;
 };
 
 export type TrackingRouteParams = {
@@ -58,12 +47,6 @@ export type TrackingRouteParams = {
   precioServicio: number;
   precioDomicilio: number;
   precioTotal: number;
-  /** id de la reserva real (BFF); ausente en modo demo. */
-  bookingId?: string;
-  /** Ficha pública real del profesional (backend). */
-  profesional?: ProfesionalPublico;
-  /** Nombre real del servicio (backend). */
-  servicioNombre?: string | null;
 };
 
 export type ServiceInProgressRouteParams = TrackingRouteParams;
@@ -77,13 +60,11 @@ export type RootStackParamList = {
   ClientTermsRead: undefined;
   ClientPrivacyRead: undefined;
   ProfessionalApp: NavigatorScreenParams<ProfessionalStackParamList>;
-  AdminApp: NavigatorScreenParams<AdminStackParamList>;
   Home: undefined;
   ServiceSelection: { categoriaId: CategoriaId; categoriaNombre: string };
   Matching: MatchingRouteParams;
   ProfessionalOffer: ProfessionalOfferRouteParams;
   Tracking: TrackingRouteParams;
-  LiveRoute: { latitude: number; longitude: number; nombre?: string } | undefined;
   ServiceInProgress: ServiceInProgressRouteParams;
   PaymentRating: PaymentRatingRouteParams;
 };
@@ -104,13 +85,11 @@ export default function AppNavigator() {
           <Stack.Screen name="ClientTermsRead" component={ClientTermsReadScreen} />
           <Stack.Screen name="ClientPrivacyRead" component={ClientPrivacyReadScreen} />
           <Stack.Screen name="ProfessionalApp" component={ProfessionalStackNavigator} />
-          <Stack.Screen name="AdminApp" component={AdminStackNavigator} />
           <Stack.Screen name="Home" component={HomeScreen} />
           <Stack.Screen name="ServiceSelection" component={ServiceSelectionScreen} />
           <Stack.Screen name="Matching" component={MatchingScreen} />
           <Stack.Screen name="ProfessionalOffer" component={ProfessionalOfferScreen} />
           <Stack.Screen name="Tracking" component={TrackingScreen} />
-          <Stack.Screen name="LiveRoute" component={LiveRouteScreen} />
           <Stack.Screen name="ServiceInProgress" component={ServiceInProgressScreen} />
           <Stack.Screen name="PaymentRating" component={PaymentRatingScreen} />
         </Stack.Navigator>

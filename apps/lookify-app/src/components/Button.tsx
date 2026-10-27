@@ -1,6 +1,6 @@
 // src/components/Button.tsx
 // Botón reutilizable. variant="primary" = azul oscuro (acción principal de la pantalla).
-// variant="accent" = miel (usar con moderación, solo para la acción MÁS importante,
+// variant="accent" = arena (usar con moderación, solo para la acción MÁS importante,
 // ej. "Solicitar ahora"). variant="outline" = borde, para acciones secundarias/cancelar.
 
 import React from 'react';
@@ -36,7 +36,7 @@ export default function Button({
       style={[
         styles.base,
         variant === 'primary' && { backgroundColor: colors.navy },
-        variant === 'accent' && { backgroundColor: colors.honey },
+        variant === 'accent' && { backgroundColor: colors.sand },
         isOutline && {
           backgroundColor: 'transparent',
           borderWidth: 1,
@@ -47,7 +47,9 @@ export default function Button({
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isOutline ? colors.navy : colors.white} />
+        <ActivityIndicator
+          color={isOutline || variant === 'accent' ? colors.navy : colors.white}
+        />
       ) : (
         <Text
           style={[

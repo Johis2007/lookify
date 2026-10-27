@@ -116,7 +116,7 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
           <MaterialCommunityIcons
             name="check-circle"
             size={56}
-            color={colors.honey}
+            color={colors.sand}
             style={styles.checkIcon}
           />
           <Text style={styles.successTitle}>Servicio finalizado</Text>
@@ -198,7 +198,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 4,
-    backgroundColor: colors.honey,
+    backgroundColor: colors.sand,
   },
   checkIcon: {
     alignSelf: 'center',

@@ -42,10 +42,3 @@ let implementation: ProfessionalVerificationService =
 export function getProfessionalVerificationService(): ProfessionalVerificationService {
   return implementation;
 }
-
-/** Solo para tests o swap a implementación HTTP (ver initBackend). */
-export function setProfessionalVerificationServiceForTesting(
-  service: ProfessionalVerificationService,
-): void {
-  implementation = service;
-}

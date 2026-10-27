@@ -26,7 +26,6 @@ import {
 } from '../../constants/verificationMessages';
 import Button from '../../components/Button';
 import TextField from '../../components/TextField';
-import { BACKEND } from '../../lib/backend/config';
 import { colors, radius, spacing, typography } from '../../theme/colors';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
@@ -84,7 +83,7 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
   const [activando, setActivando] = useState(false);
   const [reenviando, setReenviando] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
-  const [tickNow, setTickNow] = useState(() => Date.now());
+  const [tickNow, setTickNow] = useState(Date.now());
   const [demoCodigoVisible, setDemoCodigoVisible] = useState<string | null>(null);
 
   const confirmarCerrarSesion = useCallback(() => {
@@ -136,10 +135,8 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
   }, [navigation, params.solicitudId]);
 
   useEffect(() => {
-    const id = setTimeout(() => {
-      cargarEstado().finally(() => setLoading(false));
-    }, 0);
-    return () => clearTimeout(id);
+    setLoading(true);
+    cargarEstado().finally(() => setLoading(false));
   }, [cargarEstado]);
 
   useEffect(() => {
@@ -457,8 +454,7 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
 
             {actionError ? <Text style={styles.actionError}>{actionError}</Text> : null}
 
-            {/* DEMO solo en mocks: en backend decide el admin real. */}
-            {__DEV__ && !BACKEND.enabled ? (
+            {__DEV__ ? (
               <View style={styles.demoPanel}>
                 <Text style={styles.demoBadge}>DEMO — simular admin</Text>
                 <View style={styles.demoRow}>
@@ -488,7 +484,7 @@ const styles = StyleSheet.create({
   logoutLink: {
     marginTop: spacing.md,
     fontSize: 13,
-    color: colors.honey,
+    color: colors.sand,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
@@ -541,7 +537,7 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: colors.honey,
+    borderColor: colors.sand,
   },
   demoBadge: {
     fontSize: 11,

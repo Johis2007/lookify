@@ -2,21 +2,18 @@
 // Formulario de registro para Cliente (frontend mock; sin backend todavía).
 
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/AppNavigator';
-import DateField from '../components/DateField';
+import DateTimePicker, {
+  DateTimePickerChangeEvent,
+} from '@react-native-community/datetimepicker';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
 import TextField from '../components/TextField';
 import BackHeader from '../components/BackHeader';
 import { isEmailRegistered, registerMockUser } from '../data/mockUsers';
-import {
-  clientErrorMessage,
-  isBackendEnabled,
-  registerClient,
-} from '../lib/backend/clientAuth';
 import {
   registroClienteValido,
   validarConfirmarContrasena,
@@ -50,9 +47,16 @@ type FieldKey =
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RegisterClient'>;
 
+function formatFecha(date: Date | null): string {
+  if (!date) return 'Selecciona tu fecha de nacimiento';
+  return date.toLocaleDateString('es-CO', {
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 function correoYaRegistradoError(email: string): string | null {
-  // En modo backend el duplicado lo confirma el servidor al enviar.
-  if (isBackendEnabled()) return null;
   if (validarCorreo(email) !== null) return null;
   return isEmailRegistered(email) ? 'Este correo ya está registrado' : null;
 }
@@ -69,10 +73,9 @@ export default function RegisterClientScreen({ navigation }: Props) {
   });
   const [tipoDocumento, setTipoDocumento] = useState<TipoDocumentoId>('CC');
   const [fechaNacimiento, setFechaNacimiento] = useState<Date | null>(null);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [fechaTouched, setFechaTouched] = useState(false);
   const [aceptaTerminos, setAceptaTerminos] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
   const [touched, setTouched] = useState<Record<FieldKey, boolean>>({
     nombre: false,
     numeroDocumento: false,
@@ -88,15 +91,23 @@ export default function RegisterClientScreen({ navigation }: Props) {
   const update = (key: keyof typeof form) => (value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  const handleFechaChange = (date: Date | null) => {
-    setFechaNacimiento(date);
+  const onDateChange = (_event: DateTimePickerChangeEvent, selected: Date) => {
+    if (Platform.OS === 'android') {
+      setShowDatePicker(false);
+    }
+    setFechaNacimiento(selected);
+    setFechaTouched(true);
+  };
+
+  const closeDatePicker = () => {
+    setShowDatePicker(false);
     setFechaTouched(true);
   };
 
   const errors = useMemo(() => {
     const emailFormat = validarCorreo(form.email);
     const emailDuplicate =
-      !isBackendEnabled() && emailFormat === null && isEmailRegistered(form.email)
+      emailFormat === null && isEmailRegistered(form.email)
         ? 'Este correo ya está registrado'
         : null;
 
@@ -124,45 +135,22 @@ export default function RegisterClientScreen({ navigation }: Props) {
       fechaNacimiento,
     }) && correoYaRegistradoError(form.email) === null;
 
-  const handleSubmit = async () => {
-    if (!aceptaTerminos || !formValid || submitting) return;
-    setSubmitError(null);
-    if (!isBackendEnabled()) {
-      const aceptadoEn = new Date().toISOString();
-      registerMockUser({
-        email: form.email,
-        password: form.password,
-        nombre: form.nombre.trim(),
-        consentimiento: {
-          terminos: { version: CLIENT_TERMS_VERSION, aceptadoEn },
-          politicaDatos: { version: CLIENT_DATA_POLICY_VERSION, aceptadoEn },
-        },
-      });
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
-      return;
-    }
-    // Backend: el usuario + perfil quedan en Directus (verificable en DB).
-    setSubmitting(true);
-    try {
-      await registerClient({
-        nombre: form.nombre,
-        email: form.email,
-        password: form.password,
-        telefono: form.telefono,
-      });
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'Home' }],
-      });
-    } catch (error) {
-      console.error('Error al registrar cliente', error);
-      setSubmitError(clientErrorMessage(error));
-    } finally {
-      setSubmitting(false);
-    }
+  const handleSubmit = () => {
+    if (!aceptaTerminos || !formValid) return;
+    const aceptadoEn = new Date().toISOString();
+    registerMockUser({
+      email: form.email,
+      password: form.password,
+      nombre: form.nombre.trim(),
+      consentimiento: {
+        terminos: { version: CLIENT_TERMS_VERSION, aceptadoEn },
+        politicaDatos: { version: CLIENT_DATA_POLICY_VERSION, aceptadoEn },
+      },
+    });
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'Home' }],
+    });
   };
 
   const handleTipoDocumento = (tipo: TipoDocumentoId) => {
@@ -231,14 +219,31 @@ export default function RegisterClientScreen({ navigation }: Props) {
             error={showError('nacionalidad', errors.nacionalidad)}
           />
 
-          {/* Fecha: nativo abre calendario DateTimePicker, web usa input
-              type="date" (calendario + escritura). Ver DateField. */}
-          <DateField
-            value={fechaNacimiento}
-            onChange={handleFechaChange}
-            error={fechaError}
-            maximumDate={new Date()}
-          />
+          <Text style={styles.fieldLabel}>Fecha de nacimiento</Text>
+          <TouchableOpacity
+            style={[styles.dateButton, fechaError ? styles.dateButtonError : null]}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Text style={[styles.dateButtonText, !fechaNacimiento && styles.datePlaceholder]}>
+              {formatFecha(fechaNacimiento)}
+            </Text>
+          </TouchableOpacity>
+          {fechaError ? <Text style={styles.fieldError}>{fechaError}</Text> : null}
+          {showDatePicker && (
+            <DateTimePicker
+              value={fechaNacimiento ?? new Date(2000, 0, 1)}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              maximumDate={new Date()}
+              onValueChange={onDateChange}
+              onDismiss={closeDatePicker}
+            />
+          )}
+          {Platform.OS === 'ios' && showDatePicker && (
+            <TouchableOpacity style={styles.dateDone} onPress={closeDatePicker}>
+              <Text style={styles.dateDoneText}>Listo</Text>
+            </TouchableOpacity>
+          )}
 
           <TextField
             label="Teléfono"
@@ -308,12 +313,10 @@ export default function RegisterClientScreen({ navigation }: Props) {
         </ScrollView>
 
         <View style={styles.footer}>
-          {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
           <Button
             label="Crear cuenta"
             onPress={handleSubmit}
-            loading={submitting}
-            disabled={!aceptaTerminos || !formValid || submitting}
+            disabled={!aceptaTerminos || !formValid}
             style={styles.submitButton}
           />
         </View>
@@ -363,6 +366,12 @@ const styles = StyleSheet.create({
     ...typography.caption,
     marginBottom: spacing.sm,
   },
+  fieldError: {
+    fontSize: 12,
+    color: colors.error,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+  },
   chipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -387,6 +396,36 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: colors.white,
     fontWeight: '600',
+  },
+  dateButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    marginBottom: spacing.md,
+    backgroundColor: colors.white,
+  },
+  dateButtonError: {
+    borderColor: colors.error,
+    marginBottom: spacing.xs,
+  },
+  dateButtonText: {
+    fontSize: 14,
+    color: colors.textPrimary,
+  },
+  datePlaceholder: {
+    color: colors.textMuted,
+  },
+  dateDone: {
+    alignSelf: 'flex-end',
+    marginBottom: spacing.md,
+    paddingVertical: spacing.xs,
+  },
+  dateDoneText: {
+    color: colors.sand,
+    fontWeight: '600',
+    fontSize: 14,
   },
   termsRow: {
     flexDirection: 'row',
@@ -424,7 +463,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   link: {
-    color: colors.honey,
+    color: colors.sand,
     fontWeight: '600',
     textDecorationLine: 'underline',
   },
@@ -438,11 +477,5 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginBottom: 0,
-  },
-  submitError: {
-    fontSize: 13,
-    color: colors.error,
-    textAlign: 'center',
-    marginBottom: spacing.sm,
   },
 });

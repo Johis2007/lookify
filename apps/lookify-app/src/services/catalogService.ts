@@ -23,8 +23,3 @@ let implementation: CatalogService = createMockCatalogService();
 export function getCatalogService(): CatalogService {
   return implementation;
 }
-
-/** Solo para tests o swap a implementación HTTP (ver initBackend). */
-export function setCatalogServiceForTesting(service: CatalogService): void {
-  implementation = service;
-}
