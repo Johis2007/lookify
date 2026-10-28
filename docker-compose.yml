@@ -52,10 +52,11 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Lookify123!}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8055}
       # CORS: sin esto el navegador (Expo web) bloquea fetch -> "Failed to fetch".
-      # DEV abierto (*) para aceptar ambas redes (casa/universidad) sin fricción.
-      # En prod: CORS_ORIGIN=http://192.168.1.8:8081,http://10.157.39.169:8081,<dominio>
+      # Lista explícita (nunca "*"): Expo web corre en 8081. Añade aquí los
+      # orígenes LAN/dominio que necesites separados por coma.
+      # En prod: CORS_ORIGIN=https://panel.lookify.app
       CORS_ENABLED: "true"
-      CORS_ORIGIN: "*"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8081,http://127.0.0.1:8081}
       CORS_METHODS: "GET,POST,PATCH,PUT,DELETE,OPTIONS"
       CORS_ALLOWED_HEADERS: "Content-Type,Authorization"
       CORS_EXPOSED_HEADERS: "Content-Range"

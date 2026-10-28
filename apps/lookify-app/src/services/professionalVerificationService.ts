@@ -42,3 +42,9 @@ let implementation: ProfessionalVerificationService =
 export function getProfessionalVerificationService(): ProfessionalVerificationService {
   return implementation;
 }
+
+export function setProfessionalVerificationServiceForTesting(
+  service: ProfessionalVerificationService,
+): void {
+  implementation = service;
+}

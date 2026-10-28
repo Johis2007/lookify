@@ -13,7 +13,8 @@ export type ResultadoRespuestaPro =
   | 'ACEPTADA'
   | 'RECHAZADA'
   | 'EXPIRADA'
-  | 'YA_ASIGNADA';
+  | 'YA_ASIGNADA'
+  | 'PENDIENTE';
 
 export type DesgloseSolicitudEntrante = {
   precioBaseCop: number;

@@ -16,12 +16,14 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing } from '../../theme/colors';
 import BackHeader from '../../components/BackHeader';
+import { confirmNative } from '../../components/ConfirmDialog';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
 import { resetAdminToLogin } from '../../navigation/adminNavigation';
-import { loadAdminSession } from '../../lib/backend/adminAuth';
+import { loadAdminSession, logoutAdmin } from '../../lib/backend/adminAuth';
 import {
   assetUrl,
   decideProfessional,
@@ -79,6 +81,13 @@ export default function AdminVerificationScreen({ navigation }: Props) {
 
   const selected = items.find((p) => p.id === selectedId) ?? items[0] ?? null;
 
+  const handleLogout = async () => {
+    const ok = await confirmNative('Cerrar sesión', '¿Salir del panel administrador?', 'Salir');
+    if (!ok) return;
+    await logoutAdmin();
+    resetAdminToLogin(navigation);
+  };
+
   useEffect(() => {
     let alive = true;
     const id = setTimeout(() => {
@@ -130,7 +139,22 @@ export default function AdminVerificationScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <BackHeader variant="dark" title="Validar profesionales" />
+        <BackHeader
+          variant="dark"
+          title="Validar profesionales"
+          rightSlot={
+            <Pressable
+              onPress={() => {
+                void handleLogout();
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Cerrar sesión"
+            >
+              <MaterialCommunityIcons name="logout" size={22} color={colors.white} />
+            </Pressable>
+          }
+        />
       </View>
       <View style={styles.body}>
         {/* flexGrow:0 evita que en web el ScrollView horizontal se estire a

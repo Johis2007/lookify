@@ -21,7 +21,7 @@ import BackHeader from '../../components/BackHeader';
 import { confirmNative } from '../../components/ConfirmDialog';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
 import { resetAdminToLogin } from '../../navigation/adminNavigation';
-import { clearAdminSession, loadAdminSession } from '../../lib/backend/adminAuth';
+import { clearAdminSession, loadAdminSession, logoutAdmin } from '../../lib/backend/adminAuth';
 import { fetchAdminStats, type AdminBooking, type AdminStats } from '../../lib/backend/admin';
 import { formatCOP } from '../../utils/pricing';
 
@@ -65,7 +65,7 @@ export default function AdminDashboardScreen({ navigation }: Props) {
   const handleLogout = async () => {
     const ok = await confirmNative('Cerrar sesión', '¿Salir del panel administrador?', 'Salir');
     if (!ok) return;
-    await clearAdminSession();
+    await logoutAdmin();
     resetAdminToLogin(navigation);
   };
 

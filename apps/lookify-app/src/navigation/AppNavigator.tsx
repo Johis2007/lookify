@@ -47,7 +47,16 @@ export type TrackingRouteParams = {
   precioServicio: number;
   precioDomicilio: number;
   precioTotal: number;
+  /** Reserva real del backend (si existe). */
+  bookingId?: string;
+  /** Ficha del profesional embebida en la reserva. */
+  profesional?: { nombre?: string; calificacion?: number };
+  servicioNombre?: string;
 };
+
+export type LiveRouteRouteParams =
+  | { latitude?: number; longitude?: number; nombre?: string }
+  | undefined;
 
 export type ServiceInProgressRouteParams = TrackingRouteParams;
 
@@ -67,6 +76,7 @@ export type RootStackParamList = {
   Tracking: TrackingRouteParams;
   ServiceInProgress: ServiceInProgressRouteParams;
   PaymentRating: PaymentRatingRouteParams;
+  LiveRoute: LiveRouteRouteParams;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

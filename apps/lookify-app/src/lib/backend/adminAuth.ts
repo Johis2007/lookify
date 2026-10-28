@@ -3,6 +3,7 @@
 // (verificado por nombre de rol: el rol App también lista usuarios).
 // Sesión propia en la bóveda, separada de cliente/profesional.
 
+import { Platform } from 'react-native';
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { api, loginDirectus, refreshAccessToken, revokeRefreshToken } from './directus';
@@ -19,13 +20,83 @@ export type AdminSession = {
 
 const KEY = 'lookify_admin_session_v1';
 
+// Web: sesión solo en memoria + sessionStorage (sin refresh token). Así cerrar
+// la pestaña cierra la sesión y no queda nada persistente 30 días.
+const IS_WEB = Platform.OS === 'web';
+const WEB_STORE_KEY = 'lookify_admin_session_web_v1';
+
+export const WEB_ADMIN_ONLY_MESSAGE =
+  'La versión web es solo para administradores. Usa la app móvil.';
+
 let memory: AdminSession | null = null;
+
+function webStorage(): Storage | null {
+  try {
+    if (typeof window === 'undefined' || !window.sessionStorage) return null;
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
+}
+
+function loadWebSession(): AdminSession | null {
+  const store = webStorage();
+  if (!store) return null;
+  try {
+    const raw = store.getItem(WEB_STORE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as AdminSession;
+    if (!parsed?.token || !parsed?.userId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveWebSession(s: AdminSession): void {
+  const store = webStorage();
+  if (!store) return;
+  try {
+    // El refresh token nunca sale de memoria.
+    const { refreshToken: _refreshToken, ...persisted } = s;
+    store.setItem(WEB_STORE_KEY, JSON.stringify(persisted));
+  } catch {
+    /* sin sessionStorage: la sesión vive solo en memoria */
+  }
+}
+
+function clearWebSession(): void {
+  const store = webStorage();
+  try {
+    store?.removeItem(WEB_STORE_KEY);
+  } catch {
+    /* noop */
+  }
+}
+
+/** Lee el claim admin_access del JWT (solo web). undefined si no se puede leer. */
+function adminAccessClaim(token: string): boolean | undefined {
+  try {
+    const part = token.split('.')[1];
+    if (!part || typeof atob !== 'function') return undefined;
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+    const payload = JSON.parse(atob(padded)) as { admin_access?: unknown };
+    return typeof payload.admin_access === 'boolean' ? payload.admin_access : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export async function saveAdminSession(s: AdminSession): Promise<void> {
   // Un solo login válido: revoca la sesión anterior si traía otro refresh.
-  const prev = memory ?? (await vaultLoad<AdminSession>('admin', KEY));
+  const prev = memory ?? (IS_WEB ? null : await vaultLoad<AdminSession>('admin', KEY));
   memory = s;
-  await vaultSave('admin', KEY, s);
+  if (IS_WEB) {
+    saveWebSession(s);
+  } else {
+    await vaultSave('admin', KEY, s);
+  }
   if (prev?.refreshToken && prev.refreshToken !== s.refreshToken) {
     await revokeRefreshToken(prev.refreshToken);
   }
@@ -33,13 +104,41 @@ export async function saveAdminSession(s: AdminSession): Promise<void> {
 
 export async function loadAdminSession(): Promise<AdminSession | null> {
   if (memory) return memory;
+  if (IS_WEB) {
+    memory = loadWebSession();
+    return memory;
+  }
   memory = await vaultLoad<AdminSession>('admin', KEY);
   return memory;
 }
 
 export async function clearAdminSession(): Promise<void> {
   memory = null;
+  if (IS_WEB) {
+    clearWebSession();
+    // Limpia restos de versiones anteriores (cookie/localStorage cifrados).
+    try {
+      await vaultClear('admin', KEY);
+    } catch {
+      /* noop */
+    }
+    return;
+  }
   await vaultClear('admin', KEY);
+}
+
+/** Logout explícito: revoca el refresh (si sigue en memoria) y borra la sesión. */
+export async function logoutAdmin(): Promise<void> {
+  const current = memory ?? (IS_WEB ? loadWebSession() : await vaultLoad<AdminSession>('admin', KEY).catch(() => null));
+  const refresh = current?.refreshToken;
+  await clearAdminSession();
+  if (refresh) {
+    try {
+      await revokeRefreshToken(refresh);
+    } catch {
+      /* sin red: la sesión local ya quedó cerrada */
+    }
+  }
 }
 
 /** ¿El token es de un administrador? (rol "Administrator" real). */
@@ -60,6 +159,11 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
   if (!cleanEmail || !password) throw new ServiceError('VALIDATION');
   try {
     const { accessToken, refreshToken } = await loginDirectus(cleanEmail, password);
+    // Puerta UX: si el claim existe y es false, ni siquiera se consulta el rol.
+    if (adminAccessClaim(accessToken) === false) {
+      if (refreshToken) await revokeRefreshToken(refreshToken);
+      throw new ServiceError('VALIDATION', 'Esta cuenta no es administradora.');
+    }
     // El rol App también lista usuarios: solo el rol Administrator entra.
     if (!(await isAdminToken(accessToken))) {
       // No deja sesión colgada: revoca el refresh recién emitido.
@@ -84,6 +188,8 @@ export async function loginAdmin(email: string, password: string): Promise<Admin
     return session;
   } catch (e) {
     if (!(e instanceof ServiceError) || e.code !== 'NETWORK') throw e;
+    // Web admin-only: sin reanudación offline.
+    if (IS_WEB) throw new ServiceError('NETWORK', 'Sin conexión con el backend.');
     const cached = (memory ?? (await vaultLoad<AdminSession>('admin', KEY).catch(() => null))) as AdminSession | null;
     if (cached && cached.email.trim().toLowerCase() === cleanEmail.toLowerCase()) {
       return { ...cached, email: cleanEmail, offline: true };

@@ -2,6 +2,13 @@
 // Paleta Lookify — Opción C (verde petróleo + arena).
 // Usa siempre estos tokens; no escribas hex/rgba sueltos en pantallas.
 
+import { Platform } from 'react-native';
+
+export const fontFamily = Platform.select({
+  web: "'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif",
+  default: undefined,
+});
+
 export const colors = {
   // Principal — cabeceras, fondos oscuros, botones primary, mapa (cliente)
   navy: '#1F4E5A',
@@ -35,6 +42,19 @@ export const colors = {
   // Estados (feedback; independientes de la paleta de marca)
   success: '#2E7D32',
   error: '#C62828',
+
+  // Superficies y roles Material usados por el panel admin (web) y acordeones.
+  surface: '#FBF6EE',
+  surfaceLow: '#F7F0E5',
+  surfaceHigh: '#EFE4D3',
+  surfaceContainer: '#F3EADB',
+  onSurface: '#1E1E1E',
+  onSurfaceVariant: '#6B6A66',
+  outline: '#B9B7AE',
+  secondary: '#2E6A77',
+  errorContainer: '#F9DEDC',
+  onErrorContainer: '#8C1D18',
+  onTertiaryContainer: '#4A3A16',
 };
 
 export const radius = {

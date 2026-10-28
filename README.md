@@ -74,11 +74,12 @@ inician sesión solos con esas credenciales si no defines `ADMIN_TOKEN`.
 | `DIRECTUS_TOKEN` | Token del servicio `bff-service` (registro + archivos); lo escribe `db:setup` |
 | `APP_ROLE_ID` | Rol App User para el registro del servidor; lo escribe `db:setup` en `.env` |
 | `DEMO_LAT` / `DEMO_LNG` | Centro de demo para `seed:demo`; sin valores el seed se niega |
+| `EXPO_PUBLIC_USE_BACKEND` | `true` activa Directus/BFF. Obligatorio para la web de admin; en móvil, sin la variable usa mocks |
 | `EXPO_PUBLIC_DIRECTUS_URL` / `EXPO_PUBLIC_SOCKET_URL` | URLs primaria que compila la app (se generan con `npm run env:lan`) |
 | `EXPO_PUBLIC_DIRECTUS_URLS` / `EXPO_PUBLIC_SOCKET_URLS` | Fallbacks multi-red (casa/universidad) que la app prueba en orden |
 | `EXPO_PUBLIC_GOOGLE_MAPS_KEY` | Key de Maps SDK (Android + iOS); vacía = mapa gris en el build nativo |
 | `REDIS_URL` / `DATABASE_URL` | Conexiones del realtime server en local |
-| `CORS_ORIGIN` | Orígenes permitidos por el realtime (`*` solo en DEV) |
+| `CORS_ORIGIN` | Orígenes permitidos por Directus y el BFF, separados por coma. Nunca `*`; Expo web usa `http://localhost:8081` |
 | `LOG_LEVEL` | Nivel de log del realtime (`debug`/`info`/`warn`/`error`) |
 | `PORT` | Puerto del realtime (por defecto 4001) |
 
@@ -90,6 +91,39 @@ sale con código `1` (no arranca en silencio).
 > **Seats de Directus:** la policy "Lookify App" se crea con `app_access: false`,
 > así que los usuarios de la app (cliente/pro) usan la API pero **no consumen
 > seat** ni pueden entrar al panel. Solo el admin ocupa licencia.
+
+## Web: solo panel administrador
+
+La build web de `apps/lookify-app` (`App.web.tsx` → `AppNavigator.web.tsx`) es
+exclusiva del rol **Administrator**. No incluye registro, elección de tipo de
+cuenta ni pantallas de cliente/profesional; esas cuentas deben usar la app móvil
+(la web muestra: "La versión web es solo para administradores. Usa la app móvil.").
+
+```powershell
+# Windows / PowerShell
+$env:EXPO_PUBLIC_USE_BACKEND='true'
+npm --workspace apps/lookify-app run web
+```
+
+```bash
+# macOS / Linux
+EXPO_PUBLIC_USE_BACKEND=true npm --workspace apps/lookify-app run web
+```
+
+Sin `EXPO_PUBLIC_USE_BACKEND=true` la web muestra un aviso claro y no permite
+entrar. El origen del navegador (`http://localhost:8081`) debe estar en
+`CORS_ORIGIN` (Directus y BFF); `*` ya no se usa.
+
+### Sesión del admin en web (límites honestos)
+
+- El **access token** se guarda en `sessionStorage`; el **refresh token** solo
+  en memoria. Cerrar la pestaña cierra la sesión y no queda nada válido 30 días.
+- Logout manual y **auto-logout a los 15 minutos** sin actividad.
+- `sessionCrypto.ts` (AES-GCM + PBKDF2 derivado de la huella del navegador) es
+  solo ofuscación local, **no es seguridad real**: el código y la clave viven en
+  el cliente. La autorización real está en Directus (`admin_access` + rol) y en
+  el BFF (guard de rol). El siguiente paso es una cookie `HttpOnly`/`Secure`
+  emitida por el backend en el mismo dominio; el cliente nunca vería el token.
 
 ### BFF de reservas (`/api/bookings`)
 

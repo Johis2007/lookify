@@ -91,7 +91,9 @@ const stats = {
 
 function corsOrigin(origin: string | undefined, cb: (err: Error | null, ok?: boolean) => void) {
   if (CORS_OPEN) return cb(null, true);
-  if (origin && CORS_LIST.includes(origin)) return cb(null, true);
+  // Sin Origin = app nativa/CLI (CORS no aplica). Los navegadores sí lo envían.
+  if (!origin) return cb(null, true);
+  if (CORS_LIST.includes(origin)) return cb(null, true);
   logWarn('cors blocked', { origin });
   return cb(new Error('CORS blocked'));
 }

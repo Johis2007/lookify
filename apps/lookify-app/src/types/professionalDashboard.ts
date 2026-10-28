@@ -20,6 +20,8 @@ export interface ServicioOfrecidoPanel {
 export interface FotoPerfilPanel {
   uri: string;
   mimeType: FotoPerfilMimePermitido;
+  /** Cabeceras para cargar la imagen protegida (token del BFF). */
+  headers?: Record<string, string>;
 }
 
 export interface PanelPrincipalResponse {

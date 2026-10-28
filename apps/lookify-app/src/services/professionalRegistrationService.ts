@@ -16,3 +16,9 @@ let implementation: ProfessionalRegistrationService = createMockProfessionalRegi
 export function getProfessionalRegistrationService(): ProfessionalRegistrationService {
   return implementation;
 }
+
+export function setProfessionalRegistrationServiceForTesting(
+  service: ProfessionalRegistrationService,
+): void {
+  implementation = service;
+}

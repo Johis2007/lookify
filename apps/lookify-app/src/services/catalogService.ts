@@ -23,3 +23,7 @@ let implementation: CatalogService = createMockCatalogService();
 export function getCatalogService(): CatalogService {
   return implementation;
 }
+
+export function setCatalogServiceForTesting(service: CatalogService): void {
+  implementation = service;
+}

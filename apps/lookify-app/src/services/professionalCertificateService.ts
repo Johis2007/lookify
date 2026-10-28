@@ -29,3 +29,9 @@ let implementation: ProfessionalCertificateService = createMockProfessionalCerti
 export function getProfessionalCertificateService(): ProfessionalCertificateService {
   return implementation;
 }
+
+export function setProfessionalCertificateServiceForTesting(
+  service: ProfessionalCertificateService,
+): void {
+  implementation = service;
+}
