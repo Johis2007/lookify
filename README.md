@@ -77,7 +77,7 @@ inician sesión solos con esas credenciales si no defines `ADMIN_TOKEN`.
 | `EXPO_PUBLIC_USE_BACKEND` | `true` activa Directus/BFF. Obligatorio para la web de admin; en móvil, sin la variable usa mocks |
 | `EXPO_PUBLIC_DIRECTUS_URL` / `EXPO_PUBLIC_SOCKET_URL` | URLs primaria que compila la app (se generan con `npm run env:lan`) |
 | `EXPO_PUBLIC_DIRECTUS_URLS` / `EXPO_PUBLIC_SOCKET_URLS` | Fallbacks multi-red (casa/universidad) que la app prueba en orden |
-| `EXPO_PUBLIC_GOOGLE_MAPS_KEY` | Key de Maps SDK (Android + iOS); vacía = mapa gris en el build nativo |
+| `EXPO_PUBLIC_GOOGLE_MAPS_KEY` | No la usa el mapa de la app: `LookifyMap` usa WebView + Leaflet sin key. Solo aplica si se vuelve a `react-native-maps` en un build propio |
 | `REDIS_URL` / `DATABASE_URL` | Conexiones del realtime server en local |
 | `CORS_ORIGIN` | Orígenes permitidos por Directus y el BFF, separados por coma. Nunca `*`; Expo web usa `http://localhost:8081` |
 | `LOG_LEVEL` | Nivel de log del realtime (`debug`/`info`/`warn`/`error`) |
@@ -222,5 +222,5 @@ Directus. El servicio `bff-service` solo tiene `create` en `directus_users`
 | `db:*` dice que Directus no responde | Espera al primer arranque (~1 min) o revisa `docker compose logs directus` |
 | `Correo o contraseña incorrectos` en login nuevo | El registro de la app usa `POST /api/auth/register` (BFF), no el registro público de Directus. |
 | `Cupo de usuarios lleno` (`LIMIT_EXCEEDED`) | Límite de seats de Directus: libera usuarios o usa una licencia mayor. |
-| Mapa gris en build nativo | Falta `EXPO_PUBLIC_GOOGLE_MAPS_KEY` (ver `.env.example`) |
+| Mapa vacío en Expo Go | No es falta de key: el mapa usa WebView + Leaflet. Revisa conectividad a los tiles Esri y que la app tenga `react-native-webview` |
 | La app no conecta en otra Wi-Fi | Corre `npm run env:lan` y reinicia Expo |

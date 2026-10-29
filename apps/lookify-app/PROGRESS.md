@@ -763,39 +763,20 @@ asumieron.
 
 ## 4. Pendientes técnicos
 
-### Mapa — tarea aparte (pendiente de definir)
+### Mapa en Expo Go — resuelto con WebView + Leaflet
 
-El mapa se ve en blanco en Expo Go Android. Hipótesis: la API key de Google
-embebida en Expo Go está vencida en SDK 57. Afecta **Inicio** y **Tracking**.
-Hay que definir cuál usar antes de la sustentación:
+El mapa ya no usa tiles de Google ni requiere `EXPO_PUBLIC_GOOGLE_MAPS_KEY` en
+Expo Go. `components/LookifyMap.native.tsx` dibuja Leaflet dentro de un
+`WebView` con tiles Esri; `LookifyMap.web.tsx` usa Leaflet por CDN. La API del
+componente es la misma (`initial`, `pins`, `trail`, `route`, `follow`,
+`onProPress`), por lo que Inicio y Tracking no cambian.
 
-1. Development build con key propia de Google Maps.
-2. Apple Maps en iPhone.
-3. Tiles de OpenStreetMap / MapLibre.
-
-El detalle ya registrado sigue abajo; la opción no está cerrada.
-
-### El mapa se ve vacío en Expo Go (Android)
-El mapa dibuja su fondo y el logo de Google, pero los tiles nunca cargan y los
-pines no aparecen. **No es un problema del código ni de conectividad.** La causa
-es que la API key de Google Maps que Expo Go trae embebida para Android en
-SDK 57 está vencida, y una app no puede sobreescribirla desde su propio
-`app.json` porque Expo Go usa la suya.
-
-**¿Renovar una key propia “gratis” arregla Expo Go?** No. Aunque en Google Cloud
-se cree una API key con crédito mensual (Maps exige cuenta de facturación
-habilitada en el proyecto, aunque el uso quede dentro del free tier), esa key **no
-sustituye** la embebida en el binario de Expo Go. Solo aplica en un binario propio.
-
-La solución para tiles de Google es un **development build** con API key propia:
-habilitar *Maps SDK for Android*, poner la key en
-`plugins.react-native-maps.androidGoogleMapsApiKey` y compilar con
-`npx expo run:android`. Recargar no basta: hay que recompilar el binario.
-
-**Alternativa solo para demo en Expo Go (opcional, no implementada):** capa
-`UrlTile` con tiles OpenStreetMap encima de `MapView` + `PROVIDER_DEFAULT`, sin
-migrar a MapLibre. Seguimiento (pantalla 8) sigue el mismo criterio que Inicio
-hasta que exista development build.
+- No hace falta development build ni API key para el mapa.
+- `react-native-maps` sigue en el proyecto para otras pantallas, pero el mapa
+  principal de cliente/profesional se resuelve por plataforma con `LookifyMap`.
+- Evidencia: comentarios de cabecera de `LookifyMap.native.tsx`, uso de
+  `LookifyMap` en `HomeScreen` y `TrackingView`, y reexport de `TrackingView`
+  desde `TrackingScreen.tsx`.
 
 ### Emulador de Android Studio
 El emulador va muy lento en el equipo de desarrollo y no resultó usable. La vía
@@ -818,12 +799,11 @@ manualmente con el comando de arriba apuntando a `127.0.0.1`.
 `npx expo start --tunnel` **no funciona** en este equipo: ngrok no llegó a
 levantar y el proceso se queda en `Starting Metro Bundler`.
 
-### La web no soporta el mapa
-`react-native-maps` no tiene soporte para `react-native-web`. En el navegador la
-pantalla de Inicio falla con
-`codegenNativeComponent is not a function`. Las pantallas sin mapa sí funcionan
-en web. Si se necesita probar Inicio en navegador, habría que crear un
-`HomeScreen.web.tsx` con un placeholder.
+### La web sí soporta el mapa
+`LookifyMap.web.tsx` usa Leaflet por CDN y `HomeScreen.web.tsx` importa ese
+componente, así que Inicio no monta `react-native-maps` en el navegador y no
+aparece `codegenNativeComponent is not a function`. El mapa es solo de lectura:
+dibuja pines, ruta y estela, pero no captura gestos nativos de Maps.
 
 ### Navegación
 - Pantalla 5 → `Matching` con params completos. Matching → `replace('ProfessionalOffer', …)`.

@@ -354,3 +354,13 @@ for (const [collection, action] of REVOKE) {
   console.log(`APP_ROLE_ID=${roleId} -> .env raiz`);
 }
 console.log('PERMISSIONS OK (modelo seguro)');
+
+// QA-2: Cerrar registro público de Directus (idempotente)
+{
+  const patch = await api('PATCH', '/settings', { public_registration: false, public_registration_role: null });
+  if (patch.status !== 200) {
+    console.log('Aviso: no se pudo desactivar public_registration:', patch.status);
+  } else {
+    console.log('settings: public_registration=false');
+  }
+}

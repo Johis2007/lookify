@@ -18,6 +18,7 @@ import { colors, radius, spacing, typography } from '../../theme/colors';
 import Button from '../../components/Button';
 import StarRating from '../../components/StarRating';
 import BackHeader from '../../components/BackHeader';
+import { BACKEND } from '../../lib/backend/config';
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import { resetProfessionalSession } from '../../navigation/professionalNavigation';
 import { getProfessionalIncomingRequestService } from '../../services/professionalIncomingRequestService';
@@ -60,7 +61,7 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [errorAccion, setErrorAccion] = useState<string | null>(null);
-  const [tickNow, setTickNow] = useState(Date.now());
+  const [tickNow, setTickNow] = useState(() => Date.now());
 
   const cargar = useCallback(async () => {
     if (!params.profesionalId || !params.solicitudEntranteId) {
@@ -80,9 +81,25 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
   }, [navigation, params.profesionalId, params.solicitudEntranteId]);
 
   useEffect(() => {
-    setLoading(true);
-    cargar().finally(() => setLoading(false));
+    const id = setTimeout(() => {
+      cargar().finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(id);
   }, [cargar]);
+
+  const irAlServicio = useCallback(() => {
+    permitirSalida.current = true;
+    navigation.replace('ProfessionalServiceInProgressPlaceholder', {
+      profesionalId: params.profesionalId,
+      solicitudId: params.solicitudId,
+      nombre: params.nombre,
+      email: params.email,
+      estadoSolicitud: params.estadoSolicitud,
+      onboardingPaso: params.onboardingPaso,
+      servicioIds: params.servicioIds,
+      solicitudEntranteId: params.solicitudEntranteId,
+    });
+  }, [navigation, params]);
 
   useEffect(() => {
     if (!params.profesionalId) {
@@ -95,21 +112,11 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
       }
       setSolicitud({ ...ev.solicitud });
       if (ev.solicitud.estado === 'LISTA_PARA_SERVICIO') {
-        permitirSalida.current = true;
-        navigation.replace('ProfessionalServiceInProgressPlaceholder', {
-          profesionalId: params.profesionalId,
-          solicitudId: params.solicitudId,
-          nombre: params.nombre,
-          email: params.email,
-          estadoSolicitud: params.estadoSolicitud,
-          onboardingPaso: params.onboardingPaso,
-          servicioIds: params.servicioIds,
-          solicitudEntranteId: params.solicitudEntranteId,
-        });
+        irAlServicio();
       }
     });
     return unsub;
-  }, [navigation, params]);
+  }, [navigation, params, irAlServicio]);
 
   useEffect(() => {
     const onAppState = (next: AppStateStatus) => {
@@ -127,6 +134,7 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
     }
     const id = setInterval(() => setTickNow(Date.now()), 1000);
     return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [solicitud?.estado, solicitud?.id]);
 
   useEffect(() => {
@@ -241,6 +249,10 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
       });
       if (res.solicitud) {
         setSolicitud(res.solicitud);
+        if (res.solicitud.estado === 'LISTA_PARA_SERVICIO') {
+          irAlServicio();
+          return;
+        }
       }
       if (res.resultado === 'EXPIRADA') {
         expiracionEnviada.current = true;
@@ -433,7 +445,8 @@ export default function ProfessionalIncomingRequestScreen({ navigation, route }:
             </>
           ) : null}
 
-          {__DEV__ && esEsperaCliente ? (
+          {/* DEMO solo en mocks: en backend no hay actor cliente simulado. */}
+          {__DEV__ && !BACKEND.enabled && esEsperaCliente ? (
             <View style={styles.demoBlock}>
               <Text style={styles.demoTitle}>DEMO — respuesta del cliente</Text>
               <Button label="Cliente acepta" onPress={demoClienteAcepta} variant="outline" />
