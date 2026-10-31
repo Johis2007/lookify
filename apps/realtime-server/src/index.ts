@@ -2,24 +2,13 @@ import { config as loadEnv } from 'dotenv';
 import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createServer, type IncomingMessage } from 'http';
-import express from 'express';
+import { createServer } from 'http';
 import { Server } from 'socket.io';
 import Redis from 'ioredis';
 import pg from 'pg';
 import pino from 'pino';
-import {
-  AuthError,
-  verifyAccessToken,
-  type AuthedUser,
-} from './auth.js';
-import { createBookingsRouter } from './api/bookings.js';
-import { createClientsRouter } from './api/clients.js';
-import { createFilesRouter } from './api/files.js';
-import { createProfessionalsRouter } from './api/professionals.js';
-import { createRegisterRouter } from './api/register.js';
-import { createUsersRouter } from './api/users.js';
-import { errorHandler } from './api/http.js';
+import { createBffApp, type BffStats } from './app.js';
+import { createSocketAuthGuard } from './api/roleGuard.js';
 import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
 import { registerSocketHandlers, isValidLatLng } from './socket.js';
 
@@ -71,7 +60,7 @@ const REQUIRED_ENV: { key: string; hint: string }[] = [
 const DIRECTUS_SECRET = process.env.DIRECTUS_SECRET as string;
 
 // Métricas en memoria (Fase 6: visibles en /health).
-const stats = {
+const stats: BffStats = {
   startedAt: Date.now(),
   connectionsTotal: 0,
   connectionsCurrent: 0,
@@ -98,95 +87,25 @@ function corsOrigin(origin: string | undefined, cb: (err: Error | null, ok?: boo
   return cb(new Error('CORS blocked'));
 }
 
-function httpBearer(req: IncomingMessage): AuthedUser | null {
-  // Fase 7: /realtime/* exige Bearer <access token de Directus>.
-  const h = req.headers.authorization || '';
-  const m = /^Bearer (.+)$/.exec(h.trim());
-  if (!m) return null;
-  try {
-    return verifyAccessToken(m[1], DIRECTUS_SECRET);
-  } catch {
-    return null;
-  }
-}
+const redis = new Redis(REDIS_URL);
+const pool = new pg.Pool({ connectionString: DATABASE_URL });
 
 // BFF HTTP montado sobre el mismo servidor (Paso 2B): además de /health y
-// /realtime/nearby, expone /api/bookings/* con Express. Socket.io se engancha
-// al mismo httpServer, así que la app solo necesita un host:puerto.
-const app = express();
-app.set('trust proxy', true);
-app.use(express.json({ limit: '64kb' }));
-app.locals.directusSecret = DIRECTUS_SECRET;
-
-app.get('/health', (_req, res) => {
-  // Health con checks reales (Fase 5): redis + postgres.
-  (async () => {
-    let redisOk = false;
-    let pgOk = false;
-    try {
-      const pong = await redis.ping();
-      redisOk = pong === 'PONG';
-    } catch { redisOk = false; }
-    try {
-      await pool.query('SELECT 1');
-      pgOk = true;
-    } catch { pgOk = false; }
-    const ok = redisOk && pgOk;
-    res.status(ok ? 200 : 503).json({
-      status: ok ? 'ok' : 'degraded',
-      redis: redisOk ? 'up' : 'down',
-      postgres: pgOk ? 'up' : 'down',
-      uptime_s: Math.floor((Date.now() - stats.startedAt) / 1000),
-      cors: CORS_OPEN ? 'open-dev' : 'restricted',
-      stats,
-    });
-  })();
-});
-
-app.get('/realtime/nearby', (req, res) => {
-  // Fase 3/5: query geo centralizada (PostGIS, anti-saturación con limit).
-  // Fase 6: mide latencia p95 (ver scripts/load-test.mjs).
-  // Fase 7: requiere Bearer (mismo JWT que el socket).
-  const fakeReq = { headers: req.headers } as IncomingMessage;
-  if (!httpBearer(fakeReq)) {
-    stats.nearbyErrors += 1;
-    res.status(401).json({ error: 'unauthorized' });
-    return;
-  }
-  const t0 = Date.now();
-  (async () => {
-    try {
-      const lat = Number(req.query.lat);
-      const lng = Number(req.query.lng);
-      const radiusM = Math.min(Math.max(Number(req.query.radius) || 5000, 100), 20000);
-      const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
-      if (!isValidLatLng(lat, lng)) {
-        stats.nearbyErrors += 1;
-        res.status(400).json({ error: 'lat/lng inválidos' });
-        return;
-      }
-      const { rows } = await pool.query(
-        `SELECT pl.professional_id,
-                ST_Y(pl.geom::geometry) AS lat, ST_X(pl.geom::geometry) AS lng,
-                pl.updated_at, bp.display_name, bp.rating_avg, bp.is_online
-         FROM professional_locations pl
-         JOIN beauty_professionals bp ON bp.id = pl.professional_id
-         WHERE bp.is_online = true
-           AND bp.verification_status = 'verified'
-           AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
-         ORDER BY pl.geom::geography <-> ST_SetSRID(ST_MakePoint($2,$1),4326)::geography
-         LIMIT $4`,
-        [lat, lng, radiusM, limit]
-      );
-      stats.nearbyQueries += 1;
-      res.setHeader('Server-Timing', `db;dur=${Date.now() - t0}`);
-      res.json({ data: rows });
-    } catch (e) {
-      stats.nearbyErrors += 1;
-      logErr('nearby error', { err: String(e) });
-      res.status(500).json({ error: 'nearby failed' });
-    }
-  })();
+// /realtime/nearby, expone /api/* con Express. Socket.io se engancha al mismo
+// httpServer, así que la app solo necesita un host:puerto.
+const ioRef: { current: Server | null } = { current: null };
+const { app, rolePolicy } = createBffApp({
+  pool,
+  redis,
+  stats,
+  directusSecret: DIRECTUS_SECRET,
+  appRoleId: process.env.APP_ROLE_ID,
+  corsOpen: CORS_OPEN,
+  logErr,
+  getIo: () => {
+    if (!ioRef.current) throw new Error('socket.io aún no inicializado');
+    return ioRef.current;
+  },
 });
 
 const httpServer = createServer(app);
@@ -198,84 +117,27 @@ const io = new Server(httpServer, {
   pingTimeout: 20000,
   pingInterval: 25000,
 });
-const redis = new Redis(REDIS_URL);
-const pool = new pg.Pool({ connectionString: DATABASE_URL });
-
-// Fase 7: handshake autenticado. Sin JWT válido no hay conexión.
-// El cliente recibe connect_error con message = código ('UNAUTHORIZED' o
-// 'TOKEN_EXPIRED'); el detalle queda en el log del servidor.
-io.use((socket, next) => {
-  const token = (socket.handshake.auth as { token?: unknown } | undefined)?.token;
-  if (typeof token !== 'string' || !token) {
-    stats.authRejected += 1;
-    return next(new Error('UNAUTHORIZED'));
-  }
-  try {
-    socket.data.user = verifyAccessToken(token, DIRECTUS_SECRET);
-    next();
-  } catch (e) {
-    stats.authRejected += 1;
-    const code = e instanceof AuthError ? e.code : 'UNAUTHORIZED';
-    logWarn('handshake rechazado', { code });
-    next(new Error(code));
-  }
-});
+ioRef.current = io;
 
 redis.on('error', (e) => logErr('redis error', { err: e?.message || String(e) }));
 pool.on('error', (e) => logErr('pg pool error', { err: e?.message || String(e) }));
 
+// Fase 7 + QA-2.3: handshake autenticado y con rol. Sin JWT válido no hay
+// conexión; con JWT de un rol distinto al App User tampoco (salvo admin).
+const socketAuth = createSocketAuthGuard({
+  directusSecret: DIRECTUS_SECRET,
+  policy: rolePolicy,
+  onReject: (code, err) => {
+    stats.authRejected += 1;
+    logWarn('handshake rechazado', { code, err: err?.message });
+  },
+});
+io.use((socket, next) => {
+  void socketAuth(socket, (err) => next(err));
+});
+
 // Handlers de Socket.io (identidad ya verificada por io.use).
 registerSocketHandlers(io, { pool, redis, stats, log, logWarn, logErr });
-
-// BFF de reservas (Paso 2B). Los eventos socket se emiten SOLO tras confirmar
-// la transacción en la base, nunca antes.
-app.use(
-  '/api/bookings',
-  createBookingsRouter({
-    pool,
-    emitNew: (bookingId, professionalId, clientId) => {
-      const payload: Record<string, unknown> = { booking_id: String(bookingId), client_id: clientId };
-      if (professionalId !== null && professionalId !== undefined) {
-        payload.professional_id = String(professionalId);
-        io.to(`prof:${professionalId}`).emit('booking:new', payload);
-      }
-      io.to('admins').emit('booking:new', payload);
-    },
-    emitStatus: (bookingId, status) => {
-      io.to(`booking:${bookingId}`).emit('booking:status', { booking_id: String(bookingId), status });
-    },
-    emitOffer: (bookingId, professionalId, clientId) => {
-      io.to(`prof:${professionalId}`).emit('booking:new', {
-        booking_id: String(bookingId),
-        client_id: clientId,
-        offer: true,
-      });
-    },
-    emitTaken: (bookingId, professionalId) => {
-      io.to(`prof:${professionalId}`).emit('booking:taken', { booking_id: String(bookingId) });
-    },
-    emitExpired: (bookingId) => {
-      io.to(`booking:${bookingId}`).emit('booking:status', {
-        booking_id: String(bookingId),
-        status: 'expired',
-      });
-    },
-    // 4C-2: última posición en Redis para el polling + aviso de llegada.
-    redis,
-    emitEvent: (bookingId, event) => {
-      io.to(`booking:${bookingId}`).emit('booking:event', {
-        booking_id: String(bookingId),
-        ...event,
-      });
-    },
-  }),
-);
-app.use('/api/auth', createRegisterRouter());
-app.use('/api/clients', createClientsRouter(pool));
-app.use('/api/professionals', createProfessionalsRouter(pool));
-app.use('/api/files', createFilesRouter(pool));
-app.use('/api/users', createUsersRouter(pool));
-app.use(errorHandler);
 
 // Batch cada 10s: Redis -> PostGIS (evita 1 write por ping).
 setInterval(async () => {
