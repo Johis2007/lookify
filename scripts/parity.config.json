@@ -1,0 +1,365 @@
+{
+  "version": 1,
+  "description": "Contratos de paridad del flujo cliente/profesional. Cada entrada fija la logica real o el mock declarado que debe seguir presente en la app.",
+  "entrypoints": [
+    {
+      "id": "native-bootstrap",
+      "file": "apps/lookify-app/App.tsx",
+      "logic": "El arranque nativo debe registrar los servicios reales cuando EXPO_PUBLIC_USE_BACKEND=true.",
+      "mustContain": [
+        "import { initBackend, isBackendEnabled } from './src/services/backend/initBackend';",
+        "if (isBackendEnabled()) initBackend();"
+      ]
+    },
+    {
+      "id": "web-bootstrap",
+      "file": "apps/lookify-app/App.web.tsx",
+      "logic": "El arranque web debe llamar a initBackend y resolver la variante initBackend.web.ts (panel admin).",
+      "mustContain": [
+        "from './src/services/backend/initBackend'",
+        "initBackend();"
+      ]
+    },
+    {
+      "id": "web-backend-variant",
+      "file": "apps/lookify-app/src/services/backend/initBackend.web.ts",
+      "logic": "La variante web no registra servicios de cliente/profesional; el admin usa Directus/BFF directo.",
+      "mustContain": [
+        "export function initBackend(): void",
+        "solo admin"
+      ]
+    }
+  ],
+  "screens": [
+    {
+      "id": "client-login",
+      "file": "apps/lookify-app/src/screens/LoginScreen.tsx",
+      "mode": "real",
+      "logic": "Login unico: reanuda sesion y decide vista por rol (cliente, profesional, admin).",
+      "mustContain": [
+        "resumeSession()",
+        "loginUniversal(",
+        "proRouteOf("
+      ]
+    },
+    {
+      "id": "client-register",
+      "file": "apps/lookify-app/src/screens/RegisterClientScreen.tsx",
+      "mode": "real",
+      "logic": "Registro de cliente via BFF /api/auth/register y fallback mock solo con backend apagado.",
+      "mustContain": [
+        "registerClient({",
+        "isBackendEnabled()"
+      ]
+    },
+    {
+      "id": "client-home-nearby",
+      "file": "apps/lookify-app/src/screens/HomeScreen.tsx",
+      "mode": "real",
+      "logic": "Home consulta profesionales cercanos reales por zona y cae a mock solo sin backend.",
+      "mustContain": [
+        "getNearbyService()",
+        ".listarCercanos(",
+        "usandoBackend"
+      ]
+    },
+    {
+      "id": "client-catalog-booking",
+      "file": "apps/lookify-app/src/screens/ServiceSelectionScreen.tsx",
+      "mode": "real",
+      "logic": "Seleccion de servicio: catalogo real y creacion de reserva antes de entrar al matching.",
+      "mustContain": [
+        "getCatalogService()",
+        ".listarServiciosPorCategoria()",
+        "getBookingService().crearReserva("
+      ]
+    },
+    {
+      "id": "client-matching",
+      "file": "apps/lookify-app/src/screens/MatchingScreen.tsx",
+      "mode": "real",
+      "logic": "Matching real: polling de reserva, sala socket, reintento y cancelacion.",
+      "mustContain": [
+        "getBookingService().obtenerReserva(",
+        "getBookingService().crearReserva(",
+        "getBookingService().cancelarReserva(",
+        "joinClientBookingRoom(",
+        "onBookingStatus("
+      ]
+    },
+    {
+      "id": "client-offer-retry",
+      "file": "apps/lookify-app/src/screens/ProfessionalOfferScreen.tsx",
+      "mode": "real",
+      "logic": "Rechazo de oferta cancela la reserva anterior y crea una nueva busqueda.",
+      "mustContain": [
+        "getBookingService().cancelarReserva(",
+        "getBookingService().crearReserva("
+      ]
+    },
+    {
+      "id": "client-tracking",
+      "file": "apps/lookify-app/src/components/TrackingView.tsx",
+      "mode": "real",
+      "logic": "Tracking real por polling + socket; ubicacion, eventos y estado de la reserva.",
+      "mustContain": [
+        "getBookingService().obtenerTracking(",
+        "joinClientBookingRoom(",
+        "onBookingLocation(",
+        "onBookingEvent(",
+        "onBookingStatus("
+      ]
+    },
+    {
+      "id": "client-service-pin",
+      "file": "apps/lookify-app/src/screens/ServiceInProgressScreen.tsx",
+      "mode": "mock",
+      "logic": "PIN de servicio aun es mock local; la validacion server-side esta pendiente (no se declara real).",
+      "mustContain": [
+        "generarPinServicioMock(",
+        "pinAccessibilityLabel("
+      ]
+    },
+    {
+      "id": "client-payment-rating",
+      "file": "apps/lookify-app/src/screens/PaymentRatingScreen.tsx",
+      "mode": "mock",
+      "logic": "Pago y calificacion simulados; no hay pasarela integrada todavia.",
+      "mustContain": [
+        "mockEnviarCalificacion(",
+        "Pago simulado"
+      ]
+    },
+    {
+      "id": "pro-login",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalLoginScreen.tsx",
+      "mode": "real",
+      "logic": "Login profesional contra el servicio real cuando el backend esta activo.",
+      "mustContain": [
+        "getProfessionalAuthService().iniciarSesion("
+      ]
+    },
+    {
+      "id": "pro-services",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalServiceSelectionScreen.tsx",
+      "mode": "real",
+      "logic": "Seleccion de servicios del profesional: catalogo real + guardado en BFF.",
+      "mustContain": [
+        "getCatalogService()",
+        "getProfessionalRegistrationService().guardarServicios("
+      ]
+    },
+    {
+      "id": "pro-certificates",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalCertificateUploadScreen.tsx",
+      "mode": "real",
+      "logic": "Certificados reales: alta/baja, aviso de correccion y envio a verificacion.",
+      "mustContain": [
+        "getProfessionalCertificateService()",
+        ".agregarCertificado(",
+        ".eliminarCertificado(",
+        ".enviarSolicitudVerificacion(",
+        "getProfessionalVerificationService()"
+      ]
+    },
+    {
+      "id": "pro-verification",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalVerificationScreen.tsx",
+      "mode": "real",
+      "logic": "Estado de verificacion y activacion: consulta, reenvio y validacion de codigo.",
+      "mustContain": [
+        "getProfessionalVerificationService()",
+        ".obtenerEstadoVerificacion(",
+        ".reenviarCodigoActivacion(",
+        ".validarCodigoActivacion("
+      ]
+    },
+    {
+      "id": "pro-dashboard",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalDashboardScreen.tsx",
+      "mode": "real",
+      "logic": "Panel: resumen, disponibilidad, foto, solicitud activa y servicio activo reales.",
+      "mustContain": [
+        "getProfessionalDashboardService()",
+        ".obtenerPanelPrincipal(",
+        ".cambiarDisponibilidad(",
+        "getProfessionalIncomingRequestService()",
+        "getProfessionalServiceInProgressService()"
+      ]
+    },
+    {
+      "id": "pro-incoming-request",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalIncomingRequestScreen.tsx",
+      "mode": "real",
+      "logic": "Solicitud entrante: aceptar, rechazar y expirar contra el BFF.",
+      "mustContain": [
+        ".obtenerSolicitud(",
+        ".aceptarSolicitud(",
+        ".rechazarSolicitud(",
+        ".procesarExpiracion("
+      ]
+    },
+    {
+      "id": "pro-service-in-progress",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalServiceInProgressScreen.tsx",
+      "mode": "real",
+      "logic": "Servicio en curso del pro: llegada, PIN, cancelacion, finalizacion y GPS.",
+      "mustContain": [
+        ".marcarLlegada(",
+        ".validarPin(",
+        ".cancelarPorProfesional(",
+        ".finalizarServicio(",
+        "emitBookingLocation("
+      ]
+    },
+    {
+      "id": "pro-earnings",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalEarningsHistoryScreen.tsx",
+      "mode": "real",
+      "logic": "Historial de ingresos con resumen e items reales del BFF.",
+      "mustContain": [
+        "getProfessionalEarningsHistoryService()",
+        ".obtenerResumenPeriodo(",
+        ".listarHistorial("
+      ]
+    },
+    {
+      "id": "pro-portfolio",
+      "file": "apps/lookify-app/src/screens/professional/ProfessionalPortfolioScreen.tsx",
+      "mode": "mock",
+      "logic": "Portafolio sigue en mock: no existe tabla Directus para sus items.",
+      "mustContain": [
+        "getProfessionalPortfolioService()",
+        ".agregarFoto(",
+        ".moverItem("
+      ]
+    }
+  ],
+  "services": [
+    {
+      "id": "client-auth",
+      "file": "apps/lookify-app/src/lib/backend/clientAuth.ts",
+      "mode": "real",
+      "logic": "Sesion y registro de cliente contra Directus/BFF.",
+      "mustContain": [
+        "export async function loginClient(",
+        "export async function registerClient(",
+        "'/api/auth/register'"
+      ]
+    },
+    {
+      "id": "unified-auth",
+      "file": "apps/lookify-app/src/lib/backend/unifiedAuth.ts",
+      "mode": "real",
+      "logic": "Login unico y reanudacion de sesion por rol.",
+      "mustContain": [
+        "export async function loginUniversal(",
+        "export async function resumeSession(",
+        "export function proRouteOf("
+      ]
+    },
+    {
+      "id": "booking-contract",
+      "file": "apps/lookify-app/src/services/bookingService.ts",
+      "mode": "real",
+      "logic": "Contrato del cliente con crear/consultar/cancelar reserva y obtener tracking.",
+      "mustContain": [
+        "crearReserva(",
+        "obtenerReserva(",
+        "cancelarReserva(",
+        "obtenerTracking("
+      ]
+    },
+    {
+      "id": "booking-backend",
+      "file": "apps/lookify-app/src/services/backend/backendBookingService.ts",
+      "mode": "real",
+      "logic": "Implementacion BFF: POST /api/bookings, GET /api/bookings/:id y /tracking.",
+      "mustContain": [
+        "'/api/bookings'",
+        "`/api/bookings/${encodeURIComponent(bookingId)}`",
+        "`/api/bookings/${encodeURIComponent(bookingId)}/tracking`"
+      ]
+    },
+    {
+      "id": "nearby-contract",
+      "file": "apps/lookify-app/src/services/nearbyService.ts",
+      "mode": "real",
+      "logic": "Contrato de profesionales cercanos con swap a implementacion real.",
+      "mustContain": [
+        "listarCercanos(",
+        "createMockNearbyService()",
+        "setNearbyServiceForTesting("
+      ]
+    },
+    {
+      "id": "nearby-backend",
+      "file": "apps/lookify-app/src/services/backend/backendNearbyService.ts",
+      "mode": "real",
+      "logic": "Nearby real: GET /realtime/nearby con Bearer del cliente.",
+      "mustContain": [
+        "/realtime/nearby",
+        "Authorization",
+        "listarCercanos("
+      ]
+    },
+    {
+      "id": "catalog-backend",
+      "file": "apps/lookify-app/src/services/backend/backendCatalogService.ts",
+      "mode": "real",
+      "logic": "Catalogo real desde Directus y mapeo a categorias de la app.",
+      "mustContain": [
+        "listarServiciosPorCategoria(",
+        "service_categories",
+        "beauty_services"
+      ]
+    },
+    {
+      "id": "realtime-client",
+      "file": "apps/lookify-app/src/lib/backend/realtime.ts",
+      "mode": "real",
+      "logic": "Socket del cliente: sala de reserva, estado, ubicacion y eventos de llegada.",
+      "mustContain": [
+        "export function joinClientBookingRoom(",
+        "export function onBookingStatus(",
+        "export function onBookingLocation(",
+        "export function onBookingEvent("
+      ]
+    },
+    {
+      "id": "realtime-pro",
+      "file": "apps/lookify-app/src/lib/backend/realtime.ts",
+      "mode": "real",
+      "logic": "Socket del profesional: sala de reserva, estado y emision de GPS.",
+      "mustContain": [
+        "export function joinBookingRoom(",
+        "export function emitBookingStatus(",
+        "export function emitBookingLocation(",
+        "export function onBookingNew("
+      ]
+    },
+    {
+      "id": "init-backend-client",
+      "file": "apps/lookify-app/src/services/backend/initBackend.ts",
+      "mode": "real",
+      "logic": "El arranque reemplaza los mocks del cliente por implementaciones BFF.",
+      "mustContain": [
+        "setBookingServiceForTesting(createBackendBookingService())",
+        "setNearbyServiceForTesting(createBackendNearbyService())",
+        "setCatalogServiceForTesting(createBackendCatalogService())"
+      ]
+    },
+    {
+      "id": "init-backend-pro",
+      "file": "apps/lookify-app/src/services/backend/initBackend.ts",
+      "mode": "real",
+      "logic": "El arranque reemplaza los mocks del profesional por implementaciones BFF.",
+      "mustContain": [
+        "setProfessionalAuthServiceForTesting(createBackendProfessionalAuthService())",
+        "setProfessionalRegistrationServiceForTesting(createBackendProfessionalRegistrationService())",
+        "setProfessionalVerificationServiceForTesting(createBackendProfessionalVerificationService())",
+        "setProfessionalServiceInProgressServiceForTesting(createBackendProfessionalServiceInProgressService())"
+      ]
+    }
+  ]
+}
