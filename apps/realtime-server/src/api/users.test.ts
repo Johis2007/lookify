@@ -37,9 +37,11 @@ before(async () => {
   if (!DATABASE_URL || !SECRET) return;
   pool = new pg.Pool({ connectionString: DATABASE_URL });
   const u = await pool.query<{ id: string; phone: string | null }>(
-    `SELECT id, phone FROM directus_users WHERE email = 'cliente.prueba@lookify.app'`,
+    `INSERT INTO directus_users (id, email, first_name)
+     VALUES (gen_random_uuid(), $1, 'Usuario Prueba')
+     RETURNING id, phone`,
+    [`user.me-${Date.now()}@lookify.app`],
   );
-  if (!u.rows[0]) throw new Error('falta cliente.prueba');
   userId = u.rows[0].id;
   originalPhone = u.rows[0].phone;
 
@@ -58,6 +60,7 @@ before(async () => {
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
   await pool.query('UPDATE directus_users SET phone = $2 WHERE id = $1', [userId, originalPhone]);
+  await pool.query('DELETE FROM directus_users WHERE id = $1', [userId]);
   await pool.end();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });

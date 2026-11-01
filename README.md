@@ -19,7 +19,7 @@ Directus sobre PostgreSQL + PostGIS y Redis, todo orquestado con Docker Compose.
 - Docker + Docker Compose
 - Git
 
-## Levantar en otro entorno (desde cero)
+## Instalación desde cero (otro entorno)
 
 ```bash
 # 1. Clonar e instalar
@@ -57,6 +57,47 @@ npm run dev:realtime          # servidor Socket.IO :4001 (otra terminal)
 npm run env:lan               # fija las IPs LAN en apps/lookify-app/.env
 npm run dev:app               # Expo: web + QR para móvil
 ```
+
+`db:setup` escribe/rota `APP_ROLE_ID` y `DIRECTUS_TOKEN` en `.env`. Si usas el
+servicio `realtime-server` de Docker (en vez de `npm run dev:realtime`), recréalo
+después para que tome los valores nuevos:
+
+```bash
+docker compose up -d --build realtime-server
+```
+
+### Verificación de la instalación
+
+Con el BFF arriba, estas comprobaciones deben dar exactamente:
+
+```bash
+# Salud del BFF (Postgres + Redis)
+curl -s -o /dev/null -w '%{http_code}\n' http://localhost:4001/health
+# -> 200
+
+# Registro público de Directus CERRADO (lo apaga db:setup)
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8055/users/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa-directus@lookify.app","password":"FreshPass123!"}'
+# -> 403
+
+# Registro por el BFF ABIERTO y con rol App User asignado por el servidor
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:4001/api/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"qa-bff@lookify.app","password":"FreshPass123!","firstName":"QA"}'
+# -> 201
+
+# Suite de integración: crea y limpia sus propios fixtures
+npm --workspace apps/realtime-server test
+# -> 105 tests, 0 fail, 0 skipped
+```
+
+Usa emails distintos si repites la verificación. Corrida validada el 2026-11-01
+desde volúmenes vacíos
+(`docker compose down -v`): `db:fresh`, `seed:demo`, `/health` 200,
+`/users/register` 403, `/api/auth/register` 201 y el usuario creado quedó con
+`role = APP_ROLE_ID`. `APP_ROLE_ID` y `DIRECTUS_TOKEN` cambiaron en `.env`
+respecto al respaldo previo.
 
 Directus Studio queda en `http://localhost:8055` (entra con `ADMIN_EMAIL` /
 `ADMIN_PASSWORD`). Los scripts `db:*` esperan a que Directus esté listo e

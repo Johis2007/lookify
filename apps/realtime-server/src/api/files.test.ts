@@ -48,15 +48,17 @@ async function upload(userId: string, fd: FormData) {
 before(async () => {
   if (!DATABASE_URL || !SECRET) return;
   pool = new pg.Pool({ connectionString: DATABASE_URL });
+  const stamp = Date.now();
   const users = await pool.query<{ id: string; email: string }>(
-    `SELECT id, email FROM directus_users
-      WHERE email IN ('cliente.prueba@lookify.app', 'cliente2.prueba@lookify.app')`,
+    `INSERT INTO directus_users (id, email, first_name)
+     VALUES
+       (gen_random_uuid(), $1, 'Cliente Archivos'),
+       (gen_random_uuid(), $2, 'Cliente Archivos Dos')
+     RETURNING id, email`,
+    [`files1.${stamp}@lookify.app`, `files2.${stamp}@lookify.app`],
   );
-  const u1 = users.rows.find((u) => u.email === 'cliente.prueba@lookify.app');
-  const u2 = users.rows.find((u) => u.email === 'cliente2.prueba@lookify.app');
-  if (!u1 || !u2) throw new Error('faltan usuarios cliente.prueba / cliente2.prueba');
-  user1 = u1.id;
-  user2 = u2.id;
+  user1 = users.rows[0].id;
+  user2 = users.rows[1].id;
 
   certificateId = '00000000-0000-4000-8000-0000000000c1';
   await pool.query(
@@ -84,7 +86,16 @@ before(async () => {
 
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
+  await pool.query('DELETE FROM client_profiles WHERE "user" = ANY($1::uuid[])', [
+    [user1, user2],
+  ]);
   await pool.query('DELETE FROM directus_files WHERE id = $1', [certificateId]);
+  await pool.query('DELETE FROM directus_files WHERE uploaded_by = ANY($1::uuid[])', [
+    [user1, user2],
+  ]);
+  await pool.query('DELETE FROM directus_users WHERE id = ANY($1::uuid[])', [
+    [user1, user2],
+  ]);
   await pool.end();
   await new Promise<void>((resolve) => server.close(() => resolve()));
 });

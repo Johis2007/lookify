@@ -9,8 +9,8 @@ import { createProfessionalsRouter } from './professionals.js';
 import { errorHandler } from './http.js';
 
 // Ola 2b: perfil público, servicios y documentos solo por BFF. Contra el
-// Postgres local; crea un segundo profesional temporal y limpia al final.
-const PRO_ID = 121;
+// Postgres local; crea sus usuarios y profesionales temporales y limpia al final.
+let proId: number;
 
 let pool: pg.Pool;
 let server: Server;
@@ -48,20 +48,35 @@ async function api(method: string, path: string, userId: string | null, body?: u
 before(async () => {
   if (!DATABASE_URL || !SECRET) return;
   pool = new pg.Pool({ connectionString: DATABASE_URL });
-  const pro = await pool.query<{ user: string }>(
-    'SELECT "user" FROM beauty_professionals WHERE id = $1',
-    [PRO_ID],
+  const stamp = Date.now();
+  const pro = await pool.query<{ id: string }>(
+    `INSERT INTO directus_users (id, email, first_name)
+     VALUES (gen_random_uuid(), $1, 'Pro Ola2') RETURNING id`,
+    [`pro.ola2-${stamp}@lookify.app`],
   );
-  proUser = pro.rows[0].user;
+  proUser = pro.rows[0].id;
+  const proRow = await pool.query<{ id: number }>(
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online)
+     VALUES ($1, 'Pro Ola2', 'verified', false) RETURNING id`,
+    [proUser],
+  );
+  proId = proRow.rows[0].id;
+  await pool.query('INSERT INTO professional_services (professional_id, service_id) VALUES ($1, 4)', [
+    proId,
+  ]);
+
   const client = await pool.query<{ id: string }>(
-    `SELECT id FROM directus_users WHERE email = 'cliente.demo@lookify.app'`,
+    `INSERT INTO directus_users (id, email, first_name)
+     VALUES (gen_random_uuid(), $1, 'Cliente Ola2') RETURNING id`,
+    [`client.ola2-${stamp}@lookify.app`],
   );
   clientUser = client.rows[0].id;
 
   const temp = await pool.query<{ id: string }>(
     `INSERT INTO directus_users (id, email, first_name)
-     VALUES (gen_random_uuid(), 'pro2.ola2b@lookify.app', 'Pro Dos')
+     VALUES (gen_random_uuid(), $1, 'Pro Dos')
      RETURNING id`,
+    [`pro2.ola2b-${stamp}@lookify.app`],
   );
   pro2User = temp.rows[0].id;
   const pro2 = await pool.query<{ id: number }>(
@@ -85,14 +100,18 @@ before(async () => {
 
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
-  await pool.query('DELETE FROM professional_services WHERE professional_id = $1', [PRO_ID]);
-  await pool.query('INSERT INTO professional_services (professional_id, service_id) VALUES ($1, 4)', [
-    PRO_ID,
+  await pool.query('DELETE FROM professional_services WHERE professional_id = ANY($1::int[])', [
+    [proId, pro2Id],
   ]);
-  await pool.query('DELETE FROM professional_services WHERE professional_id = $1', [pro2Id]);
-  await pool.query('DELETE FROM professional_documents WHERE professional = $1', [pro2Id]);
-  await pool.query('DELETE FROM beauty_professionals WHERE id = $1', [pro2Id]);
-  await pool.query('DELETE FROM directus_users WHERE id = $1', [pro2User]);
+  await pool.query('DELETE FROM professional_documents WHERE professional = ANY($1::int[])', [
+    [proId, pro2Id],
+  ]);
+  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1::int[])', [
+    [proId, pro2Id],
+  ]);
+  await pool.query('DELETE FROM directus_users WHERE id = ANY($1::uuid[])', [
+    [proUser, clientUser, pro2User],
+  ]);
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await pool.end();
 });
@@ -159,7 +178,7 @@ maybe('documentos: archivo inexistente 400 y no se pueden editar los de otro pro
 });
 
 maybe('perfil público no expone PII y trae servicios', async () => {
-  const r = await api('GET', `/api/professionals/${PRO_ID}/public`, clientUser);
+  const r = await api('GET', `/api/professionals/${proId}/public`, clientUser);
   assert.equal(r.status, 200);
   assert.ok(r.json.data.displayName);
   assert.ok(Array.isArray(r.json.data.services));

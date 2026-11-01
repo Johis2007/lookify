@@ -19,7 +19,7 @@
 //   - Camino definitivo: licencia con reglas custom o proxy BFF.
 // - Admin (admin_access): omite estas reglas, sin cambios.
 // - El BFF crea los usuarios con rol App User; Public no puede crear.
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -242,9 +242,19 @@ for (const [collection, action] of REVOKE) {
 {
   const svcEmail = 'bff-service@lookify.app';
   const listUsers = async () => {
-    const r = await api('GET', '/users?fields=id,email&limit=200');
-    if (r.status !== 200) fail('GET users bff-service', r);
-    return r.data?.data ?? [];
+    // Directus cachea GET /users e ignora Cache-Control: no-cache. Un filtro
+    // único por llamada evita leer la lista previa al POST y concluir (falso)
+    // que el usuario bff-service no se creó.
+    const bust = `${randomUUID()}@cache-bust.invalid`;
+    const r = await fetch(
+      `${URL}/users?fields=id,email&limit=200&sort=email&filter[email][_neq]=${encodeURIComponent(bust)}`,
+      { headers: { ...H, 'Cache-Control': 'no-cache' } },
+    );
+    const body = await r.json().catch(() => null);
+    if (r.status !== 200) {
+      throw new Error(`GET users bff-service: HTTP ${r.status} ${JSON.stringify(body)?.slice(0, 200)}`);
+    }
+    return body?.data ?? [];
   };
   let svcUser = (await listUsers()).find((u) => u.email === svcEmail)?.id;
   if (!svcUser) {
@@ -359,8 +369,7 @@ console.log('PERMISSIONS OK (modelo seguro)');
 {
   const patch = await api('PATCH', '/settings', { public_registration: false, public_registration_role: null });
   if (patch.status !== 200) {
-    console.log('Aviso: no se pudo desactivar public_registration:', patch.status);
-  } else {
-    console.log('settings: public_registration=false');
+    throw new Error(`No se pudo desactivar public_registration: HTTP ${patch.status} ${JSON.stringify(patch.data)?.slice(0, 200)}`);
   }
+  console.log('settings: public_registration=false');
 }
