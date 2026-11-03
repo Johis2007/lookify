@@ -55,3 +55,19 @@ reseña y bloque de precio) se conserva. No se requirió cambio visual.
 | Texto de error | No existe | Se conserva | Si falla la cancelación/creación de la nueva búsqueda, el usuario necesita feedback. |
 | Botón "Ver seguimiento" | Dice "Aceptar profesional" | Se conserva el texto dinámico | En modo real la reserva ya fue aceptada por el profesional; "Ver seguimiento" describe la acción real. En demo sigue diciendo "Aceptar profesional". |
 | Botones deshabilitados mientras trabaja | No existe | Se conserva | Evita dobles solicitudes durante la llamada al BFF; no cambia la composición. |
+
+## Tracking (`apps/lookify-app/src/screens/TrackingScreen.tsx` y `TrackingView.tsx`)
+
+`TrackingView.tsx` ya era idéntico en `c5ee047` y `HEAD`. La pantalla nativa de
+`c5ee047` era una versión antigua con `MapView` directo; `HEAD` la reemplazó por
+un reexport de `TrackingView`, que conserva la misma hoja, avatar, fila de
+contacto y botón de cancelar, y añade los estados reales.
+
+| Control | Estado en `c5ee047` | Decisión | Motivo |
+|---|---|---|---|
+| `LookifyMap` en vez de `MapView` directo | `MapView` en la pantalla nativa antigua | Se conserva `LookifyMap` | Es la abstracción compartida con web y la que usa el resto del flujo; además dibuja el rastro y sigue al profesional. La composición visual (mapa a pantalla completa + hoja inferior) no cambia. |
+| Píldora "En camino" / "El profesional llegó" | Solo "En camino" | Se conserva el texto dinámico | El backend avisa la llegada por socket/polling; el icono y la píldora mantienen el mismo estilo. |
+| "Última actualización hace N s" | No existe | Se conserva | El tracking real puede perder señal; el usuario necesita saber si la posición está viva. Es una línea de texto secundaria dentro de la hoja. |
+| Aviso "Sin señal del profesional" | No existe | Se conserva | Estado real cuando no llegan posiciones por más de 30 s; usa el mismo patrón visual de caja beige. |
+| Aviso "Tu profesional llegó" | No existe | Se conserva | Evento real de llegada; refuerza la píldora y usa una caja beige con icono. |
+| "Conectando…" / "Sin posiciones todavía" | No existe | Se conserva | Estados iniciales del backend antes de la primera posición; evitan mostrar una ETA falsa. |

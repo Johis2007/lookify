@@ -218,3 +218,16 @@ se conserva con el menor cambio visual y se registra en
   error y label "Ver seguimiento"; documentados en `DESVIOS-UI.md`.
 - Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
   `npm --workspace apps/realtime-server test` -> 105/105 tests.
+
+### Tracking
+
+- No se modificó el código. `TrackingView.tsx` es idéntico entre `c5ee047` y
+  `HEAD`; la pantalla nativa de `c5ee047` era una versión antigua con `MapView`
+  directo y `HEAD` ya usa el reexport de `TrackingView`.
+- La hoja inferior, avatar, contacto y botón de cancelar son los mismos. Se
+  conservan los estados reales: llegada, última actualización, sin señal y
+  "Conectando…".
+- Diferencias visuales restantes: píldora dinámica, avisos de llegada/sin señal y
+  textos de actualización; documentados en `DESVIOS-UI.md`.
+- Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
+  `npm --workspace apps/realtime-server test` -> 105/105 tests.
