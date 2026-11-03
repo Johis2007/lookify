@@ -198,3 +198,12 @@ se conserva con el menor cambio visual y se registra en
   `DESVIOS-UI.md`.
 - Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
   `npm --workspace apps/realtime-server test` -> 105/105 tests.
+
+### ServiceSelection
+
+- No se modificó el código: la composición de `c5ee047` ya estaba intacta en
+  `HEAD`; el diff solo añadía estados reales (carga, vacío, error, creación).
+- Esos estados se conservan con los estilos existentes; están documentados en
+  `DESVIOS-UI.md`.
+- Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
+  `npm --workspace apps/realtime-server test` -> 105/105 tests.

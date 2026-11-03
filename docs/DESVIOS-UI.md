@@ -29,3 +29,15 @@ El encabezado vuelve al icono animado de lupa de Yeison; no se usa `RadarScan`.
 | Botón "Intentar de nuevo" | No existe | Se conserva | Solo aparece cuando la reserva real expiró. Recrea la reserva en el BFF; el diseño de Yeison solo contemplaba la simulación local. |
 | Título/cuerpo para cancelado y error | Solo "No encontramos profesionales disponibles" | Se conserva el texto dinámico | El modo real distingue reserva cancelada, error de conexión y expiración. Se usan los mismos estilos `specialTitle`/`specialBody` del diseño. |
 | Texto de estado del radar | No existe | Se omite | El checklist y la cuenta regresiva ya comunican el estado; se prefiere el encabezado limpio de Yeison. |
+
+## ServiceSelection (`apps/lookify-app/src/screens/ServiceSelectionScreen.tsx`)
+
+La composición de `c5ee047` ya se conserva en `HEAD`: header oscuro, tarjetas
+con radio y footer fijo. No se requirió cambio visual.
+
+| Control | Estado en `c5ee047` | Decisión | Motivo |
+|---|---|---|---|
+| Spinner de carga | No existe | Se conserva | El catálogo ahora viene de Directus; hay un intervalo real mientras responde. Se usa el mismo fondo y centrado del diseño. |
+| Mensaje "No hay servicios disponibles por ahora." | No existe | Se conserva | Estado real cuando la categoría no tiene servicios activos. |
+| Texto de error | No existe | Se conserva | Un fallo de catálogo o la creación de la reserva debe ser visible; se usa `typography.caption` y `colors.error`. |
+| Botón "Creando reserva…" | No existe | Se conserva | El botón se deshabilita mientras el BFF crea la reserva, para evitar dobles solicitudes. Mantiene la misma altura y posición. |
