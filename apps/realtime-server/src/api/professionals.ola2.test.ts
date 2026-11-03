@@ -187,3 +187,52 @@ maybe('perfil público no expone PII y trae servicios', async () => {
   assert.equal(body.includes('"user"'), false);
   assert.equal(body.includes('phone'), false);
 });
+
+maybe('GET /me/earnings suma solo completed y aplica COMMISSION_RATE', async () => {
+  const previous = process.env.COMMISSION_RATE;
+  process.env.COMMISSION_RATE = '0.2';
+  const inserted = await pool.query<{ id: number }>(
+    `INSERT INTO bookings (client, professional, service, status, price_snapshot, created_at, completed_at)
+     VALUES ($1, $2, 4, 'completed', 10000, NOW(), NOW()),
+            ($1, $2, 4, 'completed', 5000, NOW(), NOW()),
+            ($1, $2, 4, 'cancelled', 9999, NOW(), NULL)
+     RETURNING id`,
+    [clientUser, proId],
+  );
+  try {
+    const r = await api('GET', '/api/professionals/me/earnings', proUser);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.data, {
+      commissionRate: 0.2,
+      grossCop: 15000,
+      commissionCop: 3000,
+      netCop: 12000,
+      completedBookings: 2,
+    });
+  } finally {
+    await pool.query('DELETE FROM bookings WHERE id = ANY($1::int[])', [
+      inserted.rows.map((row) => row.id),
+    ]);
+    if (previous === undefined) delete process.env.COMMISSION_RATE;
+    else process.env.COMMISSION_RATE = previous;
+  }
+});
+
+maybe('GET /me/earnings sin reservas devuelve ceros y comisión por defecto', async () => {
+  const previous = process.env.COMMISSION_RATE;
+  process.env.COMMISSION_RATE = '';
+  try {
+    const r = await api('GET', '/api/professionals/me/earnings', proUser);
+    assert.equal(r.status, 200);
+    assert.deepEqual(r.json.data, {
+      commissionRate: 0.15,
+      grossCop: 0,
+      commissionCop: 0,
+      netCop: 0,
+      completedBookings: 0,
+    });
+  } finally {
+    if (previous === undefined) delete process.env.COMMISSION_RATE;
+    else process.env.COMMISSION_RATE = previous;
+  }
+});

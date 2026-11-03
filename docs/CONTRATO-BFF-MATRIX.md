@@ -97,8 +97,8 @@ El portafolio de la app sigue en mock y así está documentado.
 
 | Capacidad | BFF real | Estado |
 |---|---|---|
-| Totales bruto/neto | `GET /api/professionals/me/earnings` | Pendiente MVP |
-| Comisión configurable | `COMMISSION_RATE` (`0..1`, default `0.15`) | Pendiente MVP |
+| Totales bruto/neto | `GET /api/professionals/me/earnings` | OK |
+| Comisión configurable | `COMMISSION_RATE` (`0..1`, default `0.15`) | OK |
 | Historial por periodo/cursor | Ninguno; se deriva de reservas | Fase posterior |
 | Desglose efectivo/digital | Ninguno | Fase posterior |
 | Persistencia de comisiones/liquidaciones | Ninguno | Fase posterior |
@@ -120,7 +120,6 @@ El portafolio de la app sigue en mock y así está documentado.
 
 El BFF cubre registro con consentimientos, perfiles, archivos, reservas, matching,
 tracking, reseñas y el ciclo `accepted  in_progress  completed`. También incluye el guard
-`requireAdmin`, el PIN opcional de inicio y las reglas de cancelación con motivo.
-Queda como MVP el resumen de ingresos (`GET /api/professionals/me/earnings`). Activación
-por código espera definición; portafolio, onboarding completo, historial detallado y
-liquidaciones son fase posterior.
+`requireAdmin`, el PIN opcional de inicio, las reglas de cancelación con motivo y el
+resumen de ingresos con comisión configurable. Activación por código espera definición;
+portafolio, onboarding completo, historial detallado y liquidaciones son fase posterior.

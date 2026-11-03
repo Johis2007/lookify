@@ -38,6 +38,7 @@ verdad es el BFF (`apps/realtime-server`). Los paths `/api/v1/...` del mock hist
 | `GET` | `/api/professionals/:id/public` | Perfil público sin PII + servicios. |
 | `GET` | `/api/professionals/:id/reviews` | Reseñas públicas. |
 | `GET` | `/api/professionals/me/reviews` | Reseñas del profesional del token. |
+| `GET` | `/api/professionals/me/earnings` | Totales bruto/comisión/neto de reservas completadas. |
 | `POST` | `/api/files` | Subir archivo (`avatar`, `portfolio`, `certificate`). |
 | `GET/DELETE` | `/api/files/:id` | Leer o borrar archivo autorizado. |
 | `POST` | `/api/bookings` | Crear reserva; precio calculado en servidor. |
@@ -255,9 +256,9 @@ mock no existen.
 
 ## Pantalla 10 - Historial / ingresos
 
-### Resumen agregado - Pendiente MVP
+### Resumen agregado - OK
 
-`GET /api/professionals/me/earnings` devolverá los totales del profesional del token:
+`GET /api/professionals/me/earnings` devuelve los totales del profesional del token:
 
 ```json
 {

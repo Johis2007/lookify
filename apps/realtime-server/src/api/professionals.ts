@@ -273,10 +273,44 @@ async function listReviews(pool: pg.Pool, professionalId: number, limit = 20) {
   return { reviews: rows.map(toReviewDto), total: Number(total.rows[0]?.count ?? 0) };
 }
 
+export function commissionRate(raw = process.env.COMMISSION_RATE): number {
+  if (raw === undefined || raw.trim() === '') return 0.15;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 && value <= 1 ? value : 0.15;
+}
+
 export function createProfessionalsRouter(pool: pg.Pool): Router {
   const router = Router();
   router.use(requireAuth);
   router.use(rateLimit());
+
+  // GET /api/professionals/me/earnings - totales de reservas completadas.
+  router.get(
+    '/me/earnings',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const professionalId = await resolveOwnProfessionalId(pool, req.user!.userId);
+      if (professionalId === null) throw new HttpError(404, 'not_found');
+      const { rows } = await pool.query<{ gross: string; completed: string }>(
+        `SELECT COALESCE(SUM(price_snapshot), 0)::text AS gross,
+                COUNT(*)::text AS completed
+           FROM bookings
+          WHERE professional = $1 AND status = 'completed'`,
+        [professionalId],
+      );
+      const grossCop = Number(rows[0]?.gross ?? 0);
+      const rate = commissionRate();
+      const commissionCop = Math.round(grossCop * rate);
+      res.json({
+        data: {
+          commissionRate: rate,
+          grossCop,
+          commissionCop,
+          netCop: grossCop - commissionCop,
+          completedBookings: Number(rows[0]?.completed ?? 0),
+        },
+      });
+    }),
+  );
 
   // GET /api/professionals/me/reviews — dashboard del pro del token.
   router.get(

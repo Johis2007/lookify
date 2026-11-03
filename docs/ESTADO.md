@@ -240,10 +240,10 @@ con las rutas reales de `apps/realtime-server`. La matriz completa está en
 
 Resumen: el BFF cubre reservas, matching, documentos, tracking y perfiles. Ya
 implementa `requireAdmin`, PIN opcional de inicio (`REQUIRE_START_PIN`),
-cancelación con reglas/motivo y consentimientos legales versionados con sello del
-servidor. Aún quedan los totales de ingresos y la activación por código; portafolio,
-onboarding completo e historial detallado son fase posterior. Varios paths del
-contrato (`/api/v1/...`) no existen; las rutas reales usan
+cancelación con reglas/motivo, consentimientos legales versionados con sello del
+servidor y resumen de ingresos con comisión configurable. Queda pendiente la activación
+por código; portafolio, onboarding completo e historial detallado son fase posterior.
+Varios paths del contrato (`/api/v1/...`) no existen; las rutas reales usan
 `/api/professionals/me`, `/api/bookings` y `/api/files`.
 
 ### Implementado en esta sesión
@@ -256,5 +256,9 @@ contrato (`/api/v1/...`) no existen; las rutas reales usan
 - `974c742` consentimientos: migración `008_legal_consents.sql`, registro obligatorio
   con versión de términos/privacidad, sello de fecha/IP/User-Agent y
   `GET/POST /api/users/me/consents`.
+- Ingresos: `GET /api/professionals/me/earnings` suma reservas `completed` y aplica
+  `COMMISSION_RATE` (default `0.15`) con `grossCop`, `commissionCop`, `netCop` y
+  `completedBookings`.
 - Evidencia focalizada: `bookings.test.ts` 45/45; `register.test.ts` + `users.test.ts`
-  12/12; `npm run typecheck` con `PARITY OK`. La suite completa queda pendiente.
+  12/12; `professionals.ola2.test.ts` 7/7; `npm run typecheck` con `PARITY OK`. La
+  suite completa queda pendiente.
