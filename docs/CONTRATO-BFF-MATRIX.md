@@ -18,13 +18,14 @@ Estados:
 
 | Capacidad | BFF real | Estado |
 |---|---|---|
-| Registro | `POST /api/auth/register` | OK |
+| Registro | `POST /api/auth/register` (exige `consents`) | OK |
+| Consentimientos | `GET/POST /api/users/me/consents` | OK |
 | Perfil base | `GET/PATCH /api/users/me` | OK |
 | Perfil cliente | `GET/POST/PUT/PATCH /api/clients/me` | OK |
 | Archivos | `POST /api/files`, `GET/DELETE /api/files/:id` | OK |
 | Salud | `GET /health` | OK |
 | Cercanos | `GET /realtime/nearby` | OK |
-| Rutas admin | Ninguna | Pendiente MVP (`requireAdmin`) |
+| Rutas admin | Ninguna; guard `requireAdmin` disponible | OK (guard) |
 
 ## Pantallas 3-5: onboarding
 
@@ -84,10 +85,10 @@ El portafolio de la app sigue en mock y así está documentado.
 | Detalle | `GET /api/bookings/:id` | OK |
 | Llegada | `POST /api/bookings/:id/events { status: "llegada" }` | OK |
 | Inicio | `POST /api/bookings/:id/start` | OK |
-| PIN de inicio | `POST /api/bookings/:id/start` + `REQUIRE_START_PIN` | Pendiente MVP |
+| PIN de inicio | `POST /api/bookings/:id/start` + `REQUIRE_START_PIN` | OK |
 | Intentos/bloqueo de PIN | Ninguno | Fase posterior |
-| Cancelar profesional | `POST /api/bookings/:id/cancel` | Pendiente MVP (reglas + motivo) |
-| Cancelar cliente | `POST /api/bookings/:id/cancel` | Pendiente MVP (sin cancelar `in_progress`) |
+| Cancelar profesional | `POST /api/bookings/:id/cancel` | OK (`pending`/`accepted` + motivo) |
+| Cancelar cliente | `POST /api/bookings/:id/cancel` | OK (`pending`/`accepted`) |
 | Finalizar | `POST /api/bookings/:id/complete` | OK |
 | `servicio-activo` con `ahoraServidor` | Ninguno; se deriva de la reserva | Fase posterior |
 | Eventos `servicio.*` | `booking:event`, `booking:status` | OK con nombres BFF |
@@ -111,15 +112,15 @@ El portafolio de la app sigue en mock y así está documentado.
 | Documentos privados | `GET /api/files/:id` autorizado | OK |
 | Perfil público sin PII | `GET /api/professionals/:id/public` | OK |
 | Dirección exacta fuera de ofertas | `GET /api/bookings/pro/available` redondeada | OK |
-| `requireAdmin` | Ninguno | Pendiente MVP |
-| Consentimiento versionado + IP/fecha servidor | Ninguno | Pendiente MVP |
+| `requireAdmin` | Guard disponible; aún sin rutas admin nuevas | OK (guard) |
+| Consentimiento versionado + IP/fecha servidor | `legal_consents` + `POST /api/auth/register` | OK |
 | Auditoría de activación/portafolio | Ninguno | Fase posterior |
 
 ## Conclusión
 
-El BFF cubre registro, perfiles, archivos, reservas, matching, tracking, reseñas y el
-ciclo `accepted → in_progress → completed`. El contrato de la app debe hablar de estas
-rutas reales. Quedan como MVP el guard admin, el PIN opcional de inicio, las reglas de
-cancelación, el consentimiento y los totales de ingresos. Activación por código espera
-definición; portafolio, onboarding completo, historial detallado y liquidaciones son fase
-posterior.
+El BFF cubre registro con consentimientos, perfiles, archivos, reservas, matching,
+tracking, reseñas y el ciclo `accepted  in_progress  completed`. También incluye el guard
+`requireAdmin`, el PIN opcional de inicio y las reglas de cancelación con motivo.
+Queda como MVP el resumen de ingresos (`GET /api/professionals/me/earnings`). Activación
+por código espera definición; portafolio, onboarding completo, historial detallado y
+liquidaciones son fase posterior.

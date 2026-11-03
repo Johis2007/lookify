@@ -1,7 +1,7 @@
 # Estado de Lookify por etapas
 
-Fecha de corte: 2026-10-29
-Rama actual: `frontend-update-from-remote` (`83e1819`)
+Fecha de corte: 2026-11-03
+Rama actual: `frontend-update-from-remote`
 Referencia con la lógica real: `backup/pre-frontend-update` / `main` (`dd1d307`)
 
 ## Criterio de esta tabla
@@ -238,7 +238,23 @@ Se comparó [`contratos-backend-profesional.md`](../apps/lookify-app/docs/contra
 con las rutas reales de `apps/realtime-server`. La matriz completa está en
 [`CONTRATO-BFF-MATRIX.md`](./CONTRATO-BFF-MATRIX.md).
 
-Resumen: el BFF cubre reservas, matching, documentos, tracking y perfiles. No
-implementa onboarding/activación, portafolio, PIN ni historial de ingresos, y
-varios paths del contrato (`/api/v1/...`) no existen; las rutas reales usan
+Resumen: el BFF cubre reservas, matching, documentos, tracking y perfiles. Ya
+implementa `requireAdmin`, PIN opcional de inicio (`REQUIRE_START_PIN`),
+cancelación con reglas/motivo y consentimientos legales versionados con sello del
+servidor. Aún quedan los totales de ingresos y la activación por código; portafolio,
+onboarding completo e historial detallado son fase posterior. Varios paths del
+contrato (`/api/v1/...`) no existen; las rutas reales usan
 `/api/professionals/me`, `/api/bookings` y `/api/files`.
+
+### Implementado en esta sesión
+
+- `fb8f04a` `requireAdmin`: 401 sin usuario, 403 sin admin y `next()` para admin.
+- `37ff2cb` PIN de inicio: `pinForBooking`, `REQUIRE_START_PIN`, `400 pin_required`
+  y `403 invalid_pin`; cliente envía `{ pin }`.
+- `3d6f7cd` cancelación: cliente y profesional solo antes de iniciar; el profesional
+  exige motivo cerrado y se persiste en `bookings.cancel_reason`.
+- `974c742` consentimientos: migración `008_legal_consents.sql`, registro obligatorio
+  con versión de términos/privacidad, sello de fecha/IP/User-Agent y
+  `GET/POST /api/users/me/consents`.
+- Evidencia focalizada: `bookings.test.ts` 45/45; `register.test.ts` + `users.test.ts`
+  12/12; `npm run typecheck` con `PARITY OK`. La suite completa queda pendiente.

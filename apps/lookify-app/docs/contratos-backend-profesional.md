@@ -23,9 +23,10 @@ verdad es el BFF (`apps/realtime-server`). Los paths `/api/v1/...` del mock hist
 
 | Método | Ruta | Uso |
 |---|---|---|
-| `POST` | `/api/auth/register` | Crear App User con rol del servidor. |
+| `POST` | `/api/auth/register` | Crear App User con rol del servidor; exige versiones de términos y privacidad. |
 | `GET` | `/api/users/me` | Perfil base del usuario autenticado. |
 | `PATCH` | `/api/users/me` | Editar nombre, apellido, teléfono y avatar propios. |
+| `GET/POST` | `/api/users/me/consents` | Consultar o registrar la versión vigente de términos y privacidad. |
 | `GET` | `/api/clients/me` | Perfil de cliente propio. |
 | `POST/PUT/PATCH` | `/api/clients/me` | Upsert idempotente del perfil de cliente. |
 | `GET` | `/api/professionals/me` | Perfil profesional propio. |
@@ -55,6 +56,25 @@ verdad es el BFF (`apps/realtime-server`). Los paths `/api/v1/...` del mock hist
 | `POST` | `/api/bookings/:id/cancel` | Cliente o profesional cancela según reglas. |
 | `GET` | `/health` | Salud de Postgres y Redis. |
 | `GET` | `/realtime/nearby` | Profesionales cercanos. |
+
+## Registro y consentimiento
+
+### POST `/api/auth/register` - OK
+
+- Body: `{ email, password, firstName, consents: { terms: { version }, privacy: { version } } }`.
+- `consents` es obligatorio; los textos legales se aceptan antes de crear la cuenta.
+- El servidor sella `accepted_at`, IP y `user_agent` en `legal_consents`; no confía en
+  timestamps enviados por el cliente.
+- Si falla el registro del consentimiento, se elimina el usuario recién creado y se
+  responde `502 registration_failed`.
+- Errores: `400 invalid_body`, `409 email_duplicate`, `503 registration_unavailable`.
+
+### GET/POST `/api/users/me/consents` - OK
+
+- `GET` devuelve la versión vigente por documento: `terms` y `privacy`.
+- `POST` body: `{ "document": "terms"|"privacy", "version": "..." }`.
+- El registro es idempotente por usuario, documento y versión.
+- La App User no tiene lectura directa de `legal_consents`; todo pasa por el BFF.
 
 ## Pantalla 3 - Servicios
 
@@ -196,24 +216,25 @@ endpoint explícito de “procesar expiración”.
 El detalle incluye servicio, precio, dirección, cliente, eventos y ficha pública del
 cliente/profesional según corresponda.
 
-No hay un objeto único `servicio-activo` con `ahoraServidor`, etapa traducida ni PIN. La
-app deriva la etapa desde `status`.
+No hay un objeto único `servicio-activo` con `ahoraServidor` ni etapa traducida. La app
+deriva la etapa desde `status` y muestra el PIN determinista de la reserva.
 
 ### Llegada - OK
 
 `POST /api/bookings/:id/events { "status": "llegada", lat?, lng? }` registra el evento.
 La reserva sigue `accepted`; la app muestra el PIN de 4 dígitos de forma determinista.
 
-### Inicio con PIN - Pendiente MVP
+### Inicio con PIN - OK
 
 - `POST /api/bookings/:id/start` exige `accepted` y pasa a `in_progress`.
 - Con `REQUIRE_START_PIN=true`, el body debe incluir `{ "pin": "1234" }`; el servidor
-  valida el PIN determinista de la reserva. Con el flag apagado, se mantiene el
-  comportamiento actual.
-- Intentos, bloqueo y `bloqueadoHasta` quedan para una fase posterior; el BFF no
-  persiste PIN.
+  valida `pinForBooking` contra el PIN mostrado por la app. Sin PIN responde
+  `400 pin_required`; con PIN incorrecto, `403 invalid_pin`.
+- Con el flag apagado, no se exige PIN y se mantiene la compatibilidad.
+- El PIN es determinista y no se persiste. Intentos, bloqueo y `bloqueadoHasta` quedan
+  para una fase posterior.
 
-### Cancelación - Pendiente MVP
+### Cancelación - OK
 
 `POST /api/bookings/:id/cancel` aplica las reglas de la fase:
 
@@ -268,8 +289,9 @@ liquidaciones y métodos de pago queda **Fase posterior**.
   o admin; documentos y archivos privados protegidos; perfil público sin email, teléfono
   ni documentos.
 - **OK:** dirección exacta solo visible para participantes de la reserva, no en ofertas.
-- **Pendiente MVP:** `requireAdmin` para rutas administrativas.
-- **Pendiente MVP:** consentimiento legal con versión, timestamp del servidor e IP.
+- **OK:** guard `requireAdmin` disponible para las rutas administrativas que se agreguen.
+- **OK:** consentimiento legal versionado, con `accepted_at` del servidor, IP y
+  `user_agent` en `legal_consents`; el registro exige términos y privacidad.
 - **Fase posterior:** auditoría de activación, moderación de portafolio, retención y
   borrado de datos, URLs firmadas y antivirus.
 
