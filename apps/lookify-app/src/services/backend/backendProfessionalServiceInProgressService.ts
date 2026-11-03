@@ -306,7 +306,7 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       }
       // La transición /cancel registra el evento con el motivo en el note.
       await bffApi('POST', `/api/bookings/${b.id}/cancel`, session.token, {
-        note: `motivo:${input.motivo}`,
+        motivo: input.motivo,
       });
       emitBookingStatus(String(b.id), 'cancelled');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);

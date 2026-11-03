@@ -848,3 +848,72 @@ maybe('S2: REQUIRE_START_PIN exige PIN correcto para iniciar', async () => {
     else process.env.REQUIRE_START_PIN = previous;
   }
 });
+
+maybe('S3: el cliente no puede cancelar un servicio iniciado', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle iniciada',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  assert.equal((await api('POST', `/api/bookings/${bid}/accept`, proUser)).status, 200);
+  assert.equal((await api('POST', `/api/bookings/${bid}/start`, proUser)).status, 200);
+  const res = await api('POST', `/api/bookings/${bid}/cancel`, clientA);
+  assert.equal(res.status, 409);
+});
+
+maybe('S3: el pro solo cancela antes de iniciar y con motivo válido', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle cancelada por pro',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  assert.equal((await api('POST', `/api/bookings/${bid}/accept`, proUser)).status, 200);
+
+  const missing = await api('POST', `/api/bookings/${bid}/cancel`, proUser);
+  assert.equal(missing.status, 400);
+  assert.equal(missing.json.error, 'cancel_reason_required');
+
+  const invalid = await api('POST', `/api/bookings/${bid}/cancel`, proUser, {
+    motivo: 'OTRO',
+  });
+  assert.equal(invalid.status, 400);
+
+  const ok = await api('POST', `/api/bookings/${bid}/cancel`, proUser, {
+    motivo: 'CLIENTE_AUSENTE',
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.data.status, 'cancelled');
+
+  const row = await pool.query<{ cancel_reason: string | null }>(
+    'SELECT cancel_reason FROM bookings WHERE id = $1',
+    [bid],
+  );
+  assert.equal(row.rows[0].cancel_reason, 'CLIENTE_AUSENTE');
+
+  const events = await api('GET', `/api/bookings/${bid}/events`, clientA);
+  const cancelEvent = events.json.data.find((e: any) => e.status === 'cancelado_por_profesional');
+  assert.equal(cancelEvent.note, 'CLIENTE_AUSENTE');
+});
+
+maybe('S3: el pro no puede cancelar un servicio iniciado', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle pro iniciada',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  assert.equal((await api('POST', `/api/bookings/${bid}/accept`, proUser)).status, 200);
+  assert.equal((await api('POST', `/api/bookings/${bid}/start`, proUser)).status, 200);
+  const res = await api('POST', `/api/bookings/${bid}/cancel`, proUser, {
+    motivo: 'NO_PUEDO_CONTINUAR',
+  });
+  assert.equal(res.status, 409);
+});

@@ -40,7 +40,7 @@ const PRO_TRANSITIONS: Record<ProAction, { from: BookingStatus[]; to: BookingSta
   reject: { from: ['pending'], to: 'rejected' },
   start: { from: ['accepted'], to: 'in_progress' },
   complete: { from: ['in_progress'], to: 'completed' },
-  cancel: { from: ['pending', 'accepted', 'in_progress'], to: 'cancelled' },
+  cancel: { from: ['pending', 'accepted'], to: 'cancelled' },
 };
 
 // Cancelación por el cliente: mismo estado previo que el pro (cancel).
@@ -58,6 +58,13 @@ const CreateBookingBody = z.object({
   paymentMethod: z.string().trim().max(60).optional(),
 });
 
+const PRO_CANCEL_REASONS = [
+  'CLIENTE_AUSENTE',
+  'DIRECCION_INCORRECTA',
+  'CLIENTE_CANCELO_EN_PERSONA',
+  'NO_PUEDO_CONTINUAR',
+] as const;
+
 const StatusEventBody = z
   .object({
     lat: z.number().min(-90).max(90).optional(),
@@ -65,6 +72,7 @@ const StatusEventBody = z
     note: z.string().trim().max(500).optional(),
     etaMin: z.number().int().min(0).max(600).optional(),
     pin: z.string().regex(/^\d{4}$/).optional(),
+    motivo: z.enum(PRO_CANCEL_REASONS).optional(),
   })
   .optional()
   .default({});
@@ -945,7 +953,7 @@ async function handleTransition(
   if (action === 'cancel' && isOwnerClient && !isOwnerPro) {
     actor = 'client';
     to = 'cancelled';
-    fromStatuses = ['pending', 'accepted', 'in_progress'];
+    fromStatuses = ['pending', 'accepted'];
   } else if (action !== 'cancel') {
     if (!isOwnerPro && !user.isAdmin) throw new HttpError(404, 'not_found');
     actor = 'professional';
@@ -974,6 +982,12 @@ async function handleTransition(
   }
 
   // Estado semántico del evento (lo que la app lee para etapas del servicio).
+  let cancelReason: string | null = null;
+  if (action === 'cancel' && actor === 'professional' && !user.isAdmin) {
+    if (!extra.motivo) throw new HttpError(400, 'cancel_reason_required');
+    cancelReason = extra.motivo;
+  }
+
   const eventStatus =
     to === 'in_progress'
       ? 'iniciado'
@@ -987,19 +1001,20 @@ async function handleTransition(
   const updated = await withTransaction(pool, async (client) => {
     const { rows } = await client.query<BookingRow>(
       `UPDATE bookings
-          SET status = $1,
+          SET status = $1::varchar,
               completed_at = CASE WHEN $5 = 'completed' THEN NOW() ELSE completed_at END,
+              cancel_reason = CASE WHEN $1::varchar = 'cancelled' THEN $7::varchar ELSE cancel_reason END,
               eta_min = COALESCE($6, eta_min)
         WHERE id = $2 AND status = ANY($3::text[])
           AND professional = $4
       RETURNING ${BOOKING_FIELDS}`,
-      [to, id, fromStatuses, booking.professional, to, extra.etaMin ?? null],
+      [to, id, fromStatuses, booking.professional, to, extra.etaMin ?? null, cancelReason],
     );
     if (rows.length === 0) return null;
     await client.query(
       `INSERT INTO booking_events (booking, status, lat, lng, note, created_at)
        VALUES ($1,$2,$3,$4,$5,NOW())`,
-      [id, eventStatus, extra.lat ?? null, extra.lng ?? null, extra.note ?? actor],
+      [id, eventStatus, extra.lat ?? null, extra.lng ?? null, extra.note ?? cancelReason ?? actor],
     );
     return rows[0];
   });
