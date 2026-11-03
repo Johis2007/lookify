@@ -231,3 +231,14 @@ se conserva con el menor cambio visual y se registra en
   textos de actualización; documentados en `DESVIOS-UI.md`.
 - Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
   `npm --workspace apps/realtime-server test` -> 105/105 tests.
+
+## Contrato backend profesional vs BFF
+
+Se comparó [`contratos-backend-profesional.md`](../apps/lookify-app/docs/contratos-backend-profesional.md)
+con las rutas reales de `apps/realtime-server`. La matriz completa está en
+[`CONTRATO-BFF-MATRIX.md`](./CONTRATO-BFF-MATRIX.md).
+
+Resumen: el BFF cubre reservas, matching, documentos, tracking y perfiles. No
+implementa onboarding/activación, portafolio, PIN ni historial de ingresos, y
+varios paths del contrato (`/api/v1/...`) no existen; las rutas reales usan
+`/api/professionals/me`, `/api/bookings` y `/api/files`.
