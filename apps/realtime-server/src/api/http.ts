@@ -33,6 +33,19 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
   }
 }
 
+// Guard para rutas administrativas. Debe montarse DESPUÉS de requireAuth.
+export function requireAdmin(req: AuthedRequest, res: Response, next: NextFunction): void {
+  if (!req.user) {
+    res.status(401).json({ error: 'unauthorized' });
+    return;
+  }
+  if (!req.user.isAdmin) {
+    res.status(403).json({ error: 'forbidden' });
+    return;
+  }
+  next();
+}
+
 // Envuelve un handler async para que sus rechazos lleguen al error handler.
 export function asyncHandler(
   fn: (req: AuthedRequest, res: Response, next: NextFunction) => Promise<void>,

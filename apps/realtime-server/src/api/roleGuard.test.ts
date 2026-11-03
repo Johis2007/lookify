@@ -14,6 +14,7 @@ import {
   createSocketAuthGuard,
   isRoleGuardExemptPath,
 } from './roleGuard.js';
+import { requireAdmin, type AuthedRequest } from './http.js';
 
 // QA-2.3: el BFF solo acepta App User (o admin). Estos tests no necesitan
 // infraestructura: su objetivo es el CABLEADO (orden del guard) y la política.
@@ -301,4 +302,36 @@ test('QA-2.3 socket: handshake sin token/rol se rechaza y App User/admin pasan',
   const closed = await handshake(unconfigured.guard, TOKEN_APP_USER);
   assert.equal(closed.error?.message, 'FORBIDDEN');
   assert.deepEqual(unconfigured.rejects, ['ROLE_GUARD_UNCONFIGURED']);
+});
+
+test('S1 requireAdmin: exige usuario y isAdmin, nunca rol App User', () => {
+  type Result = { status?: number; body?: unknown; next: boolean };
+  function run(user?: AuthedUser): Result {
+    const result: Result = { next: false };
+    const req = { user } as AuthedRequest;
+    const res = {
+      status(code: number) {
+        result.status = code;
+        return this;
+      },
+      json(body: unknown) {
+        result.body = body;
+        return this;
+      },
+    };
+    requireAdmin(req, res as never, () => {
+      result.next = true;
+    });
+    return result;
+  }
+
+  assert.deepEqual(run(), { status: 401, body: { error: 'unauthorized' }, next: false });
+  assert.deepEqual(
+    run({ userId: 'app', role: APP_ROLE_ID, isAdmin: false }),
+    { status: 403, body: { error: 'forbidden' }, next: false },
+  );
+  assert.deepEqual(
+    run({ userId: 'admin', role: OTHER_ROLE_ID, isAdmin: true }),
+    { next: true },
+  );
 });
