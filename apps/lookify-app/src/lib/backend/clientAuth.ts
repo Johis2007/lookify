@@ -8,6 +8,8 @@ import { ServiceError } from '../../services/errors';
 import { BACKEND } from './config';
 import { bffApi } from './bff';
 import { findMockUser } from '../../data/mockUsers';
+import { CLIENT_TERMS_VERSION } from '../../constants/legal/termsClientMeta';
+import { CLIENT_DATA_POLICY_VERSION } from '../../constants/legal/dataPolicyClientMeta';
 
 export type ClientSession = {
   token: string;
@@ -127,6 +129,10 @@ export async function registerClient(input: {
     email: cleanEmail,
     password: input.password,
     firstName: nombre,
+    consents: {
+      terms: { version: CLIENT_TERMS_VERSION },
+      privacy: { version: CLIENT_DATA_POLICY_VERSION },
+    },
   });
   const { accessToken, refreshToken } = await loginDirectus(cleanEmail, input.password);
   const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);

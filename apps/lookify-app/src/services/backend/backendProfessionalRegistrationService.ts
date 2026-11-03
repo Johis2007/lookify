@@ -31,6 +31,10 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
         email: datos.email.trim(),
         password: datos.password,
         firstName: datos.nombre.trim(),
+        consents: {
+          terms: { version: datos.consentimientoTerminos.version },
+          privacy: { version: datos.consentimientoPoliticaDatos.version },
+        },
       });
       const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);

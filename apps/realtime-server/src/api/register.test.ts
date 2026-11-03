@@ -10,6 +10,10 @@ import { errorHandler } from './http.js';
 
 const APP_ROLE_ID = process.env.APP_ROLE_ID;
 const DIRECTUS_TOKEN = process.env.DIRECTUS_TOKEN;
+const CONSENTS = {
+  terms: { version: 'terms-qa-v1' },
+  privacy: { version: 'privacy-qa-v1' },
+};
 
 let pool: pg.Pool;
 let server: Server;
@@ -40,7 +44,12 @@ before(async () => {
   app.locals.directusSecret = SECRET;
   app.use(
     '/api/auth',
-    createRegisterRouter({ appRoleId: APP_ROLE_ID, maxPerWindow: 1000, windowMs: 60_000 }),
+    createRegisterRouter({
+      appRoleId: APP_ROLE_ID,
+      maxPerWindow: 1000,
+      windowMs: 60_000,
+      pool,
+    }),
   );
   app.use(errorHandler);
   server = createServer(app);
@@ -86,6 +95,7 @@ maybe('crea usuario con rol del servidor y rechaza email duplicado', async () =>
     email,
     password: 'Password123!',
     firstName: 'QA Register',
+    consents: CONSENTS,
   });
   assert.equal(r.status, 201);
   assert.equal(r.json?.data?.email, email);
@@ -98,13 +108,50 @@ maybe('crea usuario con rol del servidor y rechaza email duplicado', async () =>
   assert.equal(user.rows[0]?.role, APP_ROLE_ID);
   assert.equal(user.rows[0]?.status, 'active');
 
+  const consents = await pool.query<{
+    document: string;
+    version: string;
+    accepted_at: Date;
+    ip: string | null;
+    user_agent: string | null;
+  }>(
+    `SELECT c.document, c.version, c.accepted_at, c.ip, c.user_agent
+       FROM legal_consents c
+       JOIN directus_users u ON u.id = c.user_id
+      WHERE u.email = $1
+      ORDER BY c.document`,
+    [email],
+  );
+  assert.deepEqual(
+    consents.rows.map((row) => [row.document, row.version]),
+    [
+      ['privacy', CONSENTS.privacy.version],
+      ['terms', CONSENTS.terms.version],
+    ],
+  );
+  assert.ok(consents.rows.every((row) => row.accepted_at instanceof Date && row.ip));
+
   const duplicate = await post(baseUrl, {
     email,
     password: 'Password123!',
     firstName: 'QA Register',
+    consents: CONSENTS,
   });
   assert.equal(duplicate.status, 409);
   assert.equal(duplicate.json?.error, 'email_duplicate');
+});
+
+maybe('rechaza registro sin consentimientos y no crea usuario', async () => {
+  const email = emailFor('sin-consentimientos');
+  const r = await post(baseUrl, {
+    email,
+    password: 'Password123!',
+    firstName: 'QA Sin Consentimientos',
+  });
+  assert.equal(r.status, 400);
+  assert.equal(r.json?.error, 'invalid_body');
+  const user = await pool.query('SELECT 1 FROM directus_users WHERE email = $1', [email]);
+  assert.equal(user.rowCount, 0);
 });
 
 maybe('rate limit propio responde 429', async () => {

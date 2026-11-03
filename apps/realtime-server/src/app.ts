@@ -212,7 +212,7 @@ export function createBffApp(deps: BffAppDeps): BffApplication {
       },
     }),
   );
-  mount(app, '/api/auth', createRegisterRouter({ appRoleId: deps.appRoleId ?? undefined }));
+  mount(app, '/api/auth', createRegisterRouter({ appRoleId: deps.appRoleId ?? undefined, pool }));
   mount(app, '/api/clients', createClientsRouter(pool));
   mount(app, '/api/professionals', createProfessionalsRouter(pool));
   mount(app, '/api/files', createFilesRouter(pool));

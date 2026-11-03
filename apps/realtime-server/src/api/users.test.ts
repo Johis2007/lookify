@@ -116,3 +116,45 @@ maybe('PATCH vacío responde 400', async () => {
   const r = await api('PATCH', '/api/users/me', {});
   assert.equal(r.status, 400);
 });
+
+maybe('POST/GET consents registra y devuelve la versi�n vigente', async () => {
+  const terms = await api('POST', '/api/users/me/consents', {
+    document: 'terms',
+    version: 'terms-v1',
+  });
+  assert.equal(terms.status, 201);
+  assert.equal(terms.json.data.document, 'terms');
+  assert.equal(terms.json.data.version, 'terms-v1');
+  assert.ok(terms.json.data.acceptedAt);
+
+  const privacy = await api('POST', '/api/users/me/consents', {
+    document: 'privacy',
+    version: 'privacy-v1',
+  });
+  assert.equal(privacy.status, 201);
+
+  const current = await api('GET', '/api/users/me/consents');
+  assert.equal(current.status, 200);
+  assert.deepEqual(
+    current.json.data.map((row: { document: string; version: string }) => [
+      row.document,
+      row.version,
+    ]),
+    [
+      ['privacy', 'privacy-v1'],
+      ['terms', 'terms-v1'],
+    ],
+  );
+});
+
+maybe('POST consents valida documento y versi�n', async () => {
+  for (const body of [
+    { document: 'marketing', version: 'v1' },
+    { document: 'terms' },
+    { document: 'terms', version: '' },
+  ]) {
+    const r = await api('POST', '/api/users/me/consents', body);
+    assert.equal(r.status, 400, JSON.stringify(body));
+    assert.equal(r.json.error, 'invalid_body');
+  }
+});

@@ -22,7 +22,15 @@ const PatchMeBody = z
   })
   .strict();
 
+const ConsentBody = z
+  .object({
+    document: z.enum(['terms', 'privacy']),
+    version: z.string().trim().min(1).max(64),
+  })
+  .strict();
+
 const USER_FIELDS = 'id, first_name, last_name, phone, avatar';
+const CONSENT_FIELDS = 'document, version, accepted_at';
 
 type UserRow = {
   id: string;
@@ -31,6 +39,20 @@ type UserRow = {
   phone: string | null;
   avatar: string | null;
 };
+
+type ConsentRow = {
+  document: 'terms' | 'privacy';
+  version: string;
+  accepted_at: Date;
+};
+
+function toConsentDto(row: ConsentRow) {
+  return {
+    document: row.document,
+    version: row.version,
+    acceptedAt: row.accepted_at,
+  };
+}
 
 function toDto(row: UserRow) {
   return {
@@ -101,6 +123,53 @@ export function createUsersRouter(pool: pg.Pool): Router {
       );
       if (!rows[0]) throw new HttpError(404, 'not_found');
       res.json({ data: toDto(rows[0]) });
+    }),
+  );
+
+  router.get(
+    '/me/consents',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const { rows } = await pool.query<ConsentRow>(
+        `SELECT DISTINCT ON (document) ${CONSENT_FIELDS}
+           FROM legal_consents
+          WHERE user_id = $1
+          ORDER BY document, accepted_at DESC, id DESC`,
+        [req.user!.userId],
+      );
+      res.json({ data: rows.map(toConsentDto) });
+    }),
+  );
+
+  router.post(
+    '/me/consents',
+    asyncHandler(async (req: AuthedRequest, res: Response) => {
+      const parsed = ConsentBody.safeParse(req.body ?? {});
+      if (!parsed.success) throw new HttpError(400, 'invalid_body');
+      const { document, version } = parsed.data;
+      const ip = (req.ip || '').slice(0, 64) || null;
+      const userAgent = (req.get('user-agent') || '').slice(0, 512) || null;
+
+      const inserted = await pool.query<ConsentRow>(
+        `INSERT INTO legal_consents (user_id, document, version, ip, user_agent)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (user_id, document, version) DO NOTHING
+         RETURNING ${CONSENT_FIELDS}`,
+        [req.user!.userId, document, version, ip, userAgent],
+      );
+      if (inserted.rows[0]) {
+        res.status(201).json({ data: toConsentDto(inserted.rows[0]) });
+        return;
+      }
+
+      const existing = await pool.query<ConsentRow>(
+        `SELECT ${CONSENT_FIELDS}
+           FROM legal_consents
+          WHERE user_id = $1 AND document = $2 AND version = $3
+          LIMIT 1`,
+        [req.user!.userId, document, version],
+      );
+      if (!existing.rows[0]) throw new HttpError(500, 'internal_error');
+      res.json({ data: toConsentDto(existing.rows[0]) });
     }),
   );
 
