@@ -186,3 +186,15 @@ se conserva con el menor cambio visual y se registra en
 - Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
   `npm --workspace apps/realtime-server test` -> 105/105 tests.
 - Pendiente: smoke en Expo Go contra backend real (Docker/DB/Redis).
+
+### Matching
+
+- El encabezado vuelve al icono animado de lupa de `c5ee047` (se retiró
+  `RadarScan`).
+- Se conserva toda la lógica real: reserva en BFF, socket, polling, cuenta
+  regresiva, expiración, reintento, cancelación y estados de error.
+- Diferencias visuales restantes: cuenta regresiva, botón "Intentar de nuevo" y
+  textos de cancelado/error no existen en `c5ee047`; documentados en
+  `DESVIOS-UI.md`.
+- Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
+  `npm --workspace apps/realtime-server test` -> 105/105 tests.

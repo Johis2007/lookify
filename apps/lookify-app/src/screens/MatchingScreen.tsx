@@ -8,6 +8,8 @@ import {
   View,
   Text,
   StyleSheet,
+  Animated,
+  Easing,
   TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -15,7 +17,6 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { colors, radius, spacing, typography } from '../theme/colors';
 import Button from '../components/Button';
-import { RadarScan } from '../components/RadarScan';
 import { filtrarCandidatosMatching } from '../data/mockProfessionals';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { promptCancelarSolicitud } from '../utils/cancelarSolicitudAlert';
@@ -75,11 +76,32 @@ export default function MatchingScreen({ navigation, route }: Props) {
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const detalleRef = useRef<ReservaDetalle | null>(null);
   const fallosRef = useRef(0);
-  const scanning = !showSpecialOptions;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     completedStepsRef.current = completedSteps;
   }, [completedSteps]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.12,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 900,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulseAnim]);
 
   const clearTimers = useCallback(() => {
     timerIdsRef.current.forEach(clearTimeout);
@@ -426,19 +448,9 @@ export default function MatchingScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
-        {/* Radar Stitch: ondas + barrido + núcleo, acelera al escanear */}
-        <View style={styles.radarWrap}>
-          <RadarScan
-            scanning={scanning}
-            statusText={
-              showSpecialOptions
-                ? 'Búsqueda detenida'
-                : completedSteps >= 3
-                  ? 'Profesional encontrado'
-                  : `Buscando a ${radioActual} km`
-            }
-          />
-        </View>
+        <Animated.View style={[styles.iconWrap, { transform: [{ scale: pulseAnim }] }]}>
+          <MaterialCommunityIcons name="magnify" size={56} color={colors.sandLight} />
+        </Animated.View>
 
         {!showSpecialOptions ? (
           <View style={styles.checklist}>
@@ -521,9 +533,6 @@ const styles = StyleSheet.create({
   },
   iconWrap: {
     marginBottom: spacing.xl,
-  },
-  radarWrap: {
-    marginBottom: spacing.lg,
   },
   checklist: {
     alignSelf: 'stretch',

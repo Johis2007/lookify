@@ -18,3 +18,14 @@ en el diseño original y el motivo.
 
 No se añadió el subheader grande que existía en HEAD: el estado del GPS vive
 solo en el badge pequeño para respetar el espaciado de Yeison.
+
+## Matching (`apps/lookify-app/src/screens/MatchingScreen.tsx`)
+
+El encabezado vuelve al icono animado de lupa de Yeison; no se usa `RadarScan`.
+
+| Control | Estado en `c5ee047` | Decisión | Motivo |
+|---|---|---|---|
+| Cuenta regresiva de la oferta | No existe | Se conserva bajo el checklist | El backend real vence la oferta a los 60 s e informa la ronda; sin este dato el usuario no sabe cuánto queda. Se mantiene como una fila de texto discreta. |
+| Botón "Intentar de nuevo" | No existe | Se conserva | Solo aparece cuando la reserva real expiró. Recrea la reserva en el BFF; el diseño de Yeison solo contemplaba la simulación local. |
+| Título/cuerpo para cancelado y error | Solo "No encontramos profesionales disponibles" | Se conserva el texto dinámico | El modo real distingue reserva cancelada, error de conexión y expiración. Se usan los mismos estilos `specialTitle`/`specialBody` del diseño. |
+| Texto de estado del radar | No existe | Se omite | El checklist y la cuenta regresiva ya comunican el estado; se prefiere el encabezado limpio de Yeison. |
