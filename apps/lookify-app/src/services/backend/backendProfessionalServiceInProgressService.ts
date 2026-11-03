@@ -277,7 +277,7 @@ export function createBackendProfessionalServiceInProgressService(): Professiona
       pin.fallidos = 0;
       pin.bloqueadoHasta = null;
       // La transición /start registra el evento 'iniciado' en el servidor.
-      await bffApi('POST', `/api/bookings/${b.id}/start`, session.token, {});
+      await bffApi('POST', `/api/bookings/${b.id}/start`, session.token, { pin: input.pin });
       emitBookingStatus(String(b.id), 'in_progress');
       const recargado = await bookingDelFlujo(session.token, String(b.id), professionalId);
       const servicio = await mapearEnCurso(session.token, recargado, professionalId);

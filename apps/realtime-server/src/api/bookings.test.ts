@@ -1,11 +1,11 @@
-import { before, after } from 'node:test';
+﻿import { before, after } from 'node:test';
 import { DATABASE_URL, SECRET, maybe } from '../infra.js';
 import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import express from 'express';
 import pg from 'pg';
 import jwt from 'jsonwebtoken';
-import { createBookingsRouter } from './bookings.js';
+import { createBookingsRouter, pinForBooking } from './bookings.js';
 import { errorHandler } from './http.js';
 
 // Tests del BFF de reservas (Paso 2B). Corren contra el Postgres local real:
@@ -813,4 +813,38 @@ maybe('4A-bis: la distancia de la oferta se redondea a múltiplos de 100 m', asy
   assert.ok(offer, 'la oferta aparece');
   assert.equal(offer.distanciaM % 100, 0, 'distancia redondeada a 100 m');
   assert.ok(offer.distanciaM >= 4000 && offer.distanciaM <= 6000, 'distancia coherente');
+});
+
+maybe('S2: REQUIRE_START_PIN exige PIN correcto para iniciar', async () => {
+  const previous = process.env.REQUIRE_START_PIN;
+  process.env.REQUIRE_START_PIN = 'true';
+  try {
+    const created = await api('POST', '/api/bookings', clientA, {
+      serviceId,
+      addressText: 'Calle PIN',
+      lat: 4.7,
+      lng: -74.0,
+      professionalId: proId,
+    });
+    assert.equal(created.status, 201);
+    const bid = created.json.data.id;
+    assert.equal((await api('POST', `/api/bookings/${bid}/accept`, proUser)).status, 200);
+
+    const missing = await api('POST', `/api/bookings/${bid}/start`, proUser);
+    assert.equal(missing.status, 400);
+    assert.equal(missing.json.error, 'pin_required');
+
+    const wrong = await api('POST', `/api/bookings/${bid}/start`, proUser, { pin: '0000' });
+    assert.equal(wrong.status, 403);
+    assert.equal(wrong.json.error, 'invalid_pin');
+
+    const ok = await api('POST', `/api/bookings/${bid}/start`, proUser, {
+      pin: pinForBooking(Number(bid)),
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.json.data.status, 'in_progress');
+  } finally {
+    if (previous === undefined) delete process.env.REQUIRE_START_PIN;
+    else process.env.REQUIRE_START_PIN = previous;
+  }
 });

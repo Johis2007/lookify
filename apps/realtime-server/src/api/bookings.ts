@@ -64,9 +64,19 @@ const StatusEventBody = z
     lng: z.number().min(-180).max(180).optional(),
     note: z.string().trim().max(500).optional(),
     etaMin: z.number().int().min(0).max(600).optional(),
+    pin: z.string().regex(/^\d{4}$/).optional(),
   })
   .optional()
   .default({});
+
+// Misma fórmula que la app y mobile-web: PIN determinista por reserva.
+export function pinForBooking(bookingId: number): string {
+  return String(1000 + ((bookingId * 7919) % 9000));
+}
+
+function envFlag(value: string | undefined): boolean {
+  return /^(1|true|yes|on)$/i.test((value ?? '').trim());
+}
 
 // Eventos que la app puede registrar (notas de seguimiento). Se excluyen los
 // estados del ciclo de vida (se escriben solo por las transiciones del router).
@@ -270,6 +280,8 @@ export type BookingsDeps = {
   // y `emitEvent` avisa al cliente en la sala booking:{id}.
   redis?: TrackingRedis;
   emitEvent?: (bookingId: number, event: { status: string; ts: number }) => void;
+  // Si no se define, se lee REQUIRE_START_PIN en cada request.
+  requireStartPin?: boolean;
 };
 
 export function createBookingsRouter(deps: BookingsDeps): Router {
@@ -645,6 +657,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
           emitOffer,
           emitExpired,
           redis,
+          requireStartPin: deps.requireStartPin,
         });
       }),
     );
@@ -883,6 +896,7 @@ async function handleTransition(
     emitOffer?: (bookingId: number, professionalId: number, clientId: string) => void;
     emitExpired?: (bookingId: number, clientId: string) => void;
     redis?: TrackingRedis;
+    requireStartPin?: boolean;
   },
 ): Promise<void> {
   const { emitStatus, emitTaken, emitOffer, emitExpired, redis } = emit;
@@ -947,6 +961,16 @@ async function handleTransition(
   if (action === 'accept') {
     const verified = await isProfessionalVerified(pool, booking.professional);
     if (!verified) throw new HttpError(403, 'professional_not_verified');
+  }
+
+  // PIN opcional de inicio. La app envía el PIN determinista de la reserva;
+  // el servidor es la autoridad cuando REQUIRE_START_PIN está activo.
+  if (action === 'start') {
+    const required = emit.requireStartPin ?? envFlag(process.env.REQUIRE_START_PIN);
+    if (required) {
+      if (!extra.pin) throw new HttpError(400, 'pin_required');
+      if (extra.pin !== pinForBooking(booking.id)) throw new HttpError(403, 'invalid_pin');
+    }
   }
 
   // Estado semántico del evento (lo que la app lee para etapas del servicio).
