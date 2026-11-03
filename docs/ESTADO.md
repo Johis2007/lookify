@@ -207,3 +207,14 @@ se conserva con el menor cambio visual y se registra en
   `DESVIOS-UI.md`.
 - Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
   `npm --workspace apps/realtime-server test` -> 105/105 tests.
+
+### ProfessionalOffer
+
+- No se modificó el código: la hoja, el acento, el perfil, el portafolio, la
+  reseña y el bloque de precio de `c5ee047` siguen intactos.
+- Se conservan los datos reales: verificación, portafolio/reseña condicionales,
+  precio del servidor, nota de domicilio, errores y botones deshabilitados.
+- Diferencias visuales restantes: fila de verificación, nota de precio, texto de
+  error y label "Ver seguimiento"; documentados en `DESVIOS-UI.md`.
+- Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
+  `npm --workspace apps/realtime-server test` -> 105/105 tests.

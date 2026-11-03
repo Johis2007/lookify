@@ -41,3 +41,17 @@ con radio y footer fijo. No se requirió cambio visual.
 | Mensaje "No hay servicios disponibles por ahora." | No existe | Se conserva | Estado real cuando la categoría no tiene servicios activos. |
 | Texto de error | No existe | Se conserva | Un fallo de catálogo o la creación de la reserva debe ser visible; se usa `typography.caption` y `colors.error`. |
 | Botón "Creando reserva…" | No existe | Se conserva | El botón se deshabilita mientras el BFF crea la reserva, para evitar dobles solicitudes. Mantiene la misma altura y posición. |
+
+## ProfessionalOffer (`apps/lookify-app/src/screens/ProfessionalOfferScreen.tsx`)
+
+La composición de `c5ee047` (hoja blanca, acento arena, perfil, portafolio,
+reseña y bloque de precio) se conserva. No se requirió cambio visual.
+
+| Control | Estado en `c5ee047` | Decisión | Motivo |
+|---|---|---|---|
+| Fila "Profesional verificado" | No existe | Se conserva | La ficha pública real trae `verificado`; se muestra con el mismo estilo de metadatos y el icono de escudo. |
+| Portafolio y reseña condicionales | Siempre visibles con datos mock | Se ocultan si no hay datos | En modo real la ficha pública puede no traer portafolio ni reseña; mostrar secciones vacías rompería la lectura. |
+| Nota de precio del servidor | No existe | Se conserva | En modo real el precio lo calcula el BFF y el domicilio se confirma al final; el usuario debe saberlo. |
+| Texto de error | No existe | Se conserva | Si falla la cancelación/creación de la nueva búsqueda, el usuario necesita feedback. |
+| Botón "Ver seguimiento" | Dice "Aceptar profesional" | Se conserva el texto dinámico | En modo real la reserva ya fue aceptada por el profesional; "Ver seguimiento" describe la acción real. En demo sigue diciendo "Aceptar profesional". |
+| Botones deshabilitados mientras trabaja | No existe | Se conserva | Evita dobles solicitudes durante la llamada al BFF; no cambia la composición. |
