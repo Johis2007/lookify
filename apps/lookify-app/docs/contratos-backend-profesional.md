@@ -1,424 +1,293 @@
-# Contratos backend — App Profesional (pantallas 3–10)
+# Contrato backend profesional - BFF real
+
+Este documento describe el contrato que la app profesional consume hoy. La fuente de
+verdad es el BFF (`apps/realtime-server`). Los paths `/api/v1/...` del mock histórico
+**no existen** y no se crean alias: toda ruta nueva usa `/api/...`.
+
+## Convenciones
+
+- Identidad: `Authorization: Bearer <JWT>`. El `userId` y el `professionalId` salen del
+  token; nunca del body ni de un `:solicitudId`.
+- Respuesta exitosa: `{ "data": ... }`, salvo `204 No Content`.
+- Error: `{ "error": "codigo_estable" }`. Errores de autenticación: `401`; permisos:
+  `403`; recurso inexistente o ajeno: `404`; conflicto de estado: `409`.
+- `professionalId` propio: `GET /api/professionals/me`.
+- Estados de reserva: `pending`, `accepted`, `rejected`, `in_progress`, `completed`,
+  `cancelled`, `expired`.
+- Etapas visibles del servicio: `accepted` (en camino), `in_progress` (iniciado),
+  `completed`, `cancelled`.
+- Estados del contrato: **OK** implementado; **Pendiente MVP** acordado para esta fase;
+  **Fase posterior** fuera del MVP.
+
+## Rutas existentes
+
+| Método | Ruta | Uso |
+|---|---|---|
+| `POST` | `/api/auth/register` | Crear App User con rol del servidor. |
+| `GET` | `/api/users/me` | Perfil base del usuario autenticado. |
+| `PATCH` | `/api/users/me` | Editar nombre, apellido, teléfono y avatar propios. |
+| `GET` | `/api/clients/me` | Perfil de cliente propio. |
+| `POST/PUT/PATCH` | `/api/clients/me` | Upsert idempotente del perfil de cliente. |
+| `GET` | `/api/professionals/me` | Perfil profesional propio. |
+| `POST` | `/api/professionals/me` | Crear perfil profesional propio (`pending`). |
+| `PATCH` | `/api/professionals/me` | Editar campos permitidos y disponibilidad. |
+| `GET/PUT` | `/api/professionals/me/services` | Leer o reemplazar servicios ofrecidos. |
+| `GET/POST` | `/api/professionals/me/documents` | Listar o crear documentos/certificados. |
+| `PATCH/DELETE` | `/api/professionals/me/documents/:id` | Editar o borrar documento propio. |
+| `GET` | `/api/professionals/:id/public` | Perfil público sin PII + servicios. |
+| `GET` | `/api/professionals/:id/reviews` | Reseñas públicas. |
+| `GET` | `/api/professionals/me/reviews` | Reseñas del profesional del token. |
+| `POST` | `/api/files` | Subir archivo (`avatar`, `portfolio`, `certificate`). |
+| `GET/DELETE` | `/api/files/:id` | Leer o borrar archivo autorizado. |
+| `POST` | `/api/bookings` | Crear reserva; precio calculado en servidor. |
+| `GET` | `/api/bookings/mine` | Reservas del cliente del token. |
+| `GET` | `/api/bookings/pro/mine` | Reservas del profesional del token. |
+| `GET` | `/api/bookings/pro/available` | Ofertas vigentes para el profesional. |
+| `GET` | `/api/bookings/:id` | Detalle de una reserva accesible. |
+| `GET` | `/api/bookings/:id/events` | Eventos de la reserva. |
+| `GET` | `/api/bookings/:id/tracking` | Última ubicación y llegada. |
+| `POST` | `/api/bookings/:id/events` | Registrar `llegada` o `nota`. |
+| `POST` | `/api/bookings/:id/review` | Reseñar una reserva completada. |
+| `POST` | `/api/bookings/:id/accept` | Profesional acepta oferta. |
+| `POST` | `/api/bookings/:id/reject` | Profesional rechaza oferta. |
+| `POST` | `/api/bookings/:id/start` | Profesional inicia el servicio. |
+| `POST` | `/api/bookings/:id/complete` | Profesional finaliza el servicio. |
+| `POST` | `/api/bookings/:id/cancel` | Cliente o profesional cancela según reglas. |
+| `GET` | `/health` | Salud de Postgres y Redis. |
+| `GET` | `/realtime/nearby` | Profesionales cercanos. |
 
-Documento de referencia para implementación server-side. El frontend mock valida las mismas reglas; el servidor **debe revalidar todo**.
+## Pantalla 3 - Servicios
 
-## Pantalla 3 — Servicios
+### GET `/api/professionals/me/services` - OK
 
-### GET `/api/v1/catalogo/servicios`
-- **Respuesta 200:** catálogo por categoría (ids oficiales del admin).
-- **Errores:** `500`.
+Respuesta `{ data: [{ id, serviceId, name, durationMin, priceBase }] }`.
 
-### PUT `/api/v1/profesionales/solicitudes/:id/servicios`
-- **Body:** `{ "servicioIds": string[] }` (mínimo 1, ids válidos del catálogo).
-- **Respuesta 200:** `{ solicitudId, servicioIds, onboardingPaso: "CERTIFICADOS" }`.
-- **Errores:** `404` `SOLICITUD_NO_ENCONTRADA`, `400` `SERVICIO_INVALIDO` / `VALIDATION`.
+### PUT `/api/professionals/me/services` - OK
 
-## Pantalla 4 — Certificados
+- Body: `{ "serviceIds": number[] }`, mínimo 1, máximo 50, ids existentes y sin repetir.
+- Reemplazo transaccional del vínculo del profesional del token.
+- Respuesta: la lista actualizada.
+- Errores: `400 invalid_body` / `invalid_service`, `404 not_found`.
 
-### GET `/api/v1/profesionales/solicitudes/:id/certificados`
-- **Respuesta 200:** lista de certificados (metadatos + URL firmada o id de archivo).
+### Catálogo público - Fase posterior
 
-### POST `/api/v1/profesionales/solicitudes/:id/certificados` (multipart)
-- **Campos:** archivo + JSON (`nombreTipo`, `entidadEmisora`, `fechaEmision?`, `servicioIds[]`).
-- **Validación servidor:** MIME real (JPG/PNG/PDF), máx. **5 MB**, `servicioIds` ⊆ servicios elegidos, ≥1 servicio, máx. **3 certificados por servicio** (certificado multi-servicio cuenta en cada uno).
-- **Errores:** `400` `ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`, `LIMITE_CERTIFICADOS_SERVICIO`, `SERVICIO_INVALIDO`, `VALIDATION`.
+No hay `GET /api/catalogo/servicios` ni `/api/v1/catalogo/servicios`. La app usa el
+catálogo actual disponible en su capa de datos. Un endpoint público de catálogo queda
+para una fase posterior.
 
-### PATCH `/api/v1/profesionales/solicitudes/:id/certificados/:certificadoId`
-- Mismas reglas que POST (excluyendo el certificado editado al contar límites).
+## Pantalla 4 - Certificados
 
-### DELETE `/api/v1/profesionales/solicitudes/:id/certificados/:certificadoId`
+### GET `/api/professionals/me/documents` - OK
 
-### POST `/api/v1/profesionales/solicitudes/:id/enviar-verificacion`
-- **Reglas:** todo-o-nada — cada servicio elegido con **1–3** certificados.
-- **Efecto:** `estadoSolicitud = EN_REVISION`; borrar rechazo previo y estado de activación pendiente.
-- **Errores:** `400` `SERVICIO_SIN_CERTIFICADO`.
+Lista hasta 100 documentos del profesional del token.
 
-## Pantalla 5 — Verificación y activación
+### POST `/api/professionals/me/documents` - OK
 
-**Nota:** ningún endpoint devuelve el código de activación en claro. El campo `codigoActivacionDemo` del mock TypeScript **no existe** en respuestas HTTP.
+- Body: `{ file: uuid, docType?: "dni"|"titulo"|"certificado"|"otro", note?: string }`.
+- `file` debe existir y haber sido subido por el usuario.
+- El servidor fuerza `status = "pending"`.
+- Errores: `400 invalid_body` / `invalid_file`, `404 not_found`.
 
-### GET `/api/v1/profesionales/solicitudes/:id/estado-verificacion`
-- **Respuesta 200:** `estadoSolicitud`, `emailEnmascarado` (ya enmascarado), resumen envío, rechazo si aplica, flags de activación (`codigoExpirado`, `bloqueadoHasta`, `reenvioDisponibleEn`, `reenviosRestantes`, `sinSalidaActivacion`).
-- **Nota:** el primer código tras aprobación lo genera el servidor (correo); la app solo **reenvía**.
+### PATCH `/api/professionals/me/documents/:id` - OK
 
-### POST `/api/v1/profesionales/solicitudes/:id/corregir-certificados`
-- **Efecto:** `DOCUMENTOS_PENDIENTES`, conservar certificados; devolver motivo anterior como aviso informativo en pantalla 4.
-- **Errores:** `400` si no está `RECHAZADO`.
+Solo documentos propios. Campos: `file`, `docType`, `note`.
 
-### POST `/api/v1/profesionales/solicitudes/:id/activacion/reenviar-codigo`
-- **Reglas:** cooldown **60 s**, máx. **3 reenvíos**; invalida código anterior; nuevo código 6 dígitos, vigencia **10 min**.
-- **Errores:** `429`/`400` `REENVIO_NO_DISPONIBLE`, `REENVIOS_AGOTADOS`, `BLOQUEO_TEMPORAL`.
+### DELETE `/api/professionals/me/documents/:id` - OK
 
-### POST `/api/v1/profesionales/solicitudes/:id/activacion/validar-codigo`
-- **Body:** `{ "codigo": "123456" }`.
-- **Reglas:** hash en servidor, un solo uso, máx. **5 intentos** → bloqueo **15 min**; mensajes **genéricos** (`CODIGO_INVALIDO` / `CODIGO_EXPIRADO` sin filtrar existencia).
-- **Éxito:** marca profesional activado; emite sesión/JWT con claim `activado=true`. Hasta entonces endpoints del panel → **403**.
-
-### Caso sin salida
-- Reenvíos agotados + código expirado: UI contacto soporte. **Admin** puede reiniciar activación (nuevo código, reset contadores) vía panel interno (endpoint TBD, p. ej. `POST /admin/profesionales/:id/reiniciar-activacion`).
-
-## Seguridad código de activación (requisito backend)
-
-- Generación en servidor (CSPRNG), almacenamiento **hash** (nunca claro), un solo uso, invalidar al emitir nuevo.
-- Vigencia 10 min; 5 intentos fallidos → bloqueo 15 min; reenvío 60 s, máx. 3.
-- Rate limit por solicitud, cuenta e IP.
-- Auditoría: aprobación, envío código, intentos fallidos, activación exitosa.
-
-## Pantalla 6 — Panel principal
+Solo documentos propios. `204`.
 
-Requisito transversal: endpoints del panel exigen JWT de profesional con **`estadoSolicitud = APROBADO`** y **`activado = true`**. Si no → **403** `PROFESIONAL_NO_HABILITADO` (el servidor **revalida**; no confiar en la UI).
+### Límites por servicio y envío de verificación - Pendiente MVP
 
-### GET `/api/v1/profesionales/me/panel`
-- **Respuesta 200:** `{ nombre, calificacionPromedio | null, totalResenas, disponibilidad: "DISPONIBLE" | "OCUPADO", resumenDia: { serviciosRealizados, ingresosCop }, serviciosOfrecidos: [{ servicioId, nombre, duracionMin, precioBaseCop }], fotoPerfil: { urlPublica } | null, ultimasResenas: [{ autor, texto, estrellas }] }`.
-- **`calificacionPromedio`:** `null` si `totalResenas === 0`.
-- **Errores:** `401`, `403` `PROFESIONAL_NO_HABILITADO`, `404` si la cuenta no existe.
-
-### PATCH `/api/v1/profesionales/me/disponibilidad`
-- **Body:** `{ "disponibilidad": "DISPONIBLE" | "OCUPADO" }`.
-- **Reglas servidor:** solo **`DISPONIBLE`** si aprobado **y** activado; la app ya pidió permiso de ubicación en primer plano — el backend puede exigir última ubicación reciente vía `PUT .../ubicacion` en una fase posterior. **`OCUPADO`** siempre permitido.
-- **Inactividad / heartbeat:** el servidor debe forzar **`OCUPADO`** tras timeout sin heartbeat (p. ej. cierre de sesión, app en background prolongado, o `PATCH` periódico no recibido). Documentar SLA TBD en ops.
-- **Efecto logout:** al invalidar sesión/JWT → marcar profesional **OCUPADO** (refuerzo del mock `registrarCierreSesion`).
-- **Respuesta 200:** `{ disponibilidad }`.
-- **Errores:** `403` `PROFESIONAL_NO_HABILITADO`, `400` `VALIDATION`.
-
-### POST `/api/v1/profesionales/me/foto-perfil` (multipart)
-- **Campo:** archivo imagen (JPG/PNG).
-- **Validación servidor:** MIME **real** (magic bytes), máx. **5 MB**, recorte cuadrado recomendado en cliente; **rechazar** si no cumple.
-- **Flujo producto:** la foto queda en estado **pendiente de revisión admin**; **no** es visible al cliente en oferta/matching hasta aprobación. Respuesta incluye `estadoFoto: "PENDIENTE_REVISION" | "APROBADA" | "RECHAZADA"` y URL solo si aprobada (o URL privada para el profesional mientras revisa).
-- **Errores:** `400` `ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`, `403` `PROFESIONAL_NO_HABILITADO`.
+El BFF no modela certificados por servicio ni el envío todo-o-nada a revisión. Por ahora
+el estado de verificación se administra fuera del BFF. Los límites de 3 certificados por
+servicio y `enviar-verificacion` quedan **Pendiente MVP** en una ruta BFF nueva, sin
+`solicitudId`.
 
-### GET `/api/v1/profesionales/me/resenas?limit=3`
-- **Respuesta 200:** `{ calificacionPromedio, totalResenas, items: [{ autor, texto, estrellas, creadoEn }] }`.
-- **Errores:** `403` `PROFESIONAL_NO_HABILITADO`.
+## Pantalla 5 - Verificación y activación
 
-### PUT `/api/v1/profesionales/me/ubicacion` (futuro — matching en vivo)
-- **Body:** `{ "latitude": number, "longitude": number, "accuracyM": number?, "capturedAt": ISO8601 }`.
-- **Uso previsto:** enviar posición cuando el profesional está **DISPONIBLE** (tras permiso en app); rate limit y retención acotada (política de datos).
-- **Nota MVP frontend:** hoy solo se verifica permiso; **no** implementar en app hasta acordar frecuencia y privacidad.
-- **Errores:** `403` si no habilitado o no disponible, `400` `VALIDATION`.
-
-## Pantalla 7 — Mi portafolio
-
-Requisito transversal: mismo JWT que el panel (**aprobado + activado**). Cada profesional solo
-puede leer y mutar **su** portafolio (`profesionalId` del token). El servidor **revalida** límites,
-MIME/tamaño/duración y que `servicioId` (si viene) pertenezca a los servicios ofrecidos por ese
-profesional.
-
-### GET `/api/v1/profesionales/me/portafolio`
-- **Respuesta 200:** `{ fotos: PortfolioItem[], videos: PortfolioItem[], limites: { maxFotos, maxVideos, … } }`.
-- **Item:** `id`, `tipo` (`FOTO` | `VIDEO`), `orden`, `descripcion?`, `servicioId?`, URLs firmadas
-  (`url`, `miniaturaUrl?` solo si aplica), metadatos no sensibles (`duracionSeg?` en video).
-- **Portada:** foto con `orden === 0` (servidor mantiene invariante al mover/definir portada).
-- **Errores:** `403` `PROFESIONAL_NO_HABILITADO`.
-
-### POST `/api/v1/profesionales/me/portafolio/fotos` (multipart)
-- **Validación servidor:** JPG/PNG, MIME **real** (magic bytes), máx. **5 MB**; máx. **10** fotos
-  por profesional (`LIMITE_FOTOS_PORTAFOLIO`).
-- **Errores:** `400` `ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`, `LIMITE_FOTOS_PORTAFOLIO`.
-
-### POST `/api/v1/profesionales/me/portafolio/videos` (multipart)
-- **Validación servidor:** MP4/MOV, MIME real, máx. **50 MB**, duración máx. **30 s** medida en
-  servidor (`VIDEO_DURACION_EXCEDIDA`); máx. **4** videos (`LIMITE_VIDEOS_PORTAFOLIO`).
-- **Errores:** `400` `ARCHIVO_INVALIDO`, `ARCHIVO_MUY_GRANDE`, `VIDEO_DURACION_EXCEDIDA`,
-  `LIMITE_VIDEOS_PORTAFOLIO`.
-
-### PATCH `/api/v1/profesionales/me/portafolio/items/:itemId`
-- **Body:** `{ descripcion?: string | null, servicioId?: string | null }` — descripción máx. 100
-  caracteres; `servicioId` debe estar en servicios del profesional o `null` para quitar.
-- **Errores:** `404` `ITEM_PORTAFOLIO_NO_ENCONTRADO`, `400` `VALIDATION`.
-
-### PUT `/api/v1/profesionales/me/portafolio/items/:itemId/archivo` (multipart)
-- Reemplaza archivo conservando `id`, orden, descripción y `servicioId`; **no** incrementa conteo
-  de ítems; mismas validaciones que POST según tipo.
-- **Errores:** como POST foto/video según tipo.
-
-### POST `/api/v1/profesionales/me/portafolio/items/:itemId/mover`
-- **Body:** `{ direccion: "ARRIBA" | "ABAJO" }` — solo dentro del mismo tipo (fotos vs videos).
-- **Errores:** `404` `ITEM_PORTAFOLIO_NO_ENCONTRADO`, `400` `VALIDATION`.
-
-### POST `/api/v1/profesionales/me/portafolio/fotos/:itemId/portada`
-- Pasa la foto a **orden 0** y renumera el resto sin huecos.
-- **Errores:** `404`, `400` si no es foto.
-
-### DELETE `/api/v1/profesionales/me/portafolio/items/:itemId`
-- Si se elimina la portada, la siguiente foto pasa a orden 0.
-- **Errores:** `404` `ITEM_PORTAFOLIO_NO_ENCONTRADO`.
-
-### Moderación a posteriori (producto + legal)
-
-- **No hay revisión previa** del admin para publicar fotos/videos en el portafolio (distinto de
-  certificados en onboarding).
-- El **cliente** podrá **reportar** un elemento del portafolio; el **admin** lo revisa en
-  **«Reportes y reseñas»** y puede **eliminar** el ítem o **suspender** el portafolio del
-  profesional.
-- Los **términos de uso** deben prohibir contenido ilegal u ofensivo (redacción final por abogado
-  real, no borrador de frontend).
-- **Operaciones técnicas recomendadas:** escaneo antivirus/malware en upload, almacenamiento de
-  medios en bucket privado con URLs firmadas de corta vigencia, auditoría de reportes y acciones
-  admin, retención y borrado al eliminar cuenta (política de datos TBD).
-
-## Pantalla 8 — Solicitud entrante
-
-Requisito transversal: mismo JWT que el panel (**aprobado + activado**). El matching solo ofrece
-solicitudes a profesionales **verificados, activados y DISPONIBLES**. **Una sola solicitud activa**
-por profesional en el servidor. La **dirección exacta del cliente no** viaja en la solicitud entrante.
-
-### Evento en tiempo real — WebSocket y push `solicitud.entrante`
-
-Payload (**`SolicitudEntrante`**, cuerpo compartido push/WebSocket):
-
-- `id` (solicitud entrante)
-- `servicio` (`servicioId`, `nombre`, `duracionMin`)
-- `distanciaKmAprox` (aproximada; sin dirección exacta)
-- `desglose`: `precioBaseCop`, `precioDomicilioCop`, `precioTotalCop`
-- `clientePrimerNombre` (solo primer nombre)
-- `calificacionCliente` (opcional; `null` si el cliente no tiene reseñas)
-- `expiraEn` (**ISO8601**, marca de tiempo **del servidor** — autoridad para la ventana de 30 s)
-
-### Eventos de seguimiento (WebSocket / push)
-
-| Evento | Uso |
-|--------|-----|
-| `solicitud.expirada` | Ventana de 30 s cerrada en servidor |
-| `solicitud.cliente_acepto` | Cliente confirmó tras aceptación del pro → pro **OCUPADO** |
-| `solicitud.cliente_rechazo` | Cliente rechazó la oferta → pro sigue **DISPONIBLE** |
-| `solicitud.ya_asignada` | La solicitud ya no está vigente para este pro |
-
-### GET `/api/v1/profesionales/me/solicitud-activa`
-
-- **Uso:** recuperación al reabrir la app o reconectar WebSocket.
-- **Respuesta 200:** `{ solicitud: SolicitudEntrante | null }` (null si no hay vigente).
-- **Errores:** `403` `PROFESIONAL_NO_HABILITADO`.
-
-### POST `/api/v1/profesionales/me/solicitudes-entrantes/:id/aceptar`
-
-- **Idempotente.** El servidor revalida: pro **DISPONIBLE**, solicitud **existe**, **vigente**,
-  **dirigida a ese profesional**, no expirada.
-- **Respuesta 200:** `{ resultado: "ACEPTADA" | "RECHAZADA" | "EXPIRADA" | "YA_ASIGNADA", … }`.
-- **Efecto éxito `ACEPTADA`:** estado solicitud → espera cliente; pro permanece **DISPONIBLE** hasta
-  `solicitud.cliente_acepto`.
-- **Errores:** `400` `VALIDATION` (id mal formado), `403` `PROFESIONAL_NO_DISPONIBLE` /
-  `PROFESIONAL_NO_HABILITADO`, `404` `SOLICITUD_ENTRANTE_NO_ENCONTRADA`, `409`
-  `SOLICITUD_NO_VIGENTE`.
-
-### POST `/api/v1/profesionales/me/solicitudes-entrantes/:id/rechazar`
-
-- **Idempotente.** Mismas revalidaciones que aceptar (excepto transición a espera cliente).
-- **Respuesta 200:** `{ resultado: "RECHAZADA" | "EXPIRADA" | "YA_ASIGNADA", … }`.
-- **Efecto:** pro sigue **DISPONIBLE**; liberar slot de solicitud activa.
-- **Errores:** como aceptar.
-
-### POST `/api/v1/profesionales/me/solicitudes-entrantes/:id/procesar-expiracion` (opcional explícito)
-
-- **Uso:** la app llama al llegar a `expiraEn` en UI para que el **servidor** confirme expiración
-  (el reloj del celular **no** es fuente de verdad).
-- **Respuesta 200:** `{ resultado: "EXPIRADA" | "YA_ASIGNADA" | … }`.
-- **Errores:** `400` `VALIDATION`, `404` `SOLICITUD_ENTRANTE_NO_ENCONTRADA`, `409`
-  `SOLICITUD_NO_VIGENTE`.
-
-### Reglas que el servidor debe revalidar (resumen)
-
-- Profesional **aprobado**, **activado** y **`disponibilidad = DISPONIBLE`** al aceptar/rechazar
-  dentro de la ventana.
-- Solicitud **existe**, **vigente**, **no expirada** según **`expiraEn` del servidor**, asignada a
-  ese `profesionalId`.
-- **Una sola solicitud activa** por profesional.
-- Tras **`solicitud.cliente_acepto`:** PATCH disponibilidad → **OCUPADO** (o transacción atómica
-  en el mismo evento).
-- Matching: solo profesionales **verificados, activados y DISPONIBLES**.
-
-### Seguridad y privacidad
-
-- **Dirección exacta** del cliente: solo tras **aceptación mutua** (pro aceptó + cliente confirmó);
-  no en `solicitud.entrante`.
-- **Registro de push token** por dispositivo (`POST` TBD) vinculado al JWT del profesional; invalidar
-  al logout.
-- **Auditoría:** aceptaciones, rechazos, expiraciones y cambios a **OCUPADO** por aceptación del
-  cliente — `profesionalId`, `solicitudId`, timestamps servidor, resultado (`ACEPTADA` / `RECHAZADA` /
-  `EXPIRADA` / `YA_ASIGNADA`), IP/dispositivo cuando aplique.
-- Rate limit en aceptar/rechazar por solicitud y por cuenta.
-
-## Pantalla 9 — Servicio en curso
-
-Requisito transversal: mismo JWT que el panel (**aprobado + activado**). El servicio en curso existe
-solo después de que **el profesional aceptó y el cliente confirmó**. **Una sola** operación activa
-por profesional. La **dirección exacta** del cliente viaja **solo a partir de ese momento** (no en
-la solicitud entrante).
-
-Cada respuesta de esta sección incluye **`ahoraServidor`** (ISO8601 del servidor). La app calcula el
-desfase una vez por consulta y lo usa para el cronómetro y la cuenta del bloqueo. El reloj del
-celular no es fuente de verdad.
-
-### GET `/api/v1/profesionales/me/servicio-activo`
-
-- **Uso:** pantalla en curso y recuperación al volver a primer plano. También al **login o reapertura**:
-  si hay servicio en `EN_CAMINO`, `LLEGUE` o `INICIADO`, `resolvePostLoginRoute` debe abrir esta
-  pantalla (ruta frontend `ProfessionalServiceInProgressPlaceholder`).
-- **Respuesta 200:** `{ servicio: ServicioEnCurso | null, ahoraServidor }`. `null` si no hay activo
-  (finalizado o cancelado no cuenta como activo).
-- **`ServicioEnCurso`:** `id`, `etapa` (`EN_CAMINO` | `LLEGUE` | `INICIADO` | `FINALIZADO` |
-  `CANCELADA_POR_PROFESIONAL`), servicio (`servicioId`, `nombre`, `duracionMin`),
-  `clientePrimerNombre`, `direccionExacta`, desglose (`precioBaseCop`, `precioDomicilioCop`,
-  `precioTotalCop`), marcas `llegadaEn`, `iniciadoEn`, `finalizadoEn`, `canceladoEn`,
-  `intentosFallidosPin`, `bloqueadoHasta`, `motivoCancelacion`.
-- **El PIN no forma parte de esta respuesta.** Nunca.
-- **Errores:** `401`, `403` `PROFESIONAL_NO_HABILITADO`.
-
-### POST `/api/v1/profesionales/me/servicios-en-curso/:id/llegada`
-
-- **Idempotente.** Solo desde `EN_CAMINO`. Si ya está en `LLEGUE` o `INICIADO`, devuelve el estado
-  actual sin retroceder.
-- **Efecto:** `etapa = LLEGUE`, guarda `llegadaEn`. El cliente pasa a ver su PIN de 4 dígitos.
-- **Respuesta 200:** `{ servicio, ahoraServidor }`.
-- **Errores:** `400` `VALIDATION`, `403` `PROFESIONAL_NO_HABILITADO`, `404`
-  `SERVICIO_EN_CURSO_NO_ENCONTRADO`, `409` `ETAPA_NO_PERMITE_ACCION`.
-
-### POST `/api/v1/profesionales/me/servicios-en-curso/:id/validar-pin`
-
-- **Body:** `{ "pin": "1234" }` (exactamente 4 dígitos). El servidor compara contra el PIN guardado
-  (hash). **La respuesta nunca incluye el PIN.**
-- **Reglas:** máximo **3 intentos fallidos**. Al tercero, bloqueo de **5 minutos** con
-  `bloqueadoHasta` del servidor. Al cumplirse el bloqueo se **reinician los 3 intentos**. Rate limit
-  por solicitud, cuenta e IP.
-- **Respuesta 200:** `{ resultado: "VALIDO" | "INVALIDO" | "BLOQUEADO", intentosRestantes,
-  bloqueadoHasta, servicio, ahoraServidor }`. Un PIN mal escrito no es un 4xx de negocio: va en
-  `resultado`.
-- **Efecto `VALIDO`:** `etapa = INICIADO`, guarda `iniciadoEn`. Si ya estaba `INICIADO`, responde
-  `VALIDO` sin consumir otro intento.
-- **Errores:** `400` `VALIDATION` (PIN que no tiene 4 dígitos), `403` `PROFESIONAL_NO_HABILITADO`,
-  `404` `SERVICIO_EN_CURSO_NO_ENCONTRADO`, `409` `ETAPA_NO_PERMITE_ACCION` (no está en `LLEGUE`).
-
-### POST `/api/v1/profesionales/me/servicios-en-curso/:id/cancelar`
-
-- **Body:** `{ "motivo": "CLIENTE_AUSENTE" | "DIRECCION_INCORRECTA" | "CLIENTE_CANCELO_EN_PERSONA" | "NO_PUEDO_CONTINUAR" }`.
-  Sin texto libre.
-- **Reglas:** solo en `EN_CAMINO` y `LLEGUE`. **No** en `INICIADO`.
-- **Efecto:** `etapa = CANCELADA_POR_PROFESIONAL`. El cliente **no paga nada** y el matching busca
-  otro profesional. El profesional **queda OCUPADO** hasta que él pase a Disponible. Registrar la
-  cancelación (`profesionalId`, `servicioId`, motivo, timestamp servidor, IP) para detectar abuso.
-- **Idempotente** si ya está cancelada.
-- **Respuesta 200:** `{ servicio, ahoraServidor }`.
-- **Errores:** `400` `VALIDATION` (motivo no permitido), `404` `SERVICIO_EN_CURSO_NO_ENCONTRADO`,
-  `409` `ETAPA_NO_PERMITE_ACCION`.
-
-### POST `/api/v1/profesionales/me/servicios-en-curso/:id/finalizar`
-
-- **Reglas:** solo si `etapa = INICIADO`. **Idempotente** si ya está `FINALIZADO`.
-- **Efecto:** `etapa = FINALIZADO`, guarda `finalizadoEn`. El profesional **sigue OCUPADO**.
-- **Respuesta 200:** `{ servicio, ahoraServidor }`.
-- **Errores:** `404` `SERVICIO_EN_CURSO_NO_ENCONTRADO`, `409` `ETAPA_NO_PERMITE_ACCION`.
-
-### Eventos (WebSocket / push)
-
-| Evento | Uso |
-|--------|-----|
-| `servicio.llegada` | El profesional marcó llegada; el cliente muestra el PIN |
-| `servicio.iniciado` | PIN válido; el cliente ya no puede cancelar |
-| `servicio.cancelado_por_profesional` | Canceló el profesional; el cliente no paga y se busca otro |
-| `servicio.finalizado` | El profesional cerró el servicio |
-
-### Reglas que el servidor debe revalidar
-
-- Etapa actual antes de llegada, PIN, cancelar o finalizar.
-- PIN, intentos y `bloqueadoHasta` con hora de servidor.
-- Motivo dentro de la lista cerrada.
-- Con servicio activo (`EN_CAMINO`, `LLEGUE` o `INICIADO`): `PATCH .../disponibilidad` a
-  **DISPONIBLE** y el cierre de sesión responden **`409`/`403` `SERVICIO_EN_CURSO_ACTIVO`**.
-- El **cliente no puede cancelar** si el servicio está **INICIADO**.
-
-### Decisiones pendientes
-
-- Efecto en comisión y en pago en efectivo cuando el profesional cancela (el cliente no paga; cómo
-  se registra la comisión queda abierto).
-- Si el profesional debe poder reportar un problema durante **INICIADO** (hoy no hay salida ni
-  cancelación en esa etapa).
-
-### Registro en historial (efecto de finalizar / cancelar pro)
-
-Al **finalizar** o **cancelar por profesional** (pantalla 9), el backend debe **crear o reconocer**
-un ítem de historial **idempotente** por `servicioId` / `solicitudEntranteId`. La pantalla 10 **solo
-lee**; no expone un endpoint de «registrar» al profesional.
-
-- **Finalizado:** `estado = FINALIZADO`, montos con comisión y neto (ver pantalla 10), `cerradoEn =
-  finalizadoEn`, método de pago real del servicio.
-- **Cancelado por profesional:** `estado = CANCELADO`, montos en **0**, `motivoCancelacion` de la
-  lista cerrada, `cerradoEn = canceladoEn`.
-- **Cancelaciones del cliente tras aceptar:** hoy **no** entran al historial del profesional;
-  definir regla de negocio y contadores.
-
-## Pantalla 10 — Historial / ingresos
-
-Requisito transversal: mismo JWT (**aprobado + activado**). Ruta frontend
-**`ProfessionalEarningsHistory`**. Entrada desde el panel (**«Mis ingresos»**); compatible con
-servicio en curso activo.
-
-**Semilla demo:** `sembrarHistorialDemo` y el flag **`origenSemilla`** existen **solo en desarrollo**
-(`__DEV__` / entornos no productivos) y **nunca en producción**.
-
-Cada respuesta incluye **`ahoraServidor`** (ISO8601). Límites de **Hoy / Semana / Mes** se calculan
-en **hora Bogotá (UTC−5 fijo)**, no con la zona del dispositivo. **Semana:** lunes 00:00:00 a
-domingo 23:59:59 (inclusive) en calendario Bogotá.
-
-### Comisión e ingresos (reglas de negocio)
-
-- Comisión Lookify: **15 % solo sobre `precioBaseCop`**, redondeo al **entero** más cercano en COP:
-  `round((precioBaseCop * 15) / 100)`.
-- **Domicilio:** 100 % del profesional (no entra en la base de comisión).
-- **`precioTotalCop = precioBaseCop + precioDomicilioCop`**.
-- **Neto profesional = `precioTotalCop − comisión`** (solo servicios finalizados).
-- El **servidor** calcula y persiste `comisionCop`, `netoCop`, `comisionEfectivoCop` y los montos de
-  cada ítem; la app **solo muestra** los valores del API y **NUNCA recalcula** comisión ni neto.
-- **Ajuste ±20 %** sobre precio base: **aplazado** (no implementado en frontend).
-- En **efectivo**, la UI muestra comisión **informativa** («Debes a Lookify» por servicio; total de
-  comisión en efectivo en el resumen). **Sin** saldo global, cobro automático, bloqueo de cuenta ni
-  botón de pago en esta fase — **regla de cobro del efectivo pendiente** en backend/finanzas.
-- **Digital:** **pago al profesional** de lo cobrado (neto) — timing, retenciones y pasarela **TBD**.
-
-### GET `/api/v1/profesionales/me/historial-ingresos/resumen`
-
-- **Query:** `periodo=HOY|SEMANA|MES`.
-- **Respuesta 200:** `{ resumen: ResumenPeriodoHistorial, ahoraServidor }`.
-- **`ResumenPeriodoHistorial`:** `periodo`, `cantidadFinalizados`, `cantidadCancelados`, `totalCop`,
-  `comisionCop`, `netoCop`, `comisionEfectivoCop` (suma de comisiones de finalizados pagados en
-  efectivo). Los **cancelados solo incrementan `cantidadCancelados`**; no suman dinero.
-- **Errores:** `400` `PERIODO_INVALIDO`, `403` `PROFESIONAL_NO_HABILITADO`.
-
-### GET `/api/v1/profesionales/me/historial-ingresos`
-
-- **Query:** `periodo=HOY|SEMANA|MES`, `cursor` opcional, `limit` (default 20, max 50).
-- **Respuesta 200:** `{ items: HistorialIngresosItem[], nextCursor, ahoraServidor }`.
-- **`HistorialIngresosItem`:** `id`, `servicioNombre`, `clientePrimerNombre`, `metodoPago`
-  (`EFECTIVO`|`DIGITAL`), `estado` (`FINALIZADO`|`CANCELADO`), montos (`precioTotalCop`, `comisionCop`,
-  `netoCop`; **0** si cancelado), `cerradoEn` (ISO8601), `motivoCancelacion` (solo cancelados pro).
-  **Sin** PII extra (dirección, correo, teléfono, documento).
-- **Orden:** `cerradoEn` descendente; desempate estable por `id`.
-- **Cursor:** opaco; formato interno sugerido `` `${cerradoEnMs}:${id}` ``; **`400` `CURSOR_INVALIDO`**
-  si no corresponde al periodo o está caducado.
-- **Errores:** `400` `PERIODO_INVALIDO` | `CURSOR_INVALIDO`, `403` `PROFESIONAL_NO_HABILITADO`.
-
-### Panel — resumen del día
-
-- El **GET panel principal** debe incluir **`resumenDia`** coherente con **`periodo=HOY`** del
-  historial (`serviciosRealizados` = finalizados de hoy; `ingresosCop` = neto de hoy). No duplicar
-  fuentes de verdad.
-
-### Método de pago
-
-- En producción: método real registrado al cerrar el servicio (pasarela / efectivo confirmado).
-- Mock actual alterna Efectivo/Digital por hash del `id` **solo para demo** — no replicar en backend.
-
-### Seguridad y privacidad
-
-- Historial acotado al **`profesionalId`** del JWT.
-- Rate limit en listados y resúmenes por cuenta.
-- Ítems **inmutables** tras cierre; correcciones vía procesos admin/ajustes, no PATCH al profesional.
-
-### Decisiones pendientes (pantalla 10)
-
-- **±20 %** en precio base al ofertar/ejecutar.
-- **Cobro** de comisión en servicios **efectivo** (liquidación, plazos, recordatorios).
-- **Liquidación** al profesional de cobros **digitales**.
-- **Cancelaciones del cliente** después de aceptación mutua: visibilidad en historial, métricas y
-  posible impacto en rating/disponibilidad.
-- Unificar **semilla/demo** (`origenSemilla`) solo entornos no productivos.
-- **Revisión legal y fiscal** (facturación, retenciones, comprobantes de comisión en efectivo y digital).
+- Estado de verificación y rechazo: **Pendiente MVP**.
+- Corrección de certificados: **Pendiente MVP**.
+- Activación por código, reenvío, intentos y bloqueo: **Pendiente MVP**; requiere la
+  definición del usuario. No se implementa todavía.
+- Reinicio de activación por admin: **Fase posterior**.
+
+Mientras exista `verification_status`, el panel profesional usa `pending`, `verified` o
+`rejected`. La activación por código se agregará al contrato cuando se defina.
+
+## Pantalla 6 - Panel principal
+
+### GET `/api/professionals/me` - OK
+
+Respuesta: `id`, `displayName`, `bio`, `avatar`, `isOnline`, `ratingAvg`,
+`verificationStatus`, `verificationNote`, `yearsExp`, `specialties`, `phone`.
+
+### PATCH `/api/professionals/me` - OK
+
+- Campos permitidos: `displayName`, `phone`, `bio`, `avatar`, `isOnline`, `yearsExp`,
+  `specialties`, `verificationStatus: "pending"`.
+- El servidor rechaza campos prohibidos (`rating_avg`, `verification_status` directo,
+  `user`, `id`, ubicación, etc.) con `400 forbidden_field`.
+- Ponerse online exige `verification_status = "verified"`.
+- Reenviar a revisión solo se permite desde `rejected`.
+
+### Reseñas - OK
+
+`GET /api/professionals/me/reviews` devuelve `{ data: { reviews, total } }`. No acepta
+`limit`; el cliente recorta si necesita mostrar menos.
+
+### Disponibilidad - OK
+
+`isOnline: true|false`. No existe `DISPONIBLE`/`OCUPADO` como enum ni heartbeat en esta
+fase. Forzar `OCUPADO` por inactividad queda **Fase posterior**.
+
+### Foto de perfil - OK
+
+`POST /api/files` con `purpose=avatar` y luego `PATCH /api/professionals/me { avatar }`.
+La foto se publica al asignarla. Moderación previa de foto queda **Fase posterior**.
+
+### Ubicación HTTP - Fase posterior
+
+Hoy la ubicación viaja por socket (`location:update`) y se consulta con
+`GET /realtime/nearby`. No hay `PUT /api/professionals/me/location`.
+
+## Pantalla 7 - Mi portafolio - Fase posterior
+
+No existe modelo ni endpoint de portafolio. `POST /api/files` acepta
+`purpose=portfolio`, pero no hay orden, portada, descripción, servicio asociado, videos,
+límites ni moderación. La app mantiene el portafolio en mock y así debe documentarse.
+
+Rutas previstas para una fase posterior, sin alias `/api/v1`:
+
+- `GET/POST /api/professionals/me/portfolio`
+- `PATCH/DELETE /api/professionals/me/portfolio/:id`
+
+## Pantalla 8 - Solicitud entrante
+
+### Eventos - OK
+
+El BFF emite `booking:new` (con `offer: true`), `booking:status`, `booking:taken`,
+`booking:expired` y `booking:event`. Los nombres `solicitud.*` del mock no existen.
+
+### GET `/api/bookings/pro/available` - OK
+
+Devuelve hasta 50 ofertas vigentes del profesional, con servicio, precio, distancia
+redondeada y primer nombre del cliente. No incluye dirección exacta.
+
+### Aceptar / rechazar - OK
+
+- `POST /api/bookings/:id/accept`: `pending` → `accepted`.
+- `POST /api/bookings/:id/reject`: `pending` → `rejected`.
+- Ambos son idempotentes ante conflictos de estado y responden la reserva.
+- Errores: `400 invalid_body`, `404 not_found`, `409 transition_not_allowed`.
+
+No existe el modelo `solicitud-activa` ni `solicitudes-entrantes/:id/...`; se usa el id de
+reserva.
+
+### Expiración - OK
+
+La expiración la procesa el servidor con `expires_at` y el motor de matching. No hay
+endpoint explícito de “procesar expiración”.
+
+## Pantalla 9 - Servicio en curso
+
+### Consulta - OK
+
+`GET /api/bookings/pro/mine?status=accepted,in_progress` devuelve las reservas activas.
+El detalle incluye servicio, precio, dirección, cliente, eventos y ficha pública del
+cliente/profesional según corresponda.
+
+No hay un objeto único `servicio-activo` con `ahoraServidor`, etapa traducida ni PIN. La
+app deriva la etapa desde `status`.
+
+### Llegada - OK
+
+`POST /api/bookings/:id/events { "status": "llegada", lat?, lng? }` registra el evento.
+La reserva sigue `accepted`; la app muestra el PIN de 4 dígitos de forma determinista.
+
+### Inicio con PIN - Pendiente MVP
+
+- `POST /api/bookings/:id/start` exige `accepted` y pasa a `in_progress`.
+- Con `REQUIRE_START_PIN=true`, el body debe incluir `{ "pin": "1234" }`; el servidor
+  valida el PIN determinista de la reserva. Con el flag apagado, se mantiene el
+  comportamiento actual.
+- Intentos, bloqueo y `bloqueadoHasta` quedan para una fase posterior; el BFF no
+  persiste PIN.
+
+### Cancelación - Pendiente MVP
+
+`POST /api/bookings/:id/cancel` aplica las reglas de la fase:
+
+- Profesional: solo en `pending` o `accepted`; exige `motivo` de la lista cerrada.
+- Cliente: solo en `pending` o `accepted`; no puede cancelar `in_progress`.
+- Motivos: `CLIENTE_AUSENTE`, `DIRECCION_INCORRECTA`, `CLIENTE_CANCELO_EN_PERSONA`,
+  `NO_PUEDO_CONTINUAR`.
+- El motivo se persiste en `bookings.cancel_reason`.
+
+### Finalizar - OK
+
+`POST /api/bookings/:id/complete`: `in_progress` → `completed`.
+
+### Eventos de servicio - OK
+
+`booking:event` y `booking:status` informan los cambios. Los nombres `servicio.*` del
+mock no existen.
+
+## Pantalla 10 - Historial / ingresos
+
+### Resumen agregado - Pendiente MVP
+
+`GET /api/professionals/me/earnings` devolverá los totales del profesional del token:
+
+```json
+{
+  "data": {
+    "commissionRate": 0.15,
+    "grossCop": 0,
+    "commissionCop": 0,
+    "netCop": 0,
+    "completedBookings": 0
+  }
+}
+```
+
+- `grossCop`: suma de `price_snapshot` de reservas `completed`.
+- `commissionCop`: `round(grossCop * COMMISSION_RATE)`.
+- `netCop`: `grossCop - commissionCop`.
+- `COMMISSION_RATE` es una variable de entorno entre `0` y `1`; por defecto `0.15`.
+- No incluye canceladas ni propinas.
+
+### Historial detallado por periodo - Fase posterior
+
+No existe endpoint de ítems, cursor, periodos Hoy/Semana/Mes ni desglose de efectivo y
+digital. La app deriva el historial actual desde reservas y reseñas. Persistir comisiones,
+liquidaciones y métodos de pago queda **Fase posterior**.
+
+## Seguridad y privacidad
+
+- **OK:** identidad desde JWT; acceso a reservas solo para cliente, profesional asignado
+  o admin; documentos y archivos privados protegidos; perfil público sin email, teléfono
+  ni documentos.
+- **OK:** dirección exacta solo visible para participantes de la reserva, no en ofertas.
+- **Pendiente MVP:** `requireAdmin` para rutas administrativas.
+- **Pendiente MVP:** consentimiento legal con versión, timestamp del servidor e IP.
+- **Fase posterior:** auditoría de activación, moderación de portafolio, retención y
+  borrado de datos, URLs firmadas y antivirus.
+
+## Variables de entorno relevantes
+
+| Variable | Uso |
+|---|---|
+| `DATABASE_URL` | Postgres del BFF. |
+| `DIRECTUS_SECRET` | Firma/verificación de JWT. |
+| `APP_ROLE_ID` | Rol asignado al registrar App Users. |
+| `REQUIRE_START_PIN` | `true` exige PIN en `POST /api/bookings/:id/start`. |
+| `COMMISSION_RATE` | Tasa de comisión para `/api/professionals/me/earnings` (`0..1`). |
+| `BFF_REGISTER_RATE_MAX` | Máximo de registros por ventana. |
+| `BFF_REGISTER_RATE_WINDOW_MS` | Ventana del rate limit de registro. |
+
+## Pendientes explícitos
+
+- Activación por código: **esperando definición del usuario**.
+- Portafolio real: **Fase posterior**, hoy mock documentado.
+- Onboarding con `solicitudId`, catálogo público, foto moderada, heartbeat, historial
+  detallado y liquidaciones: **Fase posterior**.
