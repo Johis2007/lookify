@@ -162,3 +162,27 @@ sujetos a confirmación.
   aceptan esas pantallas o si se reaplican los cambios visuales de `c5ee047`.
 - Los bundles prueban que el código compila, no que el flujo funcione contra
   Directus/PostGIS/Redis.
+
+## Restauración visual de `c5ee047` sobre la lógica real
+
+Regla aplicada: se parte de la composición visual de Yeison (`c5ee047`) y se
+reinserta la lógica de `HEAD`; cuando una función real no existe en el diseño,
+se conserva con el menor cambio visual y se registra en
+[`DESVIOS-UI.md`](./DESVIOS-UI.md).
+
+### Home
+
+- Se eliminó el subheader grande de GPS y el badge volvió a ser discreto
+  (esquina inferior del mapa). El botón de logout queda como icono junto a la
+  campana, con el mismo tamaño que el diseño original.
+- Se conservan `LookifyMap`, `useLiveLocation`, ubicación recordada, rastro,
+  profesionales cercanos del backend, logout y el botón "Ver ruta en vivo"
+  (`LiveRoute` está registrado en `AppNavigator.tsx` y `LiveRouteScreen.tsx`
+  existe).
+- El footer vuelve al espaciado de Yeison con "Solicitar ahora" como acción
+  principal y "Ver ruta en vivo" como acción secundaria.
+- Diferencias visuales restantes: icono de logout, badge de GPS y botón
+  "Ver ruta en vivo" no están en `c5ee047`; documentados en `DESVIOS-UI.md`.
+- Evidencia: `npm run typecheck` -> `PARITY OK ... real=26, mock=3`;
+  `npm --workspace apps/realtime-server test` -> 105/105 tests.
+- Pendiente: smoke en Expo Go contra backend real (Docker/DB/Redis).

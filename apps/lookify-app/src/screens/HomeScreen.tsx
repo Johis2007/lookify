@@ -195,16 +195,6 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
               ? `${place.label} · ${place.coords.latitude.toFixed(5)}, ${place.coords.longitude.toFixed(5)}`
               : 'Chapinero, Bogotá'}
           </Text>
-          {live ? (
-            <Text style={styles.headerSub}>
-              En vivo · ±{Math.round(live.accuracy ?? 0)} m · {(live.speed ?? 0).toFixed(1)} m/s
-              {walkKm > 0 ? ` · ${walkKm.toFixed(2)} km` : ''}
-            </Text>
-          ) : place.hasFix ? (
-            <Text style={styles.headerSub}>Recordada · activando GPS…</Text>
-          ) : liveError ? (
-            <Text style={styles.headerSub}>{liveError} · usando punto aproximado</Text>
-          ) : null}
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.notifButton}>
@@ -216,7 +206,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
             accessibilityRole="button"
             accessibilityLabel="Cerrar sesión"
           >
-            <MaterialCommunityIcons name="logout" size={18} color={colors.navy} />
+            <MaterialCommunityIcons name="logout" size={18} color={colors.textOnNavy} />
           </TouchableOpacity>
         </View>
       </View>
@@ -274,10 +264,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           <View style={[styles.liveDot, (live || place.hasFix) && styles.liveDotOn]} />
           <Text style={styles.liveText}>
             {live
-              ? `En vivo · ${profesionalesEnMapa.length} cerca`
+              ? `GPS ±${Math.round(live.accuracy ?? 0)} m · ${profesionalesEnMapa.length} cerca`
               : place.hasFix
                 ? `${place.label} · ${profesionalesEnMapa.length} cerca`
-                : `${profesionalesEnMapa.length} cerca · activando GPS…`}
+                : liveError
+                  ? `GPS aprox. · ${profesionalesEnMapa.length} cerca`
+                  : `GPS… · ${profesionalesEnMapa.length} cerca`}
+            {walkKm > 0 ? ` · ${walkKm.toFixed(2)} km` : ''}
           </Text>
         </View>
       </View>
@@ -318,11 +311,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     marginTop: 2,
   },
-  headerSub: {
-    fontSize: 11,
-    color: colors.textOnNavyMuted,
-    marginTop: 2,
-  },
   notifButton: {
     width: 36,
     height: 36,
@@ -340,7 +328,8 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: radius.full,
-    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.textOnNavyMuted,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -390,19 +379,19 @@ const styles = StyleSheet.create({
   },
   liveBadge: {
     position: 'absolute',
-    top: 12,
-    alignSelf: 'center',
+    left: spacing.sm,
+    bottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
     backgroundColor: colors.navy,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: radius.full,
   },
   liveDot: {
-    width: 8,
-    height: 8,
+    width: 6,
+    height: 6,
     borderRadius: radius.full,
     backgroundColor: colors.textSecondary,
   },
@@ -411,12 +400,11 @@ const styles = StyleSheet.create({
   },
   liveText: {
     color: colors.white,
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 10,
+    fontWeight: '600',
   },
   footer: {
     padding: spacing.lg,
-    gap: spacing.sm,
   },
   footerCount: {
     ...typography.heading,
