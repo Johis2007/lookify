@@ -167,9 +167,21 @@ maybe('PATCH /me verificationStatus=pending funciona desde rejected', async () =
   assert.equal(res.json.data.verificationStatus, 'pending');
 });
 
-maybe('PATCH /me isOnline=true funciona tras verificar (admin)', async () => {
+maybe('PATCH /me isOnline=true con verificado sin activar -> 403', async () => {
   await pool.query(
     `UPDATE beauty_professionals SET verification_status = 'verified' WHERE "user" = $1`,
+    [newProUser],
+  );
+  const res = await api('PATCH', '/api/professionals/me', newProUser, { isOnline: true });
+  assert.equal(res.status, 403);
+  assert.equal(res.json.error, 'professional_not_activated');
+});
+
+maybe('PATCH /me isOnline=true funciona tras verificar y activar (admin)', async () => {
+  await pool.query(
+    `UPDATE beauty_professionals
+        SET verification_status = 'verified', activated_at = NOW()
+      WHERE "user" = $1`,
     [newProUser],
   );
   const res = await api('PATCH', '/api/professionals/me', newProUser, { isOnline: true });
@@ -177,7 +189,9 @@ maybe('PATCH /me isOnline=true funciona tras verificar (admin)', async () => {
   assert.equal(res.json.data.isOnline, true);
   // Cleanup para no dejar el fixture online.
   await pool.query(
-    `UPDATE beauty_professionals SET verification_status = 'pending', is_online = false WHERE "user" = $1`,
+    `UPDATE beauty_professionals
+        SET verification_status = 'pending', activated_at = NULL, is_online = false
+      WHERE "user" = $1`,
     [newProUser],
   );
 });

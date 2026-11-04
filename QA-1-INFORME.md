@@ -15,6 +15,29 @@ realtime/BFF `localhost:4001`, `EXPO_PUBLIC_USE_BACKEND=true`.
 - Copia legacy de la raiz movida fuera del repo a
   `C:\Users\santo\lookify-legacy-root`.
 
+## Validacion actual del entorno
+
+En esta sesion de trabajo se verifico el proyecto sin levantar Docker porque el
+entorno disponible no expone el daemon de Docker (`dockerAPI` no disponible).
+
+Comandos ejecutados y resultado:
+
+```text
+npm run typecheck
+EXIT=0
+
+npm run check:parity
+PARITY OK: 32 archivo(s)/contrato(s) verificados
+EXIT=0
+
+docker compose up -d postgres redis directus
+ERROR: failed to connect to the docker API...
+```
+
+Esto significa que la validacion estatica del repo queda confirmada y la
+integracion real con PostgreSQL/Directus queda pendiente del arranque del
+servicio Docker en un entorno con daemon activo.
+
 ## Seguridad
 
 Antes del fix:

@@ -21,7 +21,12 @@ import {
   mockNotificarProfesionalCancelacion,
   promptCancelarServicio,
 } from '../utils/cancelarServicioAlert';
-import { generarPinServicioMock, pinAccessibilityLabel } from '../utils/mockServicePin';
+import {
+  generarPinServicioMock,
+  pinAccessibilityLabel,
+  pinServicioParaReserva,
+} from '../utils/mockServicePin';
+import { isBackendEnabled } from '../services/backend/initBackend';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServiceInProgress'>;
 
@@ -45,11 +50,23 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
     precioTotal,
   } = params;
 
-  const professional = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
+  const modoReal = isBackendEnabled() && Boolean(params.bookingId);
+  const mockProfessional = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
+  const professional = modoReal
+    ? {
+        id: professionalId,
+        nombre: params.profesional?.nombre ?? 'Profesional',
+      }
+    : mockProfessional;
   const servicio = SERVICIOS_POR_CATEGORIA[categoriaId]?.find((s) => s.id === servicioId);
-  const datosValidos = Boolean(professional && servicio);
+  const datosValidos = modoReal ? Boolean(params.bookingId) : Boolean(mockProfessional && servicio);
+  const nombreServicio = servicio?.nombre ?? params.servicioNombre ?? 'Servicio reservado';
 
-  const [pinServicio] = useState(() => generarPinServicioMock());
+  const [pinServicio] = useState(() =>
+    modoReal && params.bookingId
+      ? pinServicioParaReserva(params.bookingId)
+      : generarPinServicioMock()
+  );
 
   const allowExitRef = useRef(false);
   const alertOpenRef = useRef(false);
@@ -77,6 +94,9 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
       precioServicio,
       precioDomicilio,
       precioTotal,
+      ...(params.bookingId ? { bookingId: params.bookingId } : {}),
+      ...(params.profesional ? { profesional: params.profesional } : {}),
+      ...(params.servicioNombre ? { servicioNombre: params.servicioNombre } : {}),
     }),
     [
       professionalId,
@@ -86,6 +106,9 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
       precioServicio,
       precioDomicilio,
       precioTotal,
+      params.bookingId,
+      params.profesional,
+      params.servicioNombre,
     ]
   );
 
@@ -221,11 +244,11 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
     return unsubscribe;
   }, [navigation, showCancelarServicioAlert, handleBackBlocked]);
 
-  if (!datosValidos || !professional || !servicio) {
+  if (!datosValidos || !professional || !nombreServicio) {
     return null;
   }
 
-  const duracionLabel = `${servicio.duracionMin} min`;
+  const duracionLabel = servicio ? `${servicio.duracionMin} min` : 'acordada';
   const showPin = fase === 'esperandoPin';
   const showEsperandoProfesional = fase === 'esperandoPin';
   const showProgress = fase === 'servicio' || (fase === 'finalizado' && progressServicio > 0);
@@ -237,7 +260,7 @@ export default function ServiceInProgressScreen({ navigation, route }: Props) {
       <View style={styles.content}>
         <MaterialCommunityIcons name="timer-outline" size={56} color={colors.sandLight} />
 
-        <Text style={styles.title}>{servicio.nombre}</Text>
+        <Text style={styles.title}>{nombreServicio}</Text>
         <Text style={styles.subtitle}>Duración acordada: {duracionLabel}</Text>
 
         {showPin ? (

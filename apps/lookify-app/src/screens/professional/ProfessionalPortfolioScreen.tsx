@@ -91,23 +91,26 @@ function alertPermisoMedios(tipo: 'galería' | 'cámara'): void {
 
 type VideoPreviewProps = {
   visible: boolean;
-  uri: string | null;
+  item: PortfolioItem | null;
   onClose: () => void;
 };
 
-function VideoPreviewModal({ visible, uri, onClose }: VideoPreviewProps) {
-  const source = visible && uri ? uri : null;
+function VideoPreviewModal({ visible, item, onClose }: VideoPreviewProps) {
+  const source = useMemo(
+    () => (visible && item ? { uri: item.uri, headers: item.headers } : null),
+    [visible, item]
+  );
   const player = useVideoPlayer(source, (p) => {
     p.loop = false;
   });
 
   useEffect(() => {
-    if (visible && uri) {
+    if (visible && item) {
       player.play();
     } else {
       player.pause();
     }
-  }, [visible, uri, player]);
+  }, [visible, item, player]);
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
@@ -143,7 +146,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
   const [draftServicioId, setDraftServicioId] = useState<string | null>(null);
   const [draftDescError, setDraftDescError] = useState<string | null>(null);
 
-  const [videoPreviewUri, setVideoPreviewUri] = useState<string | null>(null);
+  const [videoPreview, setVideoPreview] = useState<PortfolioItem | null>(null);
 
   const mostrarAviso = (data?.totalFotos ?? 0) < PORTAFOLIO_UMBRAL_FOTOS_AVISO;
 
@@ -190,8 +193,8 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
 
   useEffect(() => {
     const onBack = () => {
-      if (videoPreviewUri) {
-        setVideoPreviewUri(null);
+      if (videoPreview) {
+        setVideoPreview(null);
         return true;
       }
       if (modalEdicionAbierto.current) {
@@ -203,7 +206,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
     };
     const sub = BackHandler.addEventListener('hardwareBackPress', onBack);
     return () => sub.remove();
-  }, [videoPreviewUri]);
+  }, [videoPreview]);
 
   const runAction = async (fn: () => Promise<void>) => {
     if (accionEnCurso.current) return;
@@ -610,7 +613,10 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
                 onPress={() => abrirEdicion(foto)}
                 accessibilityLabel="Editar foto"
               >
-                <Image source={{ uri: foto.uri }} style={styles.cellImage} />
+                <Image
+                  source={{ uri: foto.uri, headers: foto.headers }}
+                  style={styles.cellImage}
+                />
                 {foto.esPortada ? (
                   <View style={styles.portadaBadge}>
                     <Text style={styles.portadaBadgeText}>Portada</Text>
@@ -642,7 +648,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
               <Pressable
                 key={video.id}
                 style={styles.videoCard}
-                onPress={() => setVideoPreviewUri(video.uri)}
+                onPress={() => setVideoPreview(video)}
                 onLongPress={() => abrirEdicion(video)}
                 accessibilityLabel="Reproducir video"
               >
@@ -687,7 +693,10 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
                 {editItem?.tipo === 'FOTO' ? 'Editar foto' : 'Editar video'}
               </Text>
               {editItem?.tipo === 'FOTO' ? (
-                <Image source={{ uri: editItem.uri }} style={styles.modalPreviewImage} />
+                <Image
+                  source={{ uri: editItem.uri, headers: editItem.headers }}
+                  style={styles.modalPreviewImage}
+                />
               ) : (
                 <View style={styles.modalPreviewVideo}>
                   <MaterialCommunityIcons name="play-circle-outline" size={56} color={colors.navy} />
@@ -790,9 +799,9 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
       </Modal>
 
       <VideoPreviewModal
-        visible={videoPreviewUri != null}
-        uri={videoPreviewUri}
-        onClose={() => setVideoPreviewUri(null)}
+        visible={videoPreview != null}
+        item={videoPreview}
+        onClose={() => setVideoPreview(null)}
       />
     </SafeAreaView>
   );
@@ -1011,7 +1020,7 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
   },
   videoPreviewPlayer: {
-    width: '100%',
+    width: '100%' as const,
     height: 280,
   },
 });

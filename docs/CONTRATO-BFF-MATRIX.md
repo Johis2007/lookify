@@ -25,7 +25,7 @@ Estados:
 | Archivos | `POST /api/files`, `GET/DELETE /api/files/:id` | OK |
 | Salud | `GET /health` | OK |
 | Cercanos | `GET /realtime/nearby` | OK |
-| Rutas admin | Ninguna; guard `requireAdmin` disponible | OK (guard) |
+| Admin verificacion | `PATCH /api/professionals/:id/verification` con `requireAdmin` | OK |
 
 ## Pantallas 3-5: onboarding
 
@@ -37,9 +37,9 @@ Estados:
 | Editar/borrar documento | `PATCH/DELETE /api/professionals/me/documents/:id` | OK |
 | Certificados por servicio y límites | Ninguno | Pendiente MVP |
 | Enviar a verificación | Solo `PATCH /me { verificationStatus: "pending" }` desde `rejected` | Pendiente MVP |
-| Estado de verificación | `verification_status` en `GET /api/professionals/me` | Parcial |
+| Estado de verificacion | `verification_status` + `activated` en `GET /api/professionals/me` | OK |
 | Corrección de certificados | Ninguno | Pendiente MVP |
-| Activación por código | Ninguno | Pendiente MVP; espera definición del usuario |
+| Activacion por codigo | `GET /me/activation`, `POST /me/activation/resend`, `POST /me/activation/confirm` | OK |
 | Reinicio de activación admin | Ninguno | Fase posterior |
 
 ## Pantalla 6: panel principal
@@ -47,7 +47,7 @@ Estados:
 | Capacidad | BFF real | Estado |
 |---|---|---|
 | Perfil | `GET/POST/PATCH /api/professionals/me` | OK |
-| Disponibilidad | `PATCH /api/professionals/me { isOnline }` | OK |
+| Disponibilidad | `PATCH /api/professionals/me { isOnline }` exige verificado y activado | OK |
 | Servicios ofrecidos | `GET /api/professionals/me/services` | OK |
 | Reseñas | `GET /api/professionals/me/reviews` | OK |
 | Foto de perfil | `POST /api/files` + `PATCH /me { avatar }` | OK |
@@ -112,14 +112,14 @@ El portafolio de la app sigue en mock y así está documentado.
 | Documentos privados | `GET /api/files/:id` autorizado | OK |
 | Perfil público sin PII | `GET /api/professionals/:id/public` | OK |
 | Dirección exacta fuera de ofertas | `GET /api/bookings/pro/available` redondeada | OK |
-| `requireAdmin` | Guard disponible; aún sin rutas admin nuevas | OK (guard) |
+| `requireAdmin` | Protege `PATCH /api/professionals/:id/verification` | OK |
 | Consentimiento versionado + IP/fecha servidor | `legal_consents` + `POST /api/auth/register` | OK |
-| Auditoría de activación/portafolio | Ninguno | Fase posterior |
+| Auditoria de activacion/portafolio | Codigos en DB y SMTP; sin auditoria dedicada | Parcial |
 
 ## Conclusión
 
 El BFF cubre registro con consentimientos, perfiles, archivos, reservas, matching,
-tracking, reseñas y el ciclo `accepted  in_progress  completed`. También incluye el guard
-`requireAdmin`, el PIN opcional de inicio, las reglas de cancelación con motivo y el
-resumen de ingresos con comisión configurable. Activación por código espera definición;
-portafolio, onboarding completo, historial detallado y liquidaciones son fase posterior.
+tracking, resenas, el ciclo `accepted -> in_progress -> completed` y la activacion
+profesional por codigo con SMTP. Tambien incluye el guard `requireAdmin`, el PIN
+opcional de inicio, las reglas de cancelacion con motivo y el resumen de ingresos.
+Portafolio, onboarding completo, historial detallado y liquidaciones son fase posterior.

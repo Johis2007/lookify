@@ -16,14 +16,16 @@ import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } f
 // `Authorization` también al renderizar (React Native Image lo soporta).
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
+export const MAX_PORTFOLIO_VIDEO_BYTES = 50 * 1024 * 1024;
 
 const PURPOSES = ['avatar', 'portfolio', 'certificate'] as const;
 type Purpose = (typeof PURPOSES)[number];
 
 const IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
+const VIDEO_MIMES = ['video/mp4', 'video/quicktime'] as const;
 const MIMES_BY_PURPOSE: Record<Purpose, readonly string[]> = {
   avatar: IMAGE_MIMES,
-  portfolio: IMAGE_MIMES,
+  portfolio: [...IMAGE_MIMES, ...VIDEO_MIMES],
   certificate: [...IMAGE_MIMES, 'application/pdf'],
 };
 
@@ -32,7 +34,14 @@ const EXT_BY_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'application/pdf': 'pdf',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
 };
+
+function maxBytesFor(purpose: Purpose, mime: string): number {
+  if (purpose === 'portfolio' && mime.startsWith('video/')) return MAX_PORTFOLIO_VIDEO_BYTES;
+  return MAX_FILE_BYTES;
+}
 
 const PurposeBody = z.enum(PURPOSES);
 
@@ -83,7 +92,7 @@ async function canRead(
 function uploadSingle(req: AuthedRequest, res: Response, next: (err?: unknown) => void): void {
   const handler = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_FILE_BYTES, files: 1, fields: 4 },
+    limits: { fileSize: MAX_PORTFOLIO_VIDEO_BYTES, files: 1, fields: 4 },
   }).single('file');
   handler(req as never, res as never, (err: unknown) => {
     if (err instanceof multer.MulterError) {
@@ -128,7 +137,9 @@ export function createFilesRouter(pool: pg.Pool): Router {
       if (!MIMES_BY_PURPOSE[purpose].includes(file.mimetype)) {
         throw new HttpError(400, 'invalid_mime');
       }
-      if (file.size > MAX_FILE_BYTES) throw new HttpError(413, 'file_too_large');
+      if (file.size > maxBytesFor(purpose, file.mimetype)) {
+        throw new HttpError(413, 'file_too_large');
+      }
 
       const ext = EXT_BY_MIME[file.mimetype];
       const generated = `${purpose}-${req.user!.userId.slice(0, 8)}-${randomUUID()}.${ext}`;

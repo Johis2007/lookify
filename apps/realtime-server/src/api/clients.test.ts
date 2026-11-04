@@ -76,8 +76,8 @@ before(async () => {
   proUser = await mkUser(`pro.reviews-${stamp}@lookify.app`, 'Pro Reviews');
 
   const pro = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online)
-     VALUES ($1, 'Pro Reviews', 'verified', false) RETURNING id`,
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, activated_at)
+     VALUES ($1, 'Pro Reviews', 'verified', false, NOW()) RETURNING id`,
     [proUser],
   );
   proId = pro.rows[0].id;

@@ -2,7 +2,7 @@
 // Consultas del panel admin (token de administrador). Lógica portada de
 // mobile-web/app/admin (dashboard, verification, users) a este proyecto.
 
-import { adminApi } from './adminAuth';
+import { adminApi, adminBffApi } from './adminAuth';
 import { BACKEND } from './config';
 
 export type AdminStats = {
@@ -132,10 +132,7 @@ export async function decideProfessional(
   status: 'verified' | 'rejected',
   note: string,
 ): Promise<void> {
-  await adminApi('PATCH', `/items/beauty_professionals/${id}`, {
-    verification_status: status,
-    verification_note: note,
-  });
+  await adminBffApi('PATCH', `/api/professionals/${id}/verification`, { status, note });
 }
 
 export async function fetchUsersPage(opts: {

@@ -14,7 +14,9 @@ export type BackendSession = {
   professionalId: number;
   email: string;
   nombre: string;
-  /** true cuando se entró sin conexión. */
+  /** Estado de activación conocido al iniciar sesión. */
+  activated?: boolean;
+  /** true cuando se entr� sin conexi�n. */
   offline?: boolean;
 };
 

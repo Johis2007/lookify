@@ -9,6 +9,7 @@ import {
   ProfessionalVerificationService,
 } from '../professionalVerificationService';
 import {
+  EstadoActivacionUi,
   EstadoVerificacionResponse,
   IniciarCorreccionCertificadosRequest,
   IniciarCorreccionCertificadosResponse,
@@ -35,7 +36,28 @@ type ProRow = {
   displayName: string;
   verificationStatus?: 'pending' | 'verified' | 'rejected' | null;
   verificationNote?: string | null;
+  activated?: boolean;
 };
+
+type ActivationApi = EstadoActivacionUi & { activated: boolean };
+
+const ACTIVACION_COMPLETA: EstadoActivacionUi = {
+  codigoExpirado: false,
+  bloqueadoHastaMs: null,
+  reenvioDisponibleEnMs: null,
+  reenviosRestantes: 0,
+  sinSalidaActivacion: false,
+};
+
+function activacionUi(value: EstadoActivacionUi): EstadoActivacionUi {
+  return {
+    codigoExpirado: value.codigoExpirado,
+    bloqueadoHastaMs: value.bloqueadoHastaMs,
+    reenvioDisponibleEnMs: value.reenvioDisponibleEnMs,
+    reenviosRestantes: value.reenviosRestantes,
+    sinSalidaActivacion: value.sinSalidaActivacion,
+  };
+}
 
 async function leerPro(token: string): Promise<ProRow> {
   return bffApi<ProRow>(
@@ -70,17 +92,24 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       emailEnmascarado: maskEmail(session.email),
     };
     if (pro.verificationStatus === 'verified') {
+      if (pro.activated === true) {
+        return {
+          ...base,
+          estadoSolicitud: 'APROBADO',
+          profesionalActivado: true,
+          activacion: ACTIVACION_COMPLETA,
+        };
+      }
+      const activacion = await bffApi<ActivationApi>(
+        'GET',
+        '/api/professionals/me/activation',
+        session.token,
+      );
       return {
         ...base,
         estadoSolicitud: 'APROBADO',
-        profesionalActivado: true,
-        activacion: {
-          codigoExpirado: false,
-          bloqueadoHastaMs: null,
-          reenvioDisponibleEnMs: null,
-          reenviosRestantes: 0,
-          sinSalidaActivacion: false,
-        },
+        profesionalActivado: activacion.activated === true,
+        activacion: activacion.activated ? ACTIVACION_COMPLETA : activacionUi(activacion),
       };
     }
     if (pro.verificationStatus === 'rejected') {
@@ -145,8 +174,19 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       if (!session) throw new ServiceError('INVALID_CREDENTIALS');
       await resolveProfessionalId(undefined, input.solicitudId);
       const pro = await leerPro(session.token);
-      if (pro.verificationStatus !== 'verified') throw new ServiceError('REENVIO_NO_DISPONIBLE');
-      return { emailEnmascarado: maskEmail(session.email), reenvioDisponibleEnMs: null, reenviosRestantes: 0 };
+      if (pro.verificationStatus !== 'verified' || pro.activated === true) {
+        throw new ServiceError('REENVIO_NO_DISPONIBLE');
+      }
+      const result = await bffApi<{ reenvioDisponibleEnMs: number | null; reenviosRestantes: number }>(
+        'POST',
+        '/api/professionals/me/activation/resend',
+        session.token,
+      );
+      return {
+        emailEnmascarado: maskEmail(session.email),
+        reenvioDisponibleEnMs: result.reenvioDisponibleEnMs,
+        reenviosRestantes: result.reenviosRestantes,
+      };
     },
 
     async validarCodigoActivacion(input: ValidarCodigoActivacionRequest): Promise<ValidarCodigoActivacionResponse> {
@@ -157,6 +197,12 @@ export function createBackendProfessionalVerificationService(): ProfessionalVeri
       if (pro.verificationStatus !== 'verified' || !/^\d{6}$/.test(input.codigo)) {
         throw new ServiceError('CODIGO_INVALIDO');
       }
+      await bffApi<{ activated: boolean }>(
+        'POST',
+        '/api/professionals/me/activation/confirm',
+        session.token,
+        { codigo: input.codigo },
+      );
       return {
         profesionalId: String(professionalId),
         solicitudId: backendSolicitudId(professionalId),

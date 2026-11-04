@@ -1,4 +1,4 @@
-# Estado de Lookify por etapas
+﻿# Estado de Lookify por etapas
 
 Fecha de corte: 2026-11-03
 Rama actual: `frontend-update-from-remote`
@@ -40,6 +40,42 @@ Referencia con la lógica real: `backup/pre-frontend-update` / `main` (`dd1d307`
 | 8. Seguridad y calidad | App | Verificado parcial | `d83f056`, `83e1819` | `npm run typecheck` exit 0 el 2026-10-29. No se ejecutaron los 98 tests hoy porque Docker no está disponible. |
 | 9. Despliegue productivo | Servidor | Pendiente | - | Solo hay Compose local; no hay evidencia de despliegue. |
 | 9. Despliegue productivo | App | Pendiente | - | Solo hay Expo local; no hay build EAS ni tiendas. |
+
+## Activaci?n profesional (2026-11-03)
+
+Implementado en el BFF y consumido por la app:
+
+- Migraci?n `009_professional_activation.sql`: `activated_at` en
+  `beauty_professionals` y tabla `professional_activation_codes`.
+- C?digo de 6 d?gitos, 10 minutos, 5 fallos, bloqueo de 15 minutos, reenv?o cada
+  60 segundos y m?ximo 3 reenv?os.
+- La aprobaci?n admin env?a el correo por SMTP y genera el c?digo, pero no activa.
+  Si el correo falla, el estado no cambia y responde `502 email_failed`.
+- `activated` es independiente de `verificationStatus`. Ponerse online, publicar
+  GPS, aparecer en cercanos, recibir ofertas y aceptar reservas exige estar
+  verificado y activado.
+- Endpoints: `GET /api/professionals/me/activation`,
+  `POST /api/professionals/me/activation/resend`,
+  `POST /api/professionals/me/activation/confirm` y
+  `PATCH /api/professionals/:id/verification` (admin).
+- La app usa el BFF para aprobar/rechazar desde el panel admin y para
+  consultar/reenviar/confirmar el c?digo desde la pantalla profesional.
+
+Evidencia:
+
+```text
+npx tsc --noEmit -p apps/realtime-server
+EXIT=0
+
+npm --workspace apps/realtime-server test
+124/124 tests passed
+
+npm run typecheck
+EXIT=0 (realtime-server + lookify-app)
+```
+
+Pendiente: configurar credenciales SMTP reales en `.env` y validar la entrega
+extremo a extremo. Los tests de activaci?n usan un mailer falso.
 
 ## Regresión concreta de `c5ee047`
 

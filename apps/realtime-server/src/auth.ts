@@ -57,11 +57,11 @@ export async function resolveOwnProfessionalId(pool: Pool, userId: string): Prom
 }
 
 // Igual que resolveOwnProfessionalId pero SOLO devuelve el id si el perfil
-// está 'verified'. Se usa para operaciones que exigen verificación del lado
-// servidor (ponerse online, publicar GPS, aparecer en el radar).
+// est� 'verified' y activado. Se usa para operaciones que exigen verificaci�n
+// y activaci�n del lado servidor (ponerse online, publicar GPS, radar).
 export async function resolveOwnVerifiedProfessionalId(pool: Pool, userId: string): Promise<number | null> {
   const { rows } = await pool.query(
-    "SELECT id FROM beauty_professionals WHERE \"user\" = $1 AND verification_status = 'verified' LIMIT 1",
+    "SELECT id FROM beauty_professionals WHERE \"user\" = $1 AND verification_status = 'verified' AND activated_at IS NOT NULL LIMIT 1",
     [userId]
   );
   const id = rows[0]?.id;

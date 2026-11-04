@@ -69,6 +69,7 @@ export async function findCandidates(
        JOIN professional_services ps ON ps.professional_id = bp.id AND ps.service_id = $3
       WHERE bp.is_online = true
         AND bp.verification_status = 'verified'
+        AND bp.activated_at IS NOT NULL
         AND NOT (bp.id = ANY($6::int[]))
         AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $4)
       ORDER BY distance_m ASC

@@ -5,11 +5,14 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "lookify",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.lookify.app"
     },
     "android": {
+      "package": "com.lookify.app",
       "adaptiveIcon": {
         "backgroundColor": "#FBF6EE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -37,7 +40,16 @@
         }
       ],
       "expo-video",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/logo-lookify.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#1F4E5A"
+        }
+      ]
     ]
   }
 }

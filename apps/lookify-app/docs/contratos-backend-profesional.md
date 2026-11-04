@@ -39,6 +39,10 @@ verdad es el BFF (`apps/realtime-server`). Los paths `/api/v1/...` del mock hist
 | `GET` | `/api/professionals/:id/reviews` | Reseñas públicas. |
 | `GET` | `/api/professionals/me/reviews` | Reseñas del profesional del token. |
 | `GET` | `/api/professionals/me/earnings` | Totales bruto/comisión/neto de reservas completadas. |
+| `GET` | `/api/professionals/me/activation` | Estado de activacion y datos de UI. |
+| `POST` | `/api/professionals/me/activation/resend` | Reenviar el codigo de activacion. |
+| `POST` | `/api/professionals/me/activation/confirm` | Confirmar el codigo de 6 digitos. |
+| `PATCH` | `/api/professionals/:id/verification` | Admin aprueba/rechaza y dispara el correo de activacion. |
 | `POST` | `/api/files` | Subir archivo (`avatar`, `portfolio`, `certificate`). |
 | `GET/DELETE` | `/api/files/:id` | Leer o borrar archivo autorizado. |
 | `POST` | `/api/bookings` | Crear reserva; precio calculado en servidor. |
@@ -124,23 +128,38 @@ el estado de verificación se administra fuera del BFF. Los límites de 3 certif
 servicio y `enviar-verificacion` quedan **Pendiente MVP** en una ruta BFF nueva, sin
 `solicitudId`.
 
-## Pantalla 5 - Verificación y activación
+## Pantalla 5 - Verificacion y activacion
 
-- Estado de verificación y rechazo: **Pendiente MVP**.
-- Corrección de certificados: **Pendiente MVP**.
-- Activación por código, reenvío, intentos y bloqueo: **Pendiente MVP**; requiere la
-  definición del usuario. No se implementa todavía.
-- Reinicio de activación por admin: **Fase posterior**.
+### Estado de verificacion - OK
 
-Mientras exista `verification_status`, el panel profesional usa `pending`, `verified` o
-`rejected`. La activación por código se agregará al contrato cuando se defina.
+El perfil expone `verificationStatus` (`pending`, `verified`, `rejected`) y, desde
+`GET /api/professionals/me`, el booleano `activated`.
+
+### Activacion por codigo - OK
+
+- `GET /api/professionals/me/activation` devuelve `{ data: { activated, estado, codigoVigente, expiraEn, puedeReenviarEn, reenviosRestantes, bloqueadoHasta } }`.
+- `POST /api/professionals/me/activation/confirm` body: `{ "codigo": "123456" }`.
+- `POST /api/professionals/me/activation/resend` reenvia el codigo al email de la cuenta.
+- El codigo tiene 6 digitos, vence a los 10 minutos, admite 5 fallos y luego bloquea
+  15 minutos. El reenvio espera 60 segundos y tiene un maximo de 3.
+- Aprobar en admin genera el codigo y envia el correo; no activa por si solo.
+- El email se envia antes de persistir la aprobacion. Si SMTP falla, el admin recibe
+  `502 email_failed` y el estado del profesional no cambia.
+- Errores: `codigo_invalido`, `codigo_expirado`, `demasiados_intentos`,
+  `bloqueo_temporal`, `reenvio_cooldown`, `reenvios_agotados`, `not_verified`,
+  `already_activated`, `email_missing`, `email_failed`.
+- Correccion de certificados y reinicio de activacion por admin: **Fase posterior**.
+
+El flag `activated` es independiente de `verification_status`: un profesional puede
+estar aprobado pero aun no activado.
 
 ## Pantalla 6 - Panel principal
 
 ### GET `/api/professionals/me` - OK
 
 Respuesta: `id`, `displayName`, `bio`, `avatar`, `isOnline`, `ratingAvg`,
-`verificationStatus`, `verificationNote`, `yearsExp`, `specialties`, `phone`.
+`verificationStatus`, `verificationNote`, `yearsExp`, `specialties`, `phone`,
+`activated`.
 
 ### PATCH `/api/professionals/me` - OK
 
@@ -148,7 +167,8 @@ Respuesta: `id`, `displayName`, `bio`, `avatar`, `isOnline`, `ratingAvg`,
   `specialties`, `verificationStatus: "pending"`.
 - El servidor rechaza campos prohibidos (`rating_avg`, `verification_status` directo,
   `user`, `id`, ubicación, etc.) con `400 forbidden_field`.
-- Ponerse online exige `verification_status = "verified"`.
+- Ponerse online exige `verification_status = "verified"` y `activated = true`; si
+  falta la activacion responde `403 professional_not_activated`.
 - Reenviar a revisión solo se permite desde `rejected`.
 
 ### Reseñas - OK
@@ -305,12 +325,19 @@ liquidaciones y métodos de pago queda **Fase posterior**.
 | `APP_ROLE_ID` | Rol asignado al registrar App Users. |
 | `REQUIRE_START_PIN` | `true` exige PIN en `POST /api/bookings/:id/start`. |
 | `COMMISSION_RATE` | Tasa de comisión para `/api/professionals/me/earnings` (`0..1`). |
+| `ACTIVATION_SECRET` | Secreto HMAC de codigos; fallback a `DIRECTUS_SECRET`. |
+| `SMTP_URL` | URL SMTP completa (alternativa a host/puerto). |
+| `SMTP_HOST` / `SMTP_PORT` | Servidor SMTP cuando no se usa `SMTP_URL`. |
+| `SMTP_FROM` | Remitente obligatorio de los correos. |
+| `SMTP_SECURE` / `SMTP_REQUIRE_TLS` | TLS implicito o STARTTLS. |
+| `SMTP_USER` / `SMTP_PASS` | Credenciales SMTP opcionales. |
+| `SMTP_TLS_REJECT_UNAUTHORIZED` | Validacion de certificado TLS (default `true`). |
 | `BFF_REGISTER_RATE_MAX` | Máximo de registros por ventana. |
 | `BFF_REGISTER_RATE_WINDOW_MS` | Ventana del rate limit de registro. |
 
-## Pendientes explícitos
+## Pendientes explicitos
 
-- Activación por código: **esperando definición del usuario**.
+- Configurar SMTP real y validar entrega en el entorno de despliegue.
 - Portafolio real: **Fase posterior**, hoy mock documentado.
-- Onboarding con `solicitudId`, catálogo público, foto moderada, heartbeat, historial
+- Onboarding con `solicitudId`, catalogo publico, foto moderada, heartbeat, historial
   detallado y liquidaciones: **Fase posterior**.

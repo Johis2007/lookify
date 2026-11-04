@@ -85,7 +85,7 @@ window.ReactNativeWebView.postMessage('READY');
 }
 
 export default function LookifyMap({ initial, pins = [], trail = [], route = [], follow, onProPress }: Props) {
-  const ref = useRef<WebView | null>(null);
+  const ref = useRef<WebView<{}> | null>(null);
   const pressRef = useRef(onProPress);
   const lastFollow = useRef<{ latitude: number; longitude: number } | null>(null);
   const [ready, setReady] = useState(false);
@@ -138,8 +138,7 @@ export default function LookifyMap({ initial, pins = [], trail = [], route = [],
 
   return (
     <View style={styles.container}>
-      <WebView
-        ref={ref}
+      <WebView<{}> ref={ref}
         style={styles.web}
         originWhitelist={['*']}
         source={{ html }}

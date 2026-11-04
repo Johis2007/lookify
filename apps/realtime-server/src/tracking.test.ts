@@ -142,8 +142,8 @@ before(async () => {
   };
   const mkPro = async (userId: string, email: string) => {
     const r = await pool.query<{ id: number }>(
-      `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online)
-       VALUES ($1, $2, 'verified', false) RETURNING id`,
+      `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, activated_at)
+       VALUES ($1, $2, 'verified', false, NOW()) RETURNING id`,
       [userId, email],
     );
     return r.rows[0].id;

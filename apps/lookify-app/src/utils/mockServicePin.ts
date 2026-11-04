@@ -18,6 +18,13 @@ export function generarPinServicioMock(): string {
   return '2580';
 }
 
+/** PIN determinista de la reserva (misma fórmula que el BFF). */
+export function pinServicioParaReserva(bookingId: string): string {
+  const id = Number(bookingId);
+  if (!Number.isInteger(id) || id <= 0) return generarPinServicioMock();
+  return String(1000 + ((id * 7919) % 9000));
+}
+
 export function pinAccessibilityLabel(pin: string): string {
   return `Código para iniciar: ${pin.split('').join(' ')}`;
 }

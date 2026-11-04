@@ -116,8 +116,8 @@ before(async () => {
   );
   proUser = u.rows[0].id;
   const p = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg)
-     VALUES ($1, 'Test Pro', 'verified', false, 4.7) RETURNING id`,
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg, activated_at)
+     VALUES ($1, 'Test Pro', 'verified', false, 4.7, NOW()) RETURNING id`,
     [proUser],
   );
   proId = p.rows[0].id;
@@ -127,8 +127,8 @@ before(async () => {
   );
   foreignProUser = foreign.rows[0].id;
   const fp = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals (\"user\", display_name, verification_status, is_online)
-     VALUES ($1, 'Test Pro 2', 'verified', false) RETURNING id`,
+    `INSERT INTO beauty_professionals (\"user\", display_name, verification_status, is_online, activated_at)
+     VALUES ($1, 'Test Pro 2', 'verified', false, NOW()) RETURNING id`,
     [foreignProUser],
   );
   foreignProId = fp.rows[0].id;
@@ -139,8 +139,8 @@ before(async () => {
   );
   midProUser = mu.rows[0].id;
   const mp = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg)
-     VALUES ($1, 'Test Pro Mid', 'verified', false, 4.8) RETURNING id`,
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, rating_avg, activated_at)
+     VALUES ($1, 'Test Pro Mid', 'verified', false, 4.8, NOW()) RETURNING id`,
     [midProUser],
   );
   midProId = mp.rows[0].id;
@@ -268,7 +268,37 @@ maybe('profesional no verificado no puede aceptar (403)', async () => {
   const res = await api('POST', `/api/bookings/${bid}/accept`, proUser);
   assert.equal(res.status, 403);
   assert.equal(res.json.error, 'professional_not_verified');
-  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified', activated_at = NOW() WHERE id = $1`, [proId]);
+});
+
+maybe('profesional verificado sin activar no puede aceptar (403)', async () => {
+  const created = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 4B',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  const bid = created.json.data.id;
+  await pool.query('UPDATE beauty_professionals SET activated_at = NULL WHERE id = $1', [proId]);
+  const res = await api('POST', `/api/bookings/${bid}/accept`, proUser);
+  assert.equal(res.status, 403);
+  assert.equal(res.json.error, 'professional_not_verified');
+  await pool.query('UPDATE beauty_professionals SET activated_at = NOW() WHERE id = $1', [proId]);
+});
+
+maybe('crear reserva con profesional verificado sin activar -> 400', async () => {
+  await pool.query('UPDATE beauty_professionals SET activated_at = NULL WHERE id = $1', [proId]);
+  const res = await api('POST', '/api/bookings', clientA, {
+    serviceId,
+    addressText: 'Calle 5B',
+    lat: 4.7,
+    lng: -74.0,
+    professionalId: proId,
+  });
+  assert.equal(res.status, 400);
+  assert.equal(res.json.error, 'professional_not_activated');
+  await pool.query('UPDATE beauty_professionals SET activated_at = NOW() WHERE id = $1', [proId]);
 });
 
 maybe('crear reserva con profesional no verificado -> 400', async () => {
@@ -282,7 +312,7 @@ maybe('crear reserva con profesional no verificado -> 400', async () => {
   });
   assert.equal(res.status, 400);
   assert.equal(res.json.error, 'professional_not_verified');
-  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified', activated_at = NOW() WHERE id = $1`, [proId]);
 });
 
 maybe('crear reserva con profesional que no ofrece el servicio -> 400', async () => {
@@ -614,7 +644,7 @@ maybe('claim: pro no verificado no puede aceptar aunque sea candidato', async ()
   await pool.query(`UPDATE beauty_professionals SET verification_status = 'pending' WHERE id = $1`, [proId]);
   const res = await api('POST', `/api/bookings/${bid}/accept`, proUser);
   assert.equal(res.status, 403);
-  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified' WHERE id = $1`, [proId]);
+  await pool.query(`UPDATE beauty_professionals SET verification_status = 'verified', activated_at = NOW() WHERE id = $1`, [proId]);
 });
 
 maybe('claim: no participante no ve la reserva ni la acepta (404)', async () => {

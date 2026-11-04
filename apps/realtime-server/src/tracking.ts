@@ -69,9 +69,10 @@ export async function resolveAssignedProfessionalForTracking(
     status: string | null;
     pro_user: string | null;
     verification_status: string | null;
+    activated_at: Date | null;
   }>(
     `SELECT b.id, b.professional, b.status,
-            bp."user" AS pro_user, bp.verification_status
+            bp."user" AS pro_user, bp.verification_status, bp.activated_at
        FROM bookings b
        LEFT JOIN beauty_professionals bp ON bp.id = b.professional
       WHERE b.id = $1`,
@@ -80,7 +81,7 @@ export async function resolveAssignedProfessionalForTracking(
   const b = rows[0];
   if (!b || b.professional === null) return null;
   if (b.pro_user !== user.userId) return null;
-  if (b.verification_status !== 'verified') return null;
+  if (b.verification_status !== 'verified' || b.activated_at === null) return null;
   if (b.status !== 'accepted') return null;
   return { bookingId: b.id, professionalId: b.professional, status: b.status };
 }

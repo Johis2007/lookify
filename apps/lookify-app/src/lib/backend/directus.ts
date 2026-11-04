@@ -17,6 +17,27 @@ async function readJsonSafe(res: Response): Promise<any> {
 
 export function toServiceError(status: number, body: any, fallback: ServiceErrorCode): ServiceError {
   const raw = JSON.stringify(body ?? '');
+  const errorCode = typeof body?.error === 'string' ? body.error : '';
+  if (errorCode === 'email_failed') {
+    return new ServiceError('UNKNOWN', 'No se pudo enviar el correo de activación. Revisa SMTP.');
+  }
+  if (errorCode === 'email_missing') {
+    return new ServiceError('VALIDATION', 'La cuenta no tiene un correo válido.');
+  }
+  if (errorCode === 'codigo_invalido') return new ServiceError('CODIGO_INVALIDO');
+  if (errorCode === 'codigo_expirado') return new ServiceError('CODIGO_EXPIRADO');
+  if (errorCode === 'demasiados_intentos') return new ServiceError('DEMASIADOS_INTENTOS');
+  if (errorCode === 'bloqueo_temporal') return new ServiceError('BLOQUEO_TEMPORAL');
+  if (errorCode === 'reenvio_cooldown') return new ServiceError('REENVIO_NO_DISPONIBLE');
+  if (errorCode === 'reenvios_agotados') return new ServiceError('REENVIOS_AGOTADOS');
+  if (errorCode === 'not_verified') return new ServiceError('PROFESIONAL_NO_HABILITADO');
+  if (errorCode === 'already_activated') return new ServiceError('OPERACION_NO_PERMITIDA');
+  if (errorCode === 'review_exists') {
+    return new ServiceError('RESENA_YA_EXISTE', 'Ya calificaste este servicio.');
+  }
+  if (errorCode === 'booking_not_completed') {
+    return new ServiceError('RESERVA_NO_COMPLETADA', 'El servicio aún no ha finalizado.');
+  }
   if (status === 401) return new ServiceError('INVALID_CREDENTIALS');
   if (status === 403) return new ServiceError('PROFESIONAL_NO_HABILITADO');
   if (status === 404) return new ServiceError(fallback);

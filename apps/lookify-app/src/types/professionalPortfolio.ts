@@ -22,6 +22,10 @@ export type PortfolioItem = {
   descripcion?: string;
   servicioId?: string;
   uri: string;
+  /** Cabeceras para renderizar el archivo (Authorization en modo backend). */
+  headers?: Record<string, string>;
+  /** Id del archivo en directus_files (backend); útil para limpieza. */
+  fileId?: string;
   mimeType: string;
   sizeBytes?: number;
   duracionSeg?: number;

@@ -1,4 +1,4 @@
-// src/services/backend/backendProfessionalAuthService.ts
+﻿// src/services/backend/backendProfessionalAuthService.ts
 // Login real contra Directus: /auth/login + beauty_professionals por usuario.
 // Estado: verified→APROBADO (activado, sin códigos en Directus),
 // pending→EN_REVISION/DOCUMENTOS_PENDIENTES, rejected→RECHAZADO.
@@ -20,6 +20,7 @@ export type ProEstado = {
   id: number;
   displayName?: string | null;
   verificationStatus?: string | null;
+  activated?: boolean;
 };
 
 export async function estadoDesdePro(
@@ -72,6 +73,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
           professionalId: pro.id,
           email: cleanEmail,
           nombre,
+          activated: pro.activated === true,
         });
         connectRealtime(accessToken);
         const sesion: SesionProfesional = {
@@ -80,7 +82,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
           email: cleanEmail,
           nombre,
           estadoSolicitud: estado,
-          profesionalActivado: estado === 'APROBADO',
+          profesionalActivado: estado === 'APROBADO' && pro.activated === true,
         };
         if (onboarding !== undefined) sesion.onboardingPaso = onboarding;
         return sesion;
@@ -95,7 +97,7 @@ export function createBackendProfessionalAuthService(): ProfessionalAuthService 
             email: cleanEmail,
             nombre: cached.nombre,
             estadoSolicitud: 'APROBADO',
-            profesionalActivado: true,
+            profesionalActivado: cached.activated ?? true,
           };
         }
         try {

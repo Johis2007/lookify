@@ -19,6 +19,7 @@ let proUser: string;
 let clientUser: string;
 let pro2Id: number;
 let pro2User: string;
+const portfolioFiles: string[] = [];
 
 function token(userId: string): string {
   return jwt.sign({ id: userId, role: 'app-role', admin_access: false }, SECRET as string, {
@@ -56,8 +57,8 @@ before(async () => {
   );
   proUser = pro.rows[0].id;
   const proRow = await pool.query<{ id: number }>(
-    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online)
-     VALUES ($1, 'Pro Ola2', 'verified', false) RETURNING id`,
+    `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online, activated_at)
+     VALUES ($1, 'Pro Ola2', 'verified', false, NOW()) RETURNING id`,
     [proUser],
   );
   proId = proRow.rows[0].id;
@@ -109,6 +110,9 @@ after(async () => {
   await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1::int[])', [
     [proId, pro2Id],
   ]);
+  if (portfolioFiles.length) {
+    await pool.query('DELETE FROM directus_files WHERE id = ANY($1::uuid[])', [portfolioFiles]);
+  }
   await pool.query('DELETE FROM directus_users WHERE id = ANY($1::uuid[])', [
     [proUser, clientUser, pro2User],
   ]);
@@ -235,4 +239,101 @@ maybe('GET /me/earnings sin reservas devuelve ceros y comisión por defecto', as
     if (previous === undefined) delete process.env.COMMISSION_RATE;
     else process.env.COMMISSION_RATE = previous;
   }
+});
+
+async function fixtureFile(owner: string, type: string, filename: string): Promise<string> {
+  const row = await pool.query<{ id: string }>(
+    `INSERT INTO directus_files (id, storage, filename_download, type, filesize, uploaded_by, description)
+     VALUES (gen_random_uuid(), 'local', $1, $2, 16, $3, 'lookify:portfolio')
+     RETURNING id`,
+    [filename, type, owner],
+  );
+  portfolioFiles.push(row.rows[0].id);
+  return row.rows[0].id;
+}
+
+maybe('portafolio: alta, edición, portada, orden, reemplazo y borrado', async () => {
+  const photo1 = await fixtureFile(proUser, 'image/png', 'p1.png');
+  const photo2 = await fixtureFile(proUser, 'image/png', 'p2.png');
+  const video1 = await fixtureFile(proUser, 'video/mp4', 'v1.mp4');
+  const video2 = await fixtureFile(proUser, 'video/mp4', 'v2.mp4');
+
+  const item1 = await api('POST', '/api/professionals/me/portfolio', proUser, {
+    file: photo1,
+    kind: 'photo',
+  });
+  assert.equal(item1.status, 201);
+  const item2 = await api('POST', '/api/professionals/me/portfolio', proUser, {
+    file: photo2,
+    kind: 'photo',
+  });
+  assert.equal(item2.status, 201);
+  const videoItem = await api('POST', '/api/professionals/me/portfolio', proUser, {
+    file: video1,
+    kind: 'video',
+    durationSec: 10,
+  });
+  assert.equal(videoItem.status, 201);
+  assert.equal(videoItem.json.data.kind, 'video');
+
+  const list = await api('GET', '/api/professionals/me/portfolio', proUser);
+  assert.equal(list.status, 200);
+  assert.equal(list.json.data.length, 3);
+
+  const patch = await api(
+    'PATCH',
+    `/api/professionals/me/portfolio/${item2.json.data.id}`,
+    proUser,
+    { caption: 'Portada', serviceId: 4 },
+  );
+  assert.equal(patch.status, 200);
+  assert.equal(patch.json.data.caption, 'Portada');
+  assert.equal(patch.json.data.serviceId, 4);
+
+  const cover = await api(
+    'POST',
+    `/api/professionals/me/portfolio/${item2.json.data.id}/cover`,
+    proUser,
+  );
+  assert.equal(cover.status, 200);
+  assert.equal(cover.json.data.filter((i: any) => i.kind === 'photo')[0].id, item2.json.data.id);
+
+  const move = await api(
+    'POST',
+    `/api/professionals/me/portfolio/${item1.json.data.id}/move`,
+    proUser,
+    { direction: 'up' },
+  );
+  assert.equal(move.status, 200);
+  assert.equal(move.json.data.filter((i: any) => i.kind === 'photo')[0].id, item1.json.data.id);
+
+  const replace = await api(
+    'PUT',
+    `/api/professionals/me/portfolio/${videoItem.json.data.id}/file`,
+    proUser,
+    { file: video2, durationSec: 20 },
+  );
+  assert.equal(replace.status, 200);
+  assert.equal(replace.json.data.file, video2);
+  assert.equal(replace.json.data.durationSec, 20);
+
+  const ajeno = await api('POST', '/api/professionals/me/portfolio', pro2User, {
+    file: photo1,
+    kind: 'photo',
+  });
+  assert.equal(ajeno.status, 400);
+
+  const del = await api(
+    'DELETE',
+    `/api/professionals/me/portfolio/${item1.json.data.id}`,
+    proUser,
+  );
+  assert.equal(del.status, 204);
+
+  const finalList = await api('GET', '/api/professionals/me/portfolio', proUser);
+  assert.equal(finalList.json.data.length, 2);
+
+  const publicList = await api('GET', `/api/professionals/${proId}/portfolio`, clientUser);
+  assert.equal(publicList.status, 200);
+  assert.equal(publicList.json.data.length, 2);
 });

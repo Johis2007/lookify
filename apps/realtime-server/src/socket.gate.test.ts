@@ -19,6 +19,8 @@ let io: SocketServer;
 let baseUrl: string;
 let verifiedUser: string;
 let verifiedPro: number;
+let inactiveUser: string;
+let inactivePro: number;
 let pendingUser: string;
 let pendingPro: number;
 
@@ -110,17 +112,20 @@ before(async () => {
     );
     return r.rows[0].id;
   };
-  const mkPro = async (userId: string, status: string) => {
+  const mkPro = async (userId: string, status: string, activated = status === 'verified') => {
     const r = await pool.query<{ id: number }>(
-      `INSERT INTO beauty_professionals ("user", display_name, verification_status, is_online)
-       VALUES ($1, 'Socket Pro', $2, false) RETURNING id`,
-      [userId, status],
+      `INSERT INTO beauty_professionals
+         ("user", display_name, verification_status, is_online, activated_at)
+       VALUES ($1, 'Socket Pro', $2, false, CASE WHEN $3 THEN NOW() ELSE NULL END) RETURNING id`,
+      [userId, status, activated],
     );
     return r.rows[0].id;
   };
 
   verifiedUser = await mkUser(`sock-verified-${stamp}@lookify.app`);
   verifiedPro = await mkPro(verifiedUser, 'verified');
+  inactiveUser = await mkUser(`sock-inactive-${stamp}@lookify.app`);
+  inactivePro = await mkPro(inactiveUser, 'verified', false);
   pendingUser = await mkUser(`sock-pending-${stamp}@lookify.app`);
   pendingPro = await mkPro(pendingUser, 'pending');
 
@@ -154,8 +159,12 @@ before(async () => {
 after(async () => {
   if (!DATABASE_URL || !SECRET) return;
   await new Promise<void>((resolve) => io.close(() => resolve()));
-  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [[verifiedPro, pendingPro]]);
-  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [[verifiedUser, pendingUser]]);
+  await pool.query('DELETE FROM beauty_professionals WHERE id = ANY($1)', [
+    [verifiedPro, inactivePro, pendingPro],
+  ]);
+  await pool.query('DELETE FROM directus_users WHERE id = ANY($1)', [
+    [verifiedUser, inactiveUser, pendingUser],
+  ]);
   await pool.end();
 });
 
@@ -182,6 +191,25 @@ maybe('2B-ter: un pro pending no puede publicar GPS (location:update)', async ()
     assert.equal(payload.code, 'FORBIDDEN');
     await delay(100);
     assert.equal(redis.store.has(`geo:prof:${pendingPro}`), false, 'sin ubicación en Redis');
+  } finally {
+    socket.close();
+  }
+});
+
+maybe('2B-ter: un pro verificado sin activar no puede emitir prof:online ni publicar GPS', async () => {
+  const socket = await connect(inactiveUser);
+  try {
+    const onlineError = nextEvent<{ code: string }>(socket, 'error');
+    socket.emit('prof:online');
+    assert.equal((await onlineError).code, 'FORBIDDEN');
+    await delay(100);
+    assert.equal(redis.store.has(`online:${inactivePro}`), false, 'no debe marcarse online');
+
+    const locationError = nextEvent<{ code: string }>(socket, 'error');
+    socket.emit('location:update', { lat: 4.7, lng: -74.0 });
+    assert.equal((await locationError).code, 'FORBIDDEN');
+    await delay(100);
+    assert.equal(redis.store.has(`geo:prof:${inactivePro}`), false, 'sin ubicacion en Redis');
   } finally {
     socket.close();
   }

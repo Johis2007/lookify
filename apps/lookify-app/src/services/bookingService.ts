@@ -72,6 +72,13 @@ export type ReservaTracking = {
   cliente: { lat: number | null; lng: number | null };
 };
 
+export interface EnviarResenaRequest {
+  bookingId: string;
+  /** Estrellas de 1 a 5. */
+  rating: number;
+  comment?: string;
+}
+
 export interface BookingService {
   crearReserva(input: CrearReservaRequest): Promise<CrearReservaResponse>;
   /** Estado actual de la reserva (poll del matching). */
@@ -80,6 +87,8 @@ export interface BookingService {
   cancelarReserva(bookingId: string): Promise<ReservaDetalle>;
   /** Última posición del pro (respaldo por polling del tracking). */
   obtenerTracking(bookingId: string): Promise<ReservaTracking>;
+  /** Califica una reserva completada (una sola reseña por reserva). */
+  enviarResena(input: EnviarResenaRequest): Promise<void>;
 }
 
 let implementation: BookingService = createMockBookingService();

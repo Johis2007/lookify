@@ -315,7 +315,7 @@ export default function ProfessionalEarningsHistoryScreen({ navigation, route }:
       <View style={styles.emptyWrap}>
         <Text style={styles.emptyText}>No hay servicios en este periodo.</Text>
       </View>
-    ) : null;
+    ) : undefined;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -359,7 +359,7 @@ export default function ProfessionalEarningsHistoryScreen({ navigation, route }:
           keyExtractor={(it) => it.id}
           renderItem={({ item }) => <HistorialRow item={item} />}
           contentContainerStyle={styles.listContent}
-          ListHeaderComponent={resumen ? <ResumenCard resumen={resumen} /> : null}
+          ListHeaderComponent={resumen ? <ResumenCard resumen={resumen} /> : undefined}
           ListEmptyComponent={listEmpty}
           refreshControl={
             <RefreshControl

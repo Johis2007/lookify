@@ -5,6 +5,7 @@
 
 import { BACKEND } from './config';
 import { toServiceError } from './directus';
+import { ServiceError } from '../../services/errors';
 
 export async function bffApi<T = any>(
   method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
@@ -24,7 +25,7 @@ export async function bffApi<T = any>(
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    throw toServiceError(0, null, notFoundCode);
+    throw new ServiceError('NETWORK', 'Sin conexión con el backend.');
   }
   let data: any = null;
   try {

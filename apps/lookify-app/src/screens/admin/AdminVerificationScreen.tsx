@@ -23,7 +23,11 @@ import BackHeader from '../../components/BackHeader';
 import { confirmNative } from '../../components/ConfirmDialog';
 import type { AdminStackParamList } from '../../navigation/AdminStackNavigator';
 import { resetAdminToLogin } from '../../navigation/adminNavigation';
-import { loadAdminSession, logoutAdmin } from '../../lib/backend/adminAuth';
+import {
+  adminErrorMessage,
+  loadAdminSession,
+  logoutAdmin,
+} from '../../lib/backend/adminAuth';
 import {
   assetUrl,
   decideProfessional,
@@ -126,6 +130,8 @@ export default function AdminVerificationScreen({ navigation }: Props) {
       const rows = await fetchVerificationQueue(filter);
       setItems(rows);
       setSelectedId(rows[0]?.id ?? null);
+    } catch (error) {
+      await confirmNative('No se pudo completar', adminErrorMessage(error), 'Entendido');
     } finally {
       setActing(false);
     }

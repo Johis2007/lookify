@@ -2,6 +2,7 @@ import {
   BookingService,
   CrearReservaRequest,
   CrearReservaResponse,
+  EnviarResenaRequest,
   EstadoReserva,
   ProfesionalPublico,
   ReservaDetalle,
@@ -184,6 +185,20 @@ export function createBackendBookingService(): BookingService {
           lng: typeof dto?.client?.lng === 'number' ? dto.client.lng : null,
         },
       };
+    },
+
+    async enviarResena(input: EnviarResenaRequest): Promise<void> {
+      const token = await tokenCliente();
+      await bffApi(
+        'POST',
+        `/api/bookings/${encodeURIComponent(input.bookingId)}/review`,
+        token,
+        {
+          rating: input.rating,
+          ...(input.comment ? { comment: input.comment } : {}),
+        },
+        'SOLICITUD_NO_ENCONTRADA',
+      );
     },
   };
 }

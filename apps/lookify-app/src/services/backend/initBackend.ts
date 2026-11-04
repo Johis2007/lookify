@@ -12,6 +12,7 @@ import { setProfessionalIncomingRequestServiceForTesting } from '../professional
 import { setProfessionalServiceInProgressServiceForTesting } from '../professionalServiceInProgressService';
 import { setProfessionalVerificationServiceForTesting } from '../professionalVerificationService';
 import { setProfessionalCertificateServiceForTesting } from '../professionalCertificateService';
+import { setProfessionalPortfolioServiceForTesting } from '../professionalPortfolioService';
 import { setCatalogServiceForTesting } from '../catalogService';
 import { setBookingServiceForTesting } from '../bookingService';
 import { setNearbyServiceForTesting } from '../nearbyService';
@@ -30,6 +31,7 @@ import {
 import { createBackendProfessionalServiceInProgressService } from './backendProfessionalServiceInProgressService';
 import { createBackendProfessionalVerificationService } from './backendProfessionalVerificationService';
 import { createBackendProfessionalCertificateService } from './backendProfessionalCertificateService';
+import { createBackendProfessionalPortfolioService } from './backendProfessionalPortfolioService';
 
 let initialized = false;
 
@@ -39,8 +41,7 @@ export function isBackendEnabled(): boolean {
 
 /**
  * Conecta todos los servicios del flujo profesional al backend real.
- * Idempotente. Portfolio queda en mock (sin tabla en Directus: ver
- * docs/adaptacion-backend.md).
+ * Idempotente.
  */
 export function initBackend(): void {
   if (initialized || !BACKEND.enabled) return;
@@ -53,6 +54,7 @@ export function initBackend(): void {
   setProfessionalServiceInProgressServiceForTesting(createBackendProfessionalServiceInProgressService());
   setProfessionalVerificationServiceForTesting(createBackendProfessionalVerificationService());
   setProfessionalCertificateServiceForTesting(createBackendProfessionalCertificateService());
+  setProfessionalPortfolioServiceForTesting(createBackendProfessionalPortfolioService());
   setActiveSolicitudProvider(getActiveSolicitudBackend);
   setCatalogServiceForTesting(createBackendCatalogService());
   setBookingServiceForTesting(createBackendBookingService());

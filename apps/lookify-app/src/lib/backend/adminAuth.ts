@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 import { vaultClear, vaultLoad, vaultSave } from './secureSession';
 import { ServiceError } from '../../services/errors';
 import { api, loginDirectus, refreshAccessToken, revokeRefreshToken } from './directus';
+import { bffApi } from './bff';
 
 export type AdminSession = {
   token: string;
@@ -218,6 +219,25 @@ export async function adminApi<T = any>(
     if (e instanceof ServiceError && e.code === 'INVALID_CREDENTIALS') {
       const renewed = await tryRefreshAdminToken();
       if (renewed) return api<T>(method, path, renewed, body);
+      await clearAdminSession();
+    }
+    throw e;
+  }
+}
+
+/** Llamada admin al BFF con el token Directus y refresh ante 401. */
+export async function adminBffApi<T = any>(
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
+  const token = await requireAdminToken();
+  try {
+    return await bffApi<T>(method, path, token, body);
+  } catch (e) {
+    if (e instanceof ServiceError && e.code === 'INVALID_CREDENTIALS') {
+      const renewed = await tryRefreshAdminToken();
+      if (renewed) return bffApi<T>(method, path, renewed, body);
       await clearAdminSession();
     }
     throw e;

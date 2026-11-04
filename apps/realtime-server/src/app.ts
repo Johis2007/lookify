@@ -155,6 +155,7 @@ export function createBffApp(deps: BffAppDeps): BffApplication {
            JOIN beauty_professionals bp ON bp.id = pl.professional_id
            WHERE bp.is_online = true
              AND bp.verification_status = 'verified'
+             AND bp.activated_at IS NOT NULL
              AND ST_DWithin(pl.geom::geography, ST_SetSRID(ST_MakePoint($2,$1),4326)::geography, $3)
            ORDER BY pl.geom::geography <-> ST_SetSRID(ST_MakePoint($2,$1),4326)::geography
            LIMIT $4`,
@@ -214,7 +215,13 @@ export function createBffApp(deps: BffAppDeps): BffApplication {
   );
   mount(app, '/api/auth', createRegisterRouter({ appRoleId: deps.appRoleId ?? undefined, pool }));
   mount(app, '/api/clients', createClientsRouter(pool));
-  mount(app, '/api/professionals', createProfessionalsRouter(pool));
+  mount(
+    app,
+    '/api/professionals',
+    createProfessionalsRouter(pool, {
+      activationSecret: directusSecret ?? process.env.DIRECTUS_SECRET,
+    }),
+  );
   mount(app, '/api/files', createFilesRouter(pool));
   mount(app, '/api/users', createUsersRouter(pool));
   app.use(errorHandler);

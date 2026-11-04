@@ -17,6 +17,9 @@ import { formatCOP } from '../utils/pricing';
 import { MAX_COMENTARIO_CHARS, type MetodoPagoMock } from '../constants/paymentRating';
 import { alertCalificacionPendiente } from '../utils/alertCalificacionPendiente';
 import { mockEnviarCalificacion } from '../utils/mockEnviarCalificacion';
+import { getBookingService } from '../services/bookingService';
+import { ServiceError } from '../services/errors';
+import { isBackendEnabled } from '../services/backend/initBackend';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PaymentRating'>;
 
@@ -26,6 +29,24 @@ function paramsPrecioValidos(
   precioTotal: number
 ): boolean {
   return precioServicio + precioDomicilio === precioTotal;
+}
+
+function mensajeErrorResena(error: unknown): string {
+  if (error instanceof ServiceError) {
+    switch (error.code) {
+      case 'RESENA_YA_EXISTE':
+        return 'Ya calificaste este servicio.';
+      case 'RESERVA_NO_COMPLETADA':
+        return 'El servicio aún no ha finalizado. Espera a que tu profesional lo cierre.';
+      case 'SOLICITUD_NO_ENCONTRADA':
+        return 'No encontramos esta reserva.';
+      case 'NETWORK':
+        return 'Sin conexión con el servidor. Inténtalo de nuevo.';
+      default:
+        break;
+    }
+  }
+  return 'No pudimos enviar tu calificación. Inténtalo de nuevo.';
 }
 
 export default function PaymentRatingScreen({ navigation, route }: Props) {
@@ -38,16 +59,23 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
     precioServicio,
     precioDomicilio,
     precioTotal,
+    bookingId,
   } = params;
 
+  const modoReal = isBackendEnabled() && Boolean(bookingId);
   const professional = MOCK_PROFESSIONALS.find((p) => p.id === professionalId);
   const servicio = SERVICIOS_POR_CATEGORIA[categoriaId]?.find((s) => s.id === servicioId);
 
+  const nombreProfesional =
+    params.profesional?.nombre ?? professional?.nombre ?? (modoReal ? 'Profesional' : undefined);
+  const nombreServicio =
+    params.servicioNombre ?? servicio?.nombre ?? (modoReal ? 'Servicio reservado' : undefined);
+
   const datosValidos = useMemo(
     () =>
-      Boolean(professional && servicio) &&
+      Boolean(nombreProfesional && nombreServicio) &&
       paramsPrecioValidos(precioServicio, precioDomicilio, precioTotal),
-    [professional, servicio, precioServicio, precioDomicilio, precioTotal]
+    [nombreProfesional, nombreServicio, precioServicio, precioDomicilio, precioTotal]
   );
 
   const allowExitRef = useRef(false);
@@ -56,6 +84,8 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
   const [metodoPago, setMetodoPago] = useState<MetodoPagoMock>('efectivo');
   const [estrellas, setEstrellas] = useState(0);
   const [comentario, setComentario] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const resetToHome = useCallback(() => {
     allowExitRef.current = true;
@@ -83,9 +113,29 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
     return unsubscribe;
   }, [navigation]);
 
-  const handleEnviar = () => {
-    if (estrellas < 1 || !professional || !servicio) return;
+  const handleEnviar = async () => {
+    if (estrellas < 1 || enviando) return;
+    setSubmitError(null);
 
+    if (modoReal) {
+      if (!bookingId) return;
+      setEnviando(true);
+      try {
+        await getBookingService().enviarResena({
+          bookingId,
+          rating: estrellas,
+          comment: comentario.trim() || undefined,
+        });
+        resetToHome();
+      } catch (error) {
+        setSubmitError(mensajeErrorResena(error));
+      } finally {
+        setEnviando(false);
+      }
+      return;
+    }
+
+    if (!professional || !servicio) return;
     mockEnviarCalificacion({
       professionalId,
       servicioId,
@@ -93,11 +143,10 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
       comentario: comentario.trim(),
       metodoPago,
     });
-
     resetToHome();
   };
 
-  if (!datosValidos || !professional || !servicio) {
+  if (!datosValidos || !nombreProfesional || !nombreServicio) {
     return null;
   }
 
@@ -121,13 +170,13 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
           />
           <Text style={styles.successTitle}>Servicio finalizado</Text>
           <Text style={styles.successSubtitle}>
-            {servicio.nombre} · {professional.nombre}
+            {nombreServicio} · {nombreProfesional}
           </Text>
 
           <Text style={styles.sectionTitle}>Resumen de pago</Text>
           <View style={styles.priceBlock}>
             <View style={styles.priceRow}>
-              <Text style={styles.priceLabel}>Servicio ({servicio.nombre})</Text>
+              <Text style={styles.priceLabel}>Servicio ({nombreServicio})</Text>
               <Text style={styles.priceValue}>{formatCOP(precioServicio)}</Text>
             </View>
             <View style={styles.priceRow}>
@@ -164,11 +213,13 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
             </Text>
           </View>
 
+          {submitError ? <Text style={styles.submitError}>{submitError}</Text> : null}
+
           <Button
-            label="Enviar calificación"
+            label={enviando ? 'Enviando…' : 'Enviar calificación'}
             onPress={handleEnviar}
             variant="accent"
-            disabled={estrellas < 1}
+            disabled={estrellas < 1 || enviando}
           />
         </View>
       </ScrollView>
@@ -276,5 +327,11 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'right',
     marginTop: spacing.xs,
+  },
+  submitError: {
+    fontSize: 13,
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
   },
 });

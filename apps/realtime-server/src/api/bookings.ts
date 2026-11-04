@@ -1,4 +1,4 @@
-import { Router, type Response } from 'express';
+﻿import { Router, type Response } from 'express';
 import { z } from 'zod';
 import type pg from 'pg';
 import { resolveOwnProfessionalId } from '../auth.js';
@@ -689,13 +689,17 @@ async function resolveRequestedProfessional(
   if (raw === undefined || raw === null) return null;
   const id = Number(raw);
   if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, 'invalid_professional');
-  const { rows } = await pool.query<{ verification_status: string | null }>(
-    'SELECT verification_status FROM beauty_professionals WHERE id = $1',
+  const { rows } = await pool.query<{
+    verification_status: string | null;
+    activated_at: Date | null;
+  }>(
+    'SELECT verification_status, activated_at FROM beauty_professionals WHERE id = $1',
     [id],
   );
   const pro = rows[0];
   if (!pro) throw new HttpError(400, 'invalid_professional');
   if (pro.verification_status !== 'verified') throw new HttpError(400, 'professional_not_verified');
+  if (pro.activated_at === null) throw new HttpError(400, 'professional_not_activated');
   const offers = await pool.query(
     'SELECT 1 FROM professional_services WHERE professional_id = $1 AND service_id = $2 LIMIT 1',
     [id, serviceId],
@@ -774,6 +778,7 @@ async function claimBooking(
   // Debe ser elegible: verificado y ofrecer el servicio.
   const elig = await pool.query<{ ok: boolean }>(
     `SELECT (bp.verification_status = 'verified'
+             AND bp.activated_at IS NOT NULL
              AND EXISTS (SELECT 1 FROM professional_services ps
                           WHERE ps.professional_id = bp.id AND ps.service_id = $2)) AS ok
        FROM beauty_professionals bp WHERE bp.id = $1`,
@@ -1036,9 +1041,12 @@ async function handleTransition(
 
 async function isProfessionalVerified(pool: pg.Pool, professionalId: number | null): Promise<boolean> {
   if (professionalId === null) return false;
-  const { rows } = await pool.query<{ verification_status: string | null }>(
-    'SELECT verification_status FROM beauty_professionals WHERE id = $1',
+  const { rows } = await pool.query<{
+    verification_status: string | null;
+    activated_at: Date | null;
+  }>(
+    'SELECT verification_status, activated_at FROM beauty_professionals WHERE id = $1',
     [professionalId],
   );
-  return rows[0]?.verification_status === 'verified';
+  return rows[0]?.verification_status === 'verified' && rows[0]?.activated_at !== null;
 }

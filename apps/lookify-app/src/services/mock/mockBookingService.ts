@@ -2,6 +2,7 @@ import {
   BookingService,
   CrearReservaRequest,
   CrearReservaResponse,
+  EnviarResenaRequest,
   ReservaDetalle,
   ReservaTracking,
 } from '../bookingService';
@@ -94,6 +95,15 @@ export function createMockBookingService(): BookingService {
         llegadaEn: null,
         cliente: { lat: null, lng: null },
       };
+    },
+
+    async enviarResena(input: EnviarResenaRequest): Promise<void> {
+      if (!reservas.has(input.bookingId)) {
+        throw new ServiceError('SOLICITUD_NO_ENCONTRADA');
+      }
+      if (input.rating < 1 || input.rating > 5) {
+        throw new ServiceError('VALIDATION');
+      }
     },
   };
 }

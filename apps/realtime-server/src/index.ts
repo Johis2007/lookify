@@ -164,7 +164,7 @@ setInterval(async () => {
          SELECT $1, ST_SetSRID(ST_MakePoint($2,$3),4326), NOW()
          WHERE EXISTS (
            SELECT 1 FROM beauty_professionals
-           WHERE id = $1 AND verification_status = 'verified'
+           WHERE id = $1 AND verification_status = 'verified' AND activated_at IS NOT NULL
          )
          ON CONFLICT (professional_id) DO UPDATE SET geom=EXCLUDED.geom, updated_at=NOW()`,
         [profId, lng, lat]
