@@ -27,7 +27,12 @@ import { estadoDesdePro } from '../../services/backend/backendProfessionalAuthSe
 import { connectRealtime } from './realtime';
 import { findMockUser } from '../../data/mockUsers';
 
-type ProBff = { id: number; displayName?: string | null; verificationStatus?: string | null };
+type ProBff = {
+  id: number;
+  displayName?: string | null;
+  verificationStatus?: string | null;
+  activated?: boolean;
+};
 
 export type RolUsuario = 'admin' | 'pro' | 'client';
 
@@ -80,6 +85,9 @@ export async function loginUniversal(email: string, password: string): Promise<U
     if (pro) {
       const nombrePro = pro.displayName || nombre;
       const { estado, onboarding } = await estadoDesdePro(accessToken, pro);
+      // Verificado no implica activado: la cuenta solo puede operar cuando
+      // además confirmó el código de activación (pro.activated === true).
+      const activado = estado === 'APROBADO' && pro.activated === true;
       await saveBackendSession({
         token: accessToken,
         ...refresh,
@@ -87,6 +95,7 @@ export async function loginUniversal(email: string, password: string): Promise<U
         professionalId: pro.id,
         email: cleanEmail,
         nombre: nombrePro,
+        activated: activado,
       });
       connectRealtime(accessToken);
       const proSession: SesionProfesional = {
@@ -95,7 +104,7 @@ export async function loginUniversal(email: string, password: string): Promise<U
         email: cleanEmail,
         nombre: nombrePro,
         estadoSolicitud: estado,
-        profesionalActivado: estado === 'APROBADO',
+        profesionalActivado: activado,
         ...(onboarding !== undefined ? { onboardingPaso: onboarding } : {}),
       };
       return { rol: 'pro', email: cleanEmail, nombre: nombrePro, profesionalId: String(pro.id), proSession };
@@ -145,7 +154,8 @@ async function loginOfflineFallback(cleanEmail: string, password: string): Promi
       email: cleanEmail,
       nombre: pro.nombre,
       estadoSolicitud: 'APROBADO',
-      profesionalActivado: true,
+      // Sesiones antiguas sin `activated` conservan el comportamiento previo.
+      profesionalActivado: pro.activated ?? true,
     };
     return {
       rol: 'pro',
@@ -246,7 +256,7 @@ async function resumeOffline(): Promise<ResumeTarget | null> {
         email: pro.email,
         nombre: pro.nombre,
         estadoSolicitud: 'APROBADO',
-        profesionalActivado: true,
+        profesionalActivado: pro.activated ?? true,
       },
     };
   }
@@ -294,6 +304,9 @@ async function resumeOnline(): Promise<ResumeTarget | null> {
           'SOLICITUD_NO_ENCONTRADA',
         );
         const { estado, onboarding } = await estadoDesdePro(token, row);
+        const activado = estado === 'APROBADO' && row.activated === true;
+        // Mantén el estado de activación en la caché para el arranque offline.
+        await saveBackendSession({ ...pro, activated: activado }).catch(() => undefined);
         connectRealtime(token);
         return {
           kind: 'pro',
@@ -303,7 +316,7 @@ async function resumeOnline(): Promise<ResumeTarget | null> {
             email: pro.email,
             nombre: pro.nombre,
             estadoSolicitud: estado,
-            profesionalActivado: estado === 'APROBADO',
+            profesionalActivado: activado,
             ...(onboarding !== undefined ? { onboardingPaso: onboarding } : {}),
           },
         };

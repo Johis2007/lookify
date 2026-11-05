@@ -273,6 +273,9 @@ async function ensureProProfile(userId, displayName = PRO_DISPLAY_NAME) {
     bio: 'Profesional de demostración (barbería y peluquería).',
     verification_status: 'verified',
     is_online: true,
+    // Los demos nacen activados: sin activated_at el BFF los excluye de
+    // cercanos/matching y no pueden ponerse online (gate professional_not_activated).
+    activated_at: new Date().toISOString(),
     rating_avg: 4.8,
     years_exp: 6,
   };

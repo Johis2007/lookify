@@ -1,7 +1,5 @@
-import { config as loadEnv } from 'dotenv';
-import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Cargar el .env ANTES de evaluar el resto de imports (hoisting de ESM).
+import './env.js';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import Redis from 'ioredis';
@@ -11,17 +9,6 @@ import { createBffApp, type BffStats } from './app.js';
 import { createSocketAuthGuard } from './api/roleGuard.js';
 import { sweepMatching, MATCH_SWEEP_INTERVAL_MS } from './matching.js';
 import { registerSocketHandlers, isValidLatLng } from './socket.js';
-
-// Carga de entorno: primero apps/realtime-server/.env (si existe) y, como
-// fallback, el .env de la raíz del monorepo (donde viven DIRECTUS_SECRET y las
-// credenciales de Postgres/Redis). dotenv no sobreescribe lo ya definido.
-{
-  const here = dirname(fileURLToPath(import.meta.url)); // .../apps/realtime-server/src
-  const localEnv = resolve(here, '..', '.env');
-  for (const candidate of [localEnv, resolve(here, '..', '..', '..', '.env')]) {
-    if (existsSync(candidate)) loadEnv({ path: candidate });
-  }
-}
 
 const PORT = Number(process.env.PORT || 4001);
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
@@ -101,6 +88,7 @@ const { app, rolePolicy } = createBffApp({
   directusSecret: DIRECTUS_SECRET,
   appRoleId: process.env.APP_ROLE_ID,
   corsOpen: CORS_OPEN,
+  corsOrigins: CORS_LIST,
   logErr,
   getIo: () => {
     if (!ioRef.current) throw new Error('socket.io aún no inicializado');

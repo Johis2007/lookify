@@ -49,6 +49,8 @@ export type BffAppDeps = {
   directusSecret: string;
   appRoleId?: string | null;
   corsOpen: boolean;
+  /** Orígenes permitidos en modo restringido (CORS_ORIGIN en coma). */
+  corsOrigins?: string[];
   logErr: (msg: string, extra?: Record<string, unknown>) => void;
   getIo: () => Server;
   rolePolicy?: RolePolicy;
@@ -73,6 +75,7 @@ export function createBffApp(deps: BffAppDeps): BffApplication {
     stats,
     directusSecret,
     corsOpen,
+    corsOrigins = [],
     logErr,
     getIo,
   } = deps;
@@ -99,6 +102,41 @@ export function createBffApp(deps: BffAppDeps): BffApplication {
 
   const app = express();
   app.set('trust proxy', true);
+
+  // CORS para navegadores (web admin / Expo web). La app nativa no envía
+  // Origin, así que no se ve afectada. Con CORS_ORIGIN=* se abre en dev; en
+  // modo restringido solo pasan los orígenes de la lista.
+  function corsAllowed(origin: string | undefined): boolean {
+    if (!origin) return true; // Sin Origin = app nativa/CLI.
+    if (corsOpen) return true;
+    return corsOrigins.includes(origin);
+  }
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (corsAllowed(origin)) {
+      if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', corsOpen ? '*' : origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
+        const requested = req.headers['access-control-request-headers'];
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          typeof requested === 'string' && requested ? requested : 'Authorization, Content-Type',
+        );
+        res.setHeader('Access-Control-Max-Age', '600');
+      }
+      if (req.method === 'OPTIONS') {
+        res.status(204).end();
+        return;
+      }
+    } else if (req.method === 'OPTIONS') {
+      // Sin cabeceras CORS el navegador bloquea la respuesta por sí solo.
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '64kb' }));
   app.locals.directusSecret = directusSecret;
 

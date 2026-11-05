@@ -15,7 +15,7 @@ Directus sobre PostgreSQL + PostGIS y Redis, todo orquestado con Docker Compose.
 
 ## Requisitos
 
-- Node.js 18+ y npm
+- Node.js 22.13+ y npm (requisito de Expo SDK 58)
 - Docker + Docker Compose
 - Git
 
@@ -84,15 +84,15 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:8055/users/reg
 # Registro por el BFF ABIERTO y con rol App User asignado por el servidor
 curl -s -o /dev/null -w '%{http_code}\n' -X POST http://localhost:4001/api/auth/register \
   -H 'Content-Type: application/json' \
-  -d '{"email":"qa-bff@lookify.app","password":"FreshPass123!","firstName":"QA"}'
+  -d '{"email":"qa-bff@lookify.app","password":"FreshPass123!","firstName":"QA","consents":{"terms":{"version":"2026-11-01"},"privacy":{"version":"2026-11-01"}}}'
 # -> 201
 
 # Suite de integración: crea y limpia sus propios fixtures
 npm --workspace apps/realtime-server test
-# -> 105 tests, 0 fail, 0 skipped
+# -> 125 tests, 0 fail, 0 skipped
 ```
 
-Usa emails distintos si repites la verificación. Corrida validada el 2026-11-01
+Usa emails distintos si repites la verificación. Corrida validada el 2026-11-04
 desde volúmenes vacíos
 (`docker compose down -v`): `db:fresh`, `seed:demo`, `/health` 200,
 `/users/register` 403, `/api/auth/register` 201 y el usuario creado quedó con
@@ -197,7 +197,7 @@ del JWT. El admin (`admin_access`) no se ve afectado.
 | `GET/PUT /api/professionals/me/services` | pro | Servicios ofrecidos; `PUT` reemplaza en transacción y valida el catálogo |
 | `GET/POST/PATCH/DELETE /api/professionals/me/documents/:id` | pro | Documentos propios; alta forzada a `status='pending'` |
 | `GET /api/professionals/me/reviews` · `/:id/reviews` | autenticado | Reseñas con solo el primer nombre del cliente |
-| `POST /api/auth/register` | pǧblico | Registro por BFF; fija rol App User y `status=active`; rate limit por IP |
+| `POST /api/auth/register` | público | Registro por BFF; exige `consents.terms`/`privacy`; fija rol App User y `status=active`; rate limit por IP |
 | `GET/POST/PUT /api/clients/me` | cliente | Perfil propio (upsert idempotente) |
 | `POST /api/bookings/:id/review` | cliente dueño | Reseña de reserva `completed`; única por reserva |
 | `GET/PATCH /api/users/me` | autenticado | Solo `firstName`, `lastName`, `phone`, `avatar`; nunca email/role/status |
