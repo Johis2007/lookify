@@ -4,6 +4,7 @@
 
 import { BACKEND } from './config';
 import { ServiceError, ServiceErrorCode } from '../../services/errors';
+import { loadBackendSession, saveBackendSession } from './session';
 
 export type DirectusFile = { id: string };
 
@@ -157,6 +158,30 @@ export async function uploadFile(
   } catch {
     throw new ServiceError('NETWORK', 'Sin conexión con el backend.');
   }
+  if (res.status === 401) {
+    const newToken = await refreshTokenIfNeeded(token);
+    if (newToken) {
+      try {
+        res = await fetch(`${BACKEND.bffUrl}/api/files`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${newToken}` },
+          body: form,
+        });
+      } catch {
+        throw new ServiceError('NETWORK', 'Sin conexión con el backend.');
+      }
+      const data = await readJsonSafe(res);
+      if (!res.ok || !data?.data?.id) {
+        if (res.status === 413) throw new ServiceError('ARCHIVO_MUY_GRANDE');
+        if (res.status === 400 && /mime/i.test(JSON.stringify(data))) {
+          throw new ServiceError('ARCHIVO_INVALIDO');
+        }
+        throw toServiceError(res.status, data, 'VALIDATION');
+      }
+      return String(data.data.id);
+    }
+    throw new ServiceError('INVALID_CREDENTIALS', 'Sesión vencida. Inicia sesión de nuevo.');
+  }
   const data = await readJsonSafe(res);
   if (!res.ok || !data?.data?.id) {
     if (res.status === 413) throw new ServiceError('ARCHIVO_MUY_GRANDE');
@@ -166,6 +191,22 @@ export async function uploadFile(
     throw toServiceError(res.status, data, 'VALIDATION');
   }
   return String(data.data.id);
+}
+
+async function refreshTokenIfNeeded(token: string): Promise<string | null> {
+  const session = await loadBackendSession();
+  if (!session?.refreshToken) return null;
+  try {
+    const refreshed = await refreshAccessToken(session.refreshToken);
+    await saveBackendSession({
+      ...session,
+      token: refreshed.accessToken,
+      ...(refreshed.refreshToken ? { refreshToken: refreshed.refreshToken } : {}),
+    });
+    return refreshed.accessToken;
+  } catch {
+    return null;
+  }
 }
 
 /** Borra un archivo propio a través del BFF (best-effort). */

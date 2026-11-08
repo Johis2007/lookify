@@ -54,6 +54,7 @@ import {
   validarNombreTipoCertificado,
 } from '../../utils/validators';
 import { formatDateLocalISO } from '../../utils/formatDateLocalISO';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<
   ProfessionalStackParamList,
@@ -615,6 +616,7 @@ export default function ProfessionalCertificateUploadScreen({ navigation, route 
         animationType="slide"
         onRequestClose={confirmarCerrarModal}
       >
+        <KeyboardSafeView>
         <SafeAreaView style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Pressable onPress={confirmarCerrarModal} style={styles.modalClose}>
@@ -718,6 +720,7 @@ export default function ProfessionalCertificateUploadScreen({ navigation, route 
             />
           </ScrollView>
         </SafeAreaView>
+        </KeyboardSafeView>
       </Modal>
     </SafeAreaView>
   );

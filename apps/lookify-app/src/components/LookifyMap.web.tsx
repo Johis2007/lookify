@@ -5,7 +5,8 @@
 // recargar. Solo toca window/document dentro de useEffect (seguro en el
 // prerender estático del export web).
 import { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 export type ProPin = {
   id: string;
@@ -25,6 +26,8 @@ type Props = {
   route?: TrailPoint[];
   follow?: { latitude: number; longitude: number } | null;
   onProPress?: (id: string) => void;
+  /** Ubicación propia: si viene, muestra el botón "volver a mi ubicación". */
+  myLocation?: { latitude: number; longitude: number } | null;
 };
 
 const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
@@ -62,7 +65,7 @@ function loadLeaflet(): Promise<any> {
   return leafletPromise;
 }
 
-export default function LookifyMap({ initial, pins = [], trail = [], route = [], follow, onProPress }: Props) {
+export default function LookifyMap({ initial, pins = [], trail = [], route = [], follow, onProPress, myLocation }: Props) {
   const divRef = useRef<any>(null);
   const mapRef = useRef<any>(null);
   const markersRef = useRef<Map<string, any>>(new Map());
@@ -219,6 +222,25 @@ export default function LookifyMap({ initial, pins = [], trail = [], route = [],
           <Text style={styles.loadingT}>Sin mapa offline · 📍 {q}</Text>
         </View>
       )}
+      {myLocation ? (
+        <Pressable
+          style={styles.recenter}
+          onPress={() => {
+            const map = mapRef.current;
+            if (!map || !ready) return;
+            lastCamRef.current = { ...myLocation };
+            try {
+              map.setView([myLocation.latitude, myLocation.longitude], 16, { animate: true });
+            } catch {
+              /* mapa aún montando */
+            }
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Volver a mi ubicación"
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={22} color="#1F4E5A" />
+        </Pressable>
+      ) : null}
       <View style={styles.badge}>
         <Text style={styles.badgeText}>
           {pins.length} profesionales cerca{trail.length > 1 ? ` · recorrido ${trail.length} pts` : ''} · 📍 {q}
@@ -250,4 +272,16 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   badgeText: { color: '#fff', fontSize: 12 },
+  recenter: {
+    position: 'absolute' as any,
+    right: 12,
+    bottom: 48,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.25)',
+  },
 });

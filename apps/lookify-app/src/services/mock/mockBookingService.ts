@@ -92,6 +92,7 @@ export function createMockBookingService(): BookingService {
         estado: st.estado,
         profesionalId: st.profesional?.id ?? null,
         ubicacion: null,
+        clientLive: null,
         llegadaEn: null,
         cliente: { lat: null, lng: null },
       };

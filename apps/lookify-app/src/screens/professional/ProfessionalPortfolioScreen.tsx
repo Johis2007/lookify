@@ -46,6 +46,7 @@ import {
   validarArchivoPortafolioFoto,
   validarArchivoPortafolioVideo,
 } from '../../utils/portfolioFile';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<ProfessionalStackParamList, 'ProfessionalPortfolioPlaceholder'>;
 
@@ -686,6 +687,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
         transparent
         onRequestClose={cerrarEdicion}
       >
+        <KeyboardSafeView>
         <View style={styles.modalBackdrop}>
           <View style={styles.modalSheet}>
             <ScrollView keyboardShouldPersistTaps="handled">
@@ -796,6 +798,7 @@ export default function ProfessionalPortfolioScreen({ navigation, route }: Props
             </ScrollView>
           </View>
         </View>
+        </KeyboardSafeView>
       </Modal>
 
       <VideoPreviewModal

@@ -127,6 +127,21 @@ export function emitBookingLocation(bookingId: string, lat: number, lng: number)
   }
 }
 
+/**
+ * GPS del profesional SIN reserva (radar/zonas): el servidor lo guarda en
+ * Redis (TTL 30 s) y el batch lo persiste en professional_locations, de donde
+ * sale /realtime/nearby. Así el cliente ve al profesional en su posición
+ * real mientras está DISPONIBLE. Gate servidor: solo verificados+activados,
+ * y máximo 1 mensaje cada 5 s (el llamador debe respetar ese ritmo).
+ */
+export function emitProRadarLocation(lat: number, lng: number): void {
+  try {
+    socket?.emit('location:update', { lat, lng });
+  } catch {
+    /* noop */
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Socket del CLIENTE (4B): observa el estado de su propia reserva.
 // Es un socket aparte del del profesional: el cliente no emite prof:*.
@@ -236,6 +251,51 @@ export function onBookingEvent(
   return () => {
     try {
       clientSocket?.off('booking:event', handler);
+    } catch {
+      /* noop */
+    }
+  };
+}
+
+/**
+ * GPS del CLIENTE hacia su reserva. El servidor valida que el emisor sea el
+ * dueño de la reserva y lo releva a la sala booking:{id} (el pro lo recibe).
+ */
+export function emitClientLocation(bookingId: string, lat: number, lng: number): void {
+  try {
+    clientSocket?.emit('client:location', { booking_id: bookingId, lat, lng });
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Ubicación en vivo del CLIENTE (recibida por el profesional en la sala de
+ * la reserva). Escucha en el socket del profesional.
+ */
+export function onClientLocation(
+  cb: (p: { bookingId: string; lat: number; lng: number; ts: number }) => void,
+): () => void {
+  if (!socket) return () => undefined;
+  const handler = (p: {
+    booking_id?: string | number;
+    lat?: number;
+    lng?: number;
+    ts?: number;
+  }) => {
+    if (p?.booking_id === undefined || p?.booking_id === null) return;
+    if (typeof p.lat !== 'number' || typeof p.lng !== 'number') return;
+    cb({
+      bookingId: String(p.booking_id),
+      lat: p.lat,
+      lng: p.lng,
+      ts: typeof p.ts === 'number' ? p.ts : Date.now(),
+    });
+  };
+  socket.on('client:location', handler);
+  return () => {
+    try {
+      socket?.off('client:location', handler);
     } catch {
       /* noop */
     }

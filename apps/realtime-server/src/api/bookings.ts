@@ -12,7 +12,7 @@ import {
   MATCH_OFFER_TTL_MS,
 } from '../matching.js';
 import { asyncHandler, HttpError, rateLimit, requireAuth, type AuthedRequest } from './http.js';
-import { readLastPosition, trackingKey, type TrackingRedis } from '../tracking.js';
+import { clientTrackingKey, readLastClientPosition, readLastPosition, trackingKey, type TrackingRedis } from '../tracking.js';
 
 // BFF de reservas (Paso 2B). Todo el acceso a bookings/booking_events pasa por
 // aquí; el App User deja de tener permisos directos en 2D. El servidor valida
@@ -517,6 +517,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
       if (!(await canAccess(pool, req.user!, booking))) throw new HttpError(404, 'not_found');
       if (booking.professional === null) throw new HttpError(404, 'not_found');
       const location = redis ? await readLastPosition(redis, booking.id) : null;
+      const clientLive = redis ? await readLastClientPosition(redis, booking.id) : null;
       const { rows } = await pool.query<{ created_at: Date | null }>(
         `SELECT created_at FROM booking_events
           WHERE booking = $1 AND status = 'llegada'
@@ -529,6 +530,7 @@ export function createBookingsRouter(deps: BookingsDeps): Router {
           status: booking.status,
           professionalId: booking.professional,
           location,
+          clientLive,
           arrivedAt: rows[0]?.created_at ?? null,
           client: { lat: booking.lat, lng: booking.lng },
         },
@@ -1031,10 +1033,15 @@ async function handleTransition(
   }
 
   emitStatus(updated.id, to);
-  // 4C-2: el rastreo solo vive mientras la reserva está 'accepted'. Al pasar a
-  // in_progress/completed/cancelled se descarta la última posición.
+  // 4C-2: el rastreo del profesional solo vive mientras la reserva está
+  // 'accepted'. El rastreo del cliente se mantiene también en 'in_progress'
+  // (útil para que el pro vea al cliente en el lugar) y se descarta al
+  // finalizar/cancelar/expirar.
   if (to !== 'accepted') {
     await redis?.del(trackingKey(updated.id)).catch(() => undefined);
+  }
+  if (to === 'completed' || to === 'cancelled' || to === 'expired' || to === 'rejected') {
+    await redis?.del(clientTrackingKey(updated.id)).catch(() => undefined);
   }
   res.json({ data: toBookingDto(updated) });
 }

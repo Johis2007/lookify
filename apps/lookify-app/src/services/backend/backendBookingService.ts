@@ -168,6 +168,7 @@ export function createBackendBookingService(): BookingService {
         'VALIDATION',
       );
       const loc = dto?.location;
+      const clientLive = dto?.clientLive;
       return {
         bookingId: String(dto?.bookingId ?? bookingId),
         estado: (dto?.status ?? 'accepted') as ReservaTracking['estado'],
@@ -178,6 +179,12 @@ export function createBackendBookingService(): BookingService {
         ubicacion:
           loc && typeof loc.lat === 'number' && typeof loc.lng === 'number'
             ? { lat: loc.lat, lng: loc.lng, ts: Number(loc.ts ?? Date.now()) }
+            : null,
+        clientLive:
+          clientLive &&
+          typeof clientLive.lat === 'number' &&
+          typeof clientLive.lng === 'number'
+            ? { lat: clientLive.lat, lng: clientLive.lng, ts: Number(clientLive.ts ?? Date.now()) }
             : null,
         llegadaEn: dto?.arrivedAt ? Date.parse(dto.arrivedAt) : null,
         cliente: {

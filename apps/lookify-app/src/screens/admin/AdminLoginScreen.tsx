@@ -15,6 +15,7 @@ import {
   WEB_ADMIN_ONLY_MESSAGE,
 } from '../../lib/backend/adminAuth';
 import { colors, radius, spacing } from '../../theme/colors';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = {
   onLoggedIn: (session: AdminSession) => void;
@@ -49,6 +50,7 @@ export default function AdminLoginScreen({ onLoggedIn }: Props) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.safe}>
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -104,6 +106,7 @@ export default function AdminLoginScreen({ onLoggedIn }: Props) {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

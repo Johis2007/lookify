@@ -12,13 +12,24 @@ const ConsentBody = z
 
 // Identidad que la app valida en pantalla. El BFF la comprueba ANTES de crear
 // el usuario (mismo orden que el mock): así un documento duplicado no deja una
-// cuenta creada a medias. La persistencia ocurre después, en el perfil
-// (POST /api/clients/me o /api/professionals/me).
+// cuenta creada a medias. Con accountType='professional' el perfil
+// beauty_professionals se crea en la MISMA transacción que los
+// consentimientos: el rol pro se deriva de la existencia de esa fila y, sin
+// ella, el nuevo profesional entraría como cliente.
 const RegisterBody = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
     password: z.string().min(8).max(128),
     firstName: z.string().trim().min(1).max(80),
+    // Solo se usa para registrar profesionales en una sola petición.
+    accountType: z.enum(['client', 'professional']).optional(),
+    displayName: z.string().trim().min(1).max(120).optional(),
+    phone: z
+      .string()
+      .trim()
+      .regex(/^[+()\-\s\d]{7,20}$/, 'invalid_phone')
+      .max(24)
+      .optional(),
     consents: z
       .object({
         terms: ConsentBody,
@@ -113,7 +124,19 @@ export function createRegisterRouter(options: RegisterRouterOptions = {}): Route
       if (!appRoleId) throw new HttpError(503, 'registration_unavailable');
       if (!options.pool) throw new HttpError(503, 'registration_unavailable');
 
-      const { email, password, firstName, consents, documentType, documentNumber } = parsed.data;
+      const {
+        email,
+        password,
+        firstName,
+        accountType,
+        displayName,
+        phone,
+        consents,
+        documentType,
+        documentNumber,
+        nationality,
+        birthDate,
+      } = parsed.data;
 
       // Documento ya registrado (cliente o profesional): se decide ANTES de
       // crear el usuario, como en el mock, para no dejar cuentas a medias.
@@ -164,18 +187,57 @@ export function createRegisterRouter(options: RegisterRouterOptions = {}): Route
 
       const ip = (req.ip || '').slice(0, 64) || null;
       const userAgent = (req.get('user-agent') || '').slice(0, 512) || null;
+
+      // Consentimientos + perfil del profesional en UNA transacción. El usuario
+      // ya fue dado de alta en Directus (fuera de la BD); si aquí fallamos lo
+      // borramos para no dejar una cuenta a medias.
+      const client = await options.pool.connect();
+      let professionalId: number | null = null;
       try {
-        await options.pool.query(
+        await client.query('BEGIN');
+        await client.query(
           `INSERT INTO legal_consents (user_id, document, version, ip, user_agent)
            VALUES ($1, 'terms', $2, $4, $5),
                   ($1, 'privacy', $3, $4, $5)
            ON CONFLICT (user_id, document, version) DO NOTHING`,
           [id, consents.terms.version, consents.privacy.version, ip, userAgent],
         );
+        if (accountType === 'professional') {
+          const { rows } = await client.query<{ id: number }>(
+            `INSERT INTO beauty_professionals
+               ("user", display_name, phone, is_online, rating_avg, verification_status,
+                document_type, document_number, nationality, birth_date)
+             VALUES ($1, $2, $3, false, 0, 'pending', $4, $5, $6, $7)
+             RETURNING id`,
+            [
+              id,
+              displayName ?? firstName,
+              phone ?? null,
+              documentType ?? null,
+              documentNumber ?? null,
+              nationality ?? null,
+              birthDate ?? null,
+            ],
+          );
+          const createdId = Number(rows[0]?.id);
+          if (!Number.isInteger(createdId) || createdId <= 0) {
+            throw new Error('professional_profile_failed');
+          }
+          professionalId = createdId;
+        }
+        await client.query('COMMIT');
       } catch (err) {
-        if (process.env.DEBUG_BFF) console.error('[bff] register consents', err);
+        await client.query('ROLLBACK').catch(() => undefined);
+        if (process.env.DEBUG_BFF) console.error('[bff] register profile/consents', err);
         await adminFetch(`/users/${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => undefined);
-        throw new HttpError(502, 'registration_failed');
+        const duplicateDocument =
+          typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
+        throw new HttpError(
+          duplicateDocument ? 409 : 502,
+          duplicateDocument ? 'document_duplicate' : 'registration_failed',
+        );
+      } finally {
+        client.release();
       }
 
       res.status(201).json({
@@ -183,6 +245,7 @@ export function createRegisterRouter(options: RegisterRouterOptions = {}): Route
           id,
           email,
           firstName,
+          ...(professionalId ? { professionalId } : {}),
         },
       });
     }),

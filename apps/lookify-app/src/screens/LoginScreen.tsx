@@ -14,6 +14,7 @@ import { findMockUser } from '../data/mockUsers';
 import { loginValido, validarContrasenaLogin, validarCorreo } from '../utils/validators';
 import { clientErrorMessage, isBackendEnabled } from '../lib/backend/clientAuth';
 import { loginUniversal, proRouteOf, resumeSession } from '../lib/backend/unifiedAuth';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 interface LoginScreenProps {
   navigation: {
@@ -128,6 +129,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.screen}>
         <View style={styles.header}>
@@ -215,6 +217,7 @@ export default function LoginScreen({ navigation }: LoginScreenProps) {
         </View>
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

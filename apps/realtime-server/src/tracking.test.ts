@@ -11,7 +11,7 @@ import { createBookingsRouter } from './api/bookings.js';
 import { errorHandler } from './api/http.js';
 import { verifyAccessToken } from './auth.js';
 import { registerSocketHandlers, type RealtimeStats, type SocketRedis } from './socket.js';
-import { readLastPosition, trackingKey } from './tracking.js';
+import { clientTrackingKey, readLastClientPosition, readLastPosition, trackingKey } from './tracking.js';
 
 // 4C-2: rastreo en vivo por reserva. HTTP + socket contra el Postgres real,
 // con un Redis en memoria para comprobar claves y TTL lógico.
@@ -39,6 +39,9 @@ const stats: RealtimeStats = {
   locInvalid: 0,
   trackRelayed: 0,
   trackRateLimited: 0,
+  clientLocRelayed: 0,
+  clientLocRateLimited: 0,
+  clientLocInvalid: 0,
 };
 
 const store = new Map<string, string>();
@@ -327,6 +330,68 @@ maybe('la llegada del pro avisa al cliente por booking:event', async () => {
   } finally {
     client.close();
   }
+});
+
+maybe('el cliente dueño emite client:location y el pro lo recibe en la sala', async () => {
+  store.delete(clientTrackingKey(bookingOther));
+  const client = await connect(otherClient);
+  const pro = await connect(foreignProUser);
+  try {
+    // Ambos en la sala de la reserva
+    client.emit('booking:join', { booking_id: bookingOther });
+    pro.emit('booking:join', { booking_id: bookingOther });
+    await delay(120);
+    const got = nextEvent<{ booking_id: string; lat: number; lng: number }>(pro, 'client:location');
+    client.emit('client:location', { booking_id: bookingOther, lat: 4.711, lng: -74.022 });
+    const payload = await got;
+    assert.equal(payload.booking_id, String(bookingOther));
+    assert.equal(payload.lat, 4.711);
+    assert.equal(payload.lng, -74.022);
+    await delay(120);
+    const last = await readLastClientPosition(redis, bookingOther);
+    assert.deepEqual({ lat: last?.lat, lng: last?.lng }, { lat: 4.711, lng: -74.022 });
+  } finally {
+    client.close();
+    pro.close();
+  }
+});
+
+maybe('un tercero no puede emitir client:location de una reserva ajena', async () => {
+  store.delete(clientTrackingKey(bookingOther));
+  const stranger = await connect(clientUser); // no es dueño de bookingOther
+  try {
+    const error = nextEvent<{ code: string }>(stranger, 'error');
+    stranger.emit('client:location', { booking_id: bookingOther, lat: 4.7, lng: -74.0 });
+    const payload = await error;
+    assert.equal(payload.code, 'FORBIDDEN');
+    await delay(100);
+    assert.equal(store.has(clientTrackingKey(bookingOther)), false);
+  } finally {
+    stranger.close();
+  }
+});
+
+maybe('el pro asignado no puede emitir client:location (solo el cliente)', async () => {
+  store.delete(clientTrackingKey(bookingOther));
+  const pro = await connect(foreignProUser);
+  try {
+    const error = nextEvent<{ code: string }>(pro, 'error');
+    pro.emit('client:location', { booking_id: bookingOther, lat: 4.7, lng: -74.0 });
+    const payload = await error;
+    assert.equal(payload.code, 'FORBIDDEN');
+  } finally {
+    pro.close();
+  }
+});
+
+maybe('GET /tracking incluye clientLive cuando el cliente emitió ubicación', async () => {
+  // Guardar posición de cliente para bookingOther (dueño: otherClient)
+  store.set(clientTrackingKey(bookingOther), JSON.stringify({ lat: 4.733, lng: -74.044, ts: Date.now() }));
+  const ok = await api('GET', `/api/bookings/${bookingOther}/tracking`, otherClient);
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.data.clientLive.lat, 4.733);
+  assert.equal(ok.json.data.clientLive.lng, -74.044);
+  assert.ok(ok.json.data.client, 'debe conservar el destino fijo del cliente');
 });
 
 maybe('al iniciar el servicio se detiene el rastreo (clave borrada y FORBIDDEN)', async () => {

@@ -258,6 +258,7 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
           ]}
           trail={trail}
           follow={place.hasFix ? clientCoord : null}
+          myLocation={clientCoord}
           onProPress={handleProPress}
         />
         <View style={styles.liveBadge}>

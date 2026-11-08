@@ -21,6 +21,10 @@ export function trackingKey(bookingId: number | string): string {
   return `tracking:${bookingId}`;
 }
 
+export function clientTrackingKey(bookingId: number | string): string {
+  return `client-tracking:${bookingId}`;
+}
+
 export async function readLastPosition(
   redis: TrackingRedis,
   bookingId: number | string,
@@ -48,6 +52,35 @@ export async function saveLastPosition(
   pos: LastPosition,
 ): Promise<void> {
   await redis.set(trackingKey(bookingId), JSON.stringify(pos), 'EX', TRACKING_TTL_SECONDS);
+}
+
+export async function readLastClientPosition(
+  redis: TrackingRedis,
+  bookingId: number | string,
+): Promise<LastPosition | null> {
+  const raw = await redis.get(clientTrackingKey(bookingId));
+  if (!raw) return null;
+  try {
+    const p = JSON.parse(raw) as Partial<LastPosition>;
+    if (
+      typeof p.lat !== 'number' ||
+      typeof p.lng !== 'number' ||
+      typeof p.ts !== 'number'
+    ) {
+      return null;
+    }
+    return { lat: p.lat, lng: p.lng, ts: p.ts };
+  } catch {
+    return null;
+  }
+}
+
+export async function saveLastClientPosition(
+  redis: TrackingRedis,
+  bookingId: number | string,
+  pos: LastPosition,
+): Promise<void> {
+  await redis.set(clientTrackingKey(bookingId), JSON.stringify(pos), 'EX', TRACKING_TTL_SECONDS);
 }
 
 /**
@@ -111,6 +144,35 @@ export async function resolveTrackingParticipant(
     if (ownPro !== null && ownPro === b.professional) return b.id;
   }
   return null;
+}
+
+/**
+ * Autoriza el relevo de GPS del CLIENTE de una reserva: el emisor debe ser el
+ * cliente dueño de la reserva (derivado del token). El profesional, admin u
+ * otros usuarios reciben null. A diferencia del tracking del pro, no exige un
+ * estado específico: el cliente puede compartir su ubicación mientras la
+ * reserva no esté cancelada/expirada/completada.
+ */
+export async function resolveClientOwnerForTracking(
+  pool: pg.Pool,
+  user: AuthedUser,
+  bookingIdRaw: unknown,
+): Promise<number | null> {
+  if (user.isAdmin) return null;
+  const bookingId = Number(bookingIdRaw);
+  if (!Number.isInteger(bookingId) || bookingId <= 0) return null;
+  const { rows } = await pool.query<{
+    id: number;
+    client: string | null;
+    status: string | null;
+  }>('SELECT id, client, status FROM bookings WHERE id = $1', [bookingId]);
+  const b = rows[0];
+  if (!b) return null;
+  if (!b.client || b.client !== user.userId) return null;
+  if (b.status === 'cancelled' || b.status === 'expired' || b.status === 'completed' || b.status === 'rejected') {
+    return null;
+  }
+  return b.id;
 }
 
 /** Guarda una muestra del histórico GPS (PostGIS). No bloquea el relevo. */

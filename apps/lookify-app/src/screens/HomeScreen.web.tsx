@@ -14,6 +14,7 @@ import Button from '../components/Button';
 import { clearClientSession } from '../lib/backend/clientAuth';
 import { MOCK_PROFESSIONALS, CATEGORIAS, CategoriaId } from '../data/mockProfessionals';
 import { MOCK_CLIENT_LOCATION } from '../constants/geo';
+import { useLiveLocation } from '../hooks/useLiveLocation';
 import { getNearbyService } from '../services/nearbyService';
 import type { ProfesionalCercano } from '../services/nearbyService';
 import { isBackendEnabled } from '../services/backend/initBackend';
@@ -40,6 +41,13 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
   const usandoBackend = isBackendEnabled();
   const [cercanos, setCercanos] = useState<ProfesionalCercano[]>([]);
 
+  // GPS en vivo del navegador (expo-location en web): si el navegador lo
+  // concede, el mapa usa tu posición real; si no, el punto de referencia.
+  const { location: live } = useLiveLocation(true);
+  const clientCoord = live ?? MOCK_CLIENT_LOCATION;
+  // La búsqueda se refresca por zona (~100 m), no por cada fix de GPS.
+  const coordKey = `${clientCoord.latitude.toFixed(3)},${clientCoord.longitude.toFixed(3)}`;
+
   // En web no hay GPS en vivo: se consulta el nearby real desde el punto
   // de referencia (mismo mock que usa el mapa).
   useEffect(() => {
@@ -47,8 +55,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     let activo = true;
     getNearbyService()
       .listarCercanos({
-        lat: MOCK_CLIENT_LOCATION.latitude,
-        lng: MOCK_CLIENT_LOCATION.longitude,
+        lat: clientCoord.latitude,
+        lng: clientCoord.longitude,
         radioKm: RADIO_CERCANOS_KM,
       })
       .then((lista) => {
@@ -60,7 +68,8 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
     return () => {
       activo = false;
     };
-  }, [usandoBackend]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usandoBackend, coordKey]);
 
   const profesionalesEnMapa: {
     id: string;
@@ -84,13 +93,22 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
         longitude: p.longitude,
       }));
 
-  const pins = profesionalesEnMapa.map((p) => ({
-    id: p.id,
-    latitude: p.latitude,
-    longitude: p.longitude,
-    title: `${p.nombre}${p.calificacion ? ` · ⭐ ${p.calificacion.toFixed(1)}` : ''}`,
-    color: colors.navy,
-  }));
+  const pins = [
+    {
+      id: 'yo',
+      latitude: clientCoord.latitude,
+      longitude: clientCoord.longitude,
+      title: live ? 'Estás aquí' : 'Punto de referencia',
+      color: colors.sand,
+    },
+    ...profesionalesEnMapa.map((p) => ({
+      id: p.id,
+      latitude: p.latitude,
+      longitude: p.longitude,
+      title: `${p.nombre}${p.calificacion ? ` · ⭐ ${p.calificacion.toFixed(1)}` : ''}`,
+      color: colors.navy,
+    })),
+  ];
 
   const handleProPress = (id: string) => {
     if (!usandoBackend) {
@@ -135,7 +153,9 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerLabel}>Ubicación actual</Text>
-          <Text style={styles.headerLocation}>Chapinero, Bogotá</Text>
+          <Text style={styles.headerLocation}>
+            {live ? 'Tu ubicación actual' : 'Chapinero, Bogotá'}
+          </Text>
         </View>
         <View style={styles.headerActions}>
           <TouchableOpacity style={styles.notifButton}>
@@ -182,11 +202,10 @@ export default function HomeScreen({ navigation }: HomeScreenProps) {
       {/* Mapa unificado en web: Leaflet en vivo (mismo componente que nativo) */}
       <View style={styles.mapContainer}>
         <LookifyMap
-          initial={{
-            latitude: MOCK_CLIENT_LOCATION.latitude,
-            longitude: MOCK_CLIENT_LOCATION.longitude,
-          }}
+          initial={clientCoord}
           pins={pins}
+          follow={live ? clientCoord : null}
+          myLocation={clientCoord}
           onProPress={handleProPress}
         />
         <View style={styles.liveBadge}>

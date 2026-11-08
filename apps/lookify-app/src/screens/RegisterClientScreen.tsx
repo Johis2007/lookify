@@ -34,6 +34,7 @@ import {
 } from '../constants/legal/dataPolicyClientMeta';
 import { CLIENT_TERMS_VERSION } from '../constants/legal/termsClientMeta';
 import { formatDateLocalISO } from '../utils/formatDateLocalISO';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 const TIPOS_DOCUMENTO = [
   { id: 'CC' as const, label: 'C.C.' },
@@ -179,6 +180,7 @@ export default function RegisterClientScreen({ navigation }: Props) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <BackHeader variant="dark" />
@@ -325,6 +327,7 @@ export default function RegisterClientScreen({ navigation }: Props) {
         </View>
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

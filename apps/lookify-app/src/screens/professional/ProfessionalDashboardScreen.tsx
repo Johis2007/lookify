@@ -34,6 +34,10 @@ import { esEtapaServicioActiva, ServicioEnCurso } from '../../types/professional
 import { ETIQUETA_ETAPA_SERVICIO } from '../../constants/professionalServiceInProgress';
 import { FOTO_PERFIL_IMAGE_PICKER_QUALITY } from '../../constants/professionalProfilePhoto';
 import { formatCOP } from '../../utils/pricing';
+import LookifyMap from '../../components/LookifyMap';
+import { MOCK_CLIENT_LOCATION } from '../../constants/geo';
+import { useLiveLocation } from '../../hooks/useLiveLocation';
+import { emitProRadarLocation } from '../../lib/backend/realtime';
 
 type Props = NativeStackScreenProps<
   ProfessionalStackParamList,
@@ -421,6 +425,29 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
     !disponible || solicitudEntranteActiva || demoBusy || !params.solicitudId;
   const tieneResenas = (panel?.totalResenas ?? 0) > 0;
 
+  // GPS del profesional mientras está DISPONIBLE: alimenta el mapa del panel
+  // y el radar de clientes (location:update sin booking_id → geo:prof →
+  // professional_locations → /realtime/nearby). Sin reserva no hay tracking.
+  const { location: gps } = useLiveLocation(disponible);
+  const gpsRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  gpsRef.current = gps ? { latitude: gps.latitude, longitude: gps.longitude } : null;
+  const ultimoRadarRef = useRef(0);
+
+  useEffect(() => {
+    if (!disponible || !gps) return;
+    // Gate del servidor: 1 mensaje cada 5 s. El latido de 10 s evita que
+    // geo:prof (TTL 30 s) caduque cuando el GPS está quieto.
+    const publicar = () => {
+      const ahora = Date.now();
+      if (ahora - ultimoRadarRef.current < 5000) return;
+      ultimoRadarRef.current = ahora;
+      emitProRadarLocation(gps.latitude, gps.longitude);
+    };
+    publicar();
+    const id = setInterval(publicar, 10000);
+    return () => clearInterval(id);
+  }, [disponible, gps]);
+
   return (
     <SafeAreaView style={styles.container}>
       {loading ? (
@@ -509,6 +536,24 @@ export default function ProfessionalDashboardScreen({ navigation, route }: Props
               <ActivityIndicator style={styles.toggleSpinner} color={colors.navy} />
             ) : null}
             {toggleError ? <Text style={styles.inlineError}>{toggleError}</Text> : null}
+          </View>
+
+          {/* Mapa con tu posición en vivo (GPS del pro) mientras estás DISPONIBLE. */}
+          <View style={styles.mapContainer}>
+            <LookifyMap
+              initial={gps ?? MOCK_CLIENT_LOCATION}
+              pins={[
+                {
+                  id: 'yo',
+                  latitude: (gps ?? MOCK_CLIENT_LOCATION).latitude,
+                  longitude: (gps ?? MOCK_CLIENT_LOCATION).longitude,
+                  title: gps ? 'Estás aquí' : 'Punto de referencia',
+                  color: colors.sand,
+                },
+              ]}
+              follow={gps}
+              myLocation={gps}
+            />
           </View>
 
           {servicioActivo ? (
@@ -711,6 +756,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
     borderRadius: radius.md,
     padding: spacing.lg,
+  },
+  mapContainer: {
+    height: 220,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    backgroundColor: colors.white,
   },
   cardDisponible: {
     borderWidth: 2,

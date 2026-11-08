@@ -39,7 +39,7 @@ import {
 } from '../../types/professionalServiceInProgress';
 import { formatCOP } from '../../utils/pricing';
 import { useLiveLocation } from '../../hooks/useLiveLocation';
-import { emitBookingLocation } from '../../lib/backend/realtime';
+import { emitBookingLocation, joinBookingRoom, onClientLocation } from '../../lib/backend/realtime';
 
 type Props = NativeStackScreenProps<
   ProfessionalStackParamList,
@@ -114,6 +114,7 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
   const [pin, setPin] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
   const [pinDemo, setPinDemo] = useState<string | null>(null);
+  const [clientLive, setClientLive] = useState<{ lat: number; lng: number; ts: number } | null>(null);
   const [eligiendoMotivo, setEligiendoMotivo] = useState(false);
   const [motivo, setMotivo] = useState<MotivoCancelacionProfesional | null>(null);
   const [desfaseMs, setDesfaseMs] = useState(0);
@@ -225,6 +226,25 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
     emitBookingLocation(servicioId, gpsLocation.latitude, gpsLocation.longitude);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enCamino, servicioId, gpsLocation?.latitude, gpsLocation?.longitude]);
+
+  // Geolocalización del cliente en tiempo real: el pro se une a la sala y
+  // recibe actualizaciones. Funciona mientras el servicio esté activo.
+  useEffect(() => {
+    if (!servicioId) return;
+    const proIdNum = Number(profesionalId);
+    if (Number.isFinite(proIdNum)) {
+      try {
+        joinBookingRoom(servicioId, proIdNum);
+      } catch {
+        /* noop */
+      }
+    }
+    const unsub = onClientLocation((p) => {
+      if (String(p.bookingId) !== String(servicioId)) return;
+      setClientLive({ lat: p.lat, lng: p.lng, ts: p.ts });
+    });
+    return () => unsub();
+  }, [servicioId, profesionalId]);
 
   useEffect(() => {
     if (!__DEV__ || !servicioId || !profesionalId) {
@@ -518,6 +538,11 @@ export default function ProfessionalServiceInProgressScreen({ navigation, route 
               <Text style={styles.meta}>Duración estimada: {servicio.duracionMin} min</Text>
               <Text style={styles.clientLabel}>Cliente</Text>
               <Text style={styles.clientName}>{servicio.clientePrimerNombre}</Text>
+              {clientLive ? (
+                <Text style={styles.gpsText}>
+                  Ubicación del cliente en vivo · hace {Math.max(0, Math.floor((tickNow - clientLive.ts) / 1000))} s
+                </Text>
+              ) : null}
 
               {muestraDireccion ? (
                 <View style={styles.addressBlock}>

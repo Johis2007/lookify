@@ -38,6 +38,7 @@ import {
   type VerificationFilter,
   type VerificationPro,
 } from '../../lib/backend/admin';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<AdminStackParamList, 'AdminVerification'>;
 
@@ -150,6 +151,7 @@ export default function AdminVerificationScreen({ navigation }: Props) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <BackHeader
@@ -304,6 +306,7 @@ export default function AdminVerificationScreen({ navigation }: Props) {
         )}
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

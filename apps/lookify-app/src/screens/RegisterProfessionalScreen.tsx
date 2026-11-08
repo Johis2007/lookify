@@ -38,6 +38,7 @@ import { getProfessionalRegistrationService } from '../services/professionalRegi
 import { ServiceError } from '../services/errors';
 import { TERMS_VERSION } from '../constants/legal/termsMeta';
 import { DATA_POLICY_VERSION } from '../constants/legal/dataPolicyMeta';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 const TIPOS_DOCUMENTO = [
   { id: 'CC' as const, label: 'C.C.' },
@@ -180,14 +181,7 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
         consentimientoPoliticaDatos: { version: DATA_POLICY_VERSION, aceptadoEn },
       });
 
-      resetProfessionalSession(navigation, 'ProfessionalServiceSelection', {
-        profesionalId: result.profesionalId,
-        solicitudId: result.solicitudId,
-        nombre: result.nombre,
-        email: result.email,
-        estadoSolicitud: result.estadoSolicitud,
-        onboardingPaso: result.onboardingPaso,
-      });
+      resetProfessionalSession(navigation, 'ProfessionalLogin');
     } catch (error) {
       if (error instanceof ServiceError) {
         if (error.code === 'EMAIL_DUPLICATE') {
@@ -214,6 +208,7 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <BackHeader variant="dark" />
@@ -369,6 +364,14 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
         </ScrollView>
 
         <View style={styles.footer}>
+          <TouchableOpacity
+            style={styles.loginLink}
+            onPress={() => resetProfessionalSession(navigation, 'ProfessionalLogin')}
+          >
+            <Text style={styles.loginLinkText}>
+              ¿Ya tienes cuenta? <Text style={styles.loginLinkAccent}>Ingresar</Text>
+            </Text>
+          </TouchableOpacity>
           <Button
             label="Crear cuenta"
             onPress={handleSubmit}
@@ -379,6 +382,7 @@ export default function RegisterProfessionalScreen({ navigation }: Props) {
         </View>
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 
@@ -546,5 +550,19 @@ const styles = StyleSheet.create({
   },
   submitButton: {
     marginBottom: 0,
+  },
+  loginLink: {
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  loginLinkText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+  },
+  loginLinkAccent: {
+    color: colors.sand,
+    fontWeight: '600',
   },
 });

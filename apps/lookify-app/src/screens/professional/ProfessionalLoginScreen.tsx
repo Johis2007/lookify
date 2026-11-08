@@ -18,6 +18,7 @@ import { resetProfessionalSession } from '../../navigation/professionalNavigatio
 import { ProfessionalStackParamList } from '../../navigation/ProfessionalStackNavigator';
 import type { NavigationProp } from '@react-navigation/native';
 import type { RootStackParamList } from '../../navigation/AppNavigator';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<ProfessionalStackParamList, 'ProfessionalLogin'>;
 
@@ -76,6 +77,7 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
   };
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.screen}>
         <View style={styles.header}>
@@ -171,6 +173,7 @@ export default function ProfessionalLoginScreen({ navigation }: Props) {
         </View>
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

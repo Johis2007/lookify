@@ -59,16 +59,18 @@ export type ReservaDetalle = {
   servicioNombre: string | null;
 };
 
-/** Última posición conocida del pro (4C-2). */
+/** Última posición conocida del pro (4C-2) y del cliente (live). */
 export type ReservaTracking = {
   bookingId: string;
   estado: EstadoReserva;
   profesionalId: string | null;
   /** null si aún no hay ninguna posición en Redis (o expiró el TTL). */
   ubicacion: { lat: number; lng: number; ts: number } | null;
+  /** Ubicación en vivo del cliente (solo si el cliente la está emitiendo). */
+  clientLive: { lat: number; lng: number; ts: number } | null;
   /** Epoch ms del evento 'llegada' (null si aún no llega). */
   llegadaEn: number | null;
-  /** Coordenadas del destino (dirección de la reserva). */
+  /** Coordenadas del destino (dirección fija de la reserva). */
   cliente: { lat: number | null; lng: number | null };
 };
 

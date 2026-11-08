@@ -12,7 +12,9 @@ import {
 import {
   insertTrackingHistory,
   resolveAssignedProfessionalForTracking,
+  resolveClientOwnerForTracking,
   resolveTrackingParticipant,
+  saveLastClientPosition,
   saveLastPosition,
   TRACKING_MIN_INTERVAL_MS,
 } from './tracking.js';
@@ -33,6 +35,9 @@ export type RealtimeStats = {
   locInvalid: number;
   trackRelayed: number;
   trackRateLimited: number;
+  clientLocRelayed: number;
+  clientLocRateLimited: number;
+  clientLocInvalid: number;
 };
 
 // Subconjunto de Redis que usan los handlers (permite inyectar un fake en tests).
@@ -111,11 +116,12 @@ function checkRateLimit(socketId: string, stats: RealtimeStats): { ok: boolean; 
 // 4C-2: anti-saturación del rastreo por reserva (1 relevo / 2 s por socket).
 const lastTrack = new Map<string, number>();
 
-function checkTrackingRate(socketId: string, stats: RealtimeStats): boolean {
+function checkTrackingRate(socketId: string, stats: RealtimeStats, isClient = false): boolean {
   const now = Date.now();
   const last = lastTrack.get(socketId) || 0;
   if (now - last < TRACKING_MIN_INTERVAL_MS) {
-    stats.trackRateLimited += 1;
+    if (isClient) stats.clientLocRateLimited += 1;
+    else stats.trackRateLimited += 1;
     return false;
   }
   lastTrack.set(socketId, now);
@@ -256,6 +262,46 @@ export function registerSocketHandlers(io: Server, deps: SocketHandlerDeps): voi
       const payload = { professional_id: String(pid), lat, lng, ts: now };
       // Fan-out a su zona (clientes del mapa/radar).
       socket.to(`zone:${zone}`).emit('zone:update', [payload]);
+    });
+
+    // GPS del CLIENTE de una reserva: solo el dueño puede publicar, y solo a la
+    // sala booking:{id}. El profesional asignado recibe 'client:location' para
+    // ver al cliente moverse en tiempo real (complementa la dirección fija).
+    socket.on('client:location', async ({ booking_id, lat, lng }) => {
+      if (!isValidLatLng(lat, lng)) {
+        stats.clientLocInvalid += 1;
+        return;
+      }
+      if (!isValidId(booking_id)) {
+        stats.clientLocInvalid += 1;
+        return;
+      }
+      const bid = await resolveClientOwnerForTracking(pool, me, booking_id);
+      if (bid === null) {
+        forbidden('client:location');
+        return;
+      }
+      if (!checkTrackingRate(socket.id, stats, true)) {
+        socket.emit('error', {
+          code: 'RATE_LIMITED',
+          message: 'Máximo 1 relevo de ubicación de cliente cada 2s',
+        });
+        return;
+      }
+      const now = Date.now();
+      const payload = {
+        booking_id: String(bid),
+        lat,
+        lng,
+        ts: now,
+      };
+      io.to(`booking:${bid}`).emit('client:location', payload);
+      try {
+        await saveLastClientPosition(redis, bid, { lat, lng, ts: now });
+      } catch (e) {
+        logErr('client tracking redis', { err: String(e), bid });
+      }
+      stats.clientLocRelayed += 1;
     });
 
     socket.on('booking:join', async ({ booking_id, professional_id }) => {

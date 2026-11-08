@@ -6,7 +6,8 @@
 // (initial/pins/trail/route/follow/onProPress): las pantallas no cambian.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { WebView, type WebViewMessageEvent } from 'react-native-webview';
 
 export type ProPin = {
@@ -30,6 +31,8 @@ type Props = {
   /** Centro a seguir con cámara animada (tracking en vivo). */
   follow?: { latitude: number; longitude: number } | null;
   onProPress?: (id: string) => void;
+  /** Ubicación propia: si viene, muestra el botón "volver a mi ubicación". */
+  myLocation?: { latitude: number; longitude: number } | null;
 };
 
 const ESRI_TILES = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
@@ -80,11 +83,14 @@ window.__lookifyUpdate = function (d) {
 window.__lookifyFollow = function (lat, lng) {
   try { map.setView([lat, lng], Math.max(map.getZoom(), 14), { animate: true }); } catch (e) {}
 };
+window.__lookifyRecenter = function (lat, lng) {
+  try { map.setView([lat, lng], 16, { animate: true }); } catch (e) {}
+};
 window.ReactNativeWebView.postMessage('READY');
 </script></body></html>`;
 }
 
-export default function LookifyMap({ initial, pins = [], trail = [], route = [], follow, onProPress }: Props) {
+export default function LookifyMap({ initial, pins = [], trail = [], route = [], follow, onProPress, myLocation }: Props) {
   const ref = useRef<WebView<{}> | null>(null);
   const pressRef = useRef(onProPress);
   const lastFollow = useRef<{ latitude: number; longitude: number } | null>(null);
@@ -159,6 +165,21 @@ export default function LookifyMap({ initial, pins = [], trail = [], route = [],
           </Text>
         </View>
       )}
+      {myLocation ? (
+        <Pressable
+          style={styles.recenter}
+          onPress={() => {
+            if (!ready) return;
+            ref.current?.injectJavaScript(
+              `window.__lookifyRecenter(${myLocation.latitude}, ${myLocation.longitude});true;`
+            );
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Volver a mi ubicación"
+        >
+          <MaterialCommunityIcons name="crosshairs-gps" size={22} color="#1F4E5A" />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -176,4 +197,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   loadingT: { color: '#0f1e36', fontSize: 12, fontWeight: '700' },
+  recenter: {
+    position: 'absolute',
+    right: 12,
+    bottom: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000000',
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+  },
 });

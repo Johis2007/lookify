@@ -32,6 +32,9 @@ export type BffStats = {
   locInvalid: number;
   trackRelayed: number;
   trackRateLimited: number;
+  clientLocRelayed: number;
+  clientLocRateLimited: number;
+  clientLocInvalid: number;
   nearbyQueries: number;
   nearbyErrors: number;
   batchRuns: number;

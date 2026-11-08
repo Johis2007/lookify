@@ -34,6 +34,7 @@ import { getCatalogService } from '../../services/catalogService';
 import { getProfessionalVerificationService } from '../../services/professionalVerificationService';
 import { ServiceError } from '../../services/errors';
 import { EstadoVerificacionResponse } from '../../types/professionalVerification';
+import KeyboardSafeView from '../../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<
   ProfessionalStackParamList,
@@ -311,6 +312,7 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
     reenvioEsperaMs <= 0;
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Image source={require('../../../assets/logo-lookify.png')} style={styles.logo} />
@@ -472,6 +474,7 @@ export default function ProfessionalVerificationScreen({ navigation, route }: Pr
         )}
       </View>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

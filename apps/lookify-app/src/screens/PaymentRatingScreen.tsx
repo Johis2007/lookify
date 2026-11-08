@@ -20,6 +20,7 @@ import { mockEnviarCalificacion } from '../utils/mockEnviarCalificacion';
 import { getBookingService } from '../services/bookingService';
 import { ServiceError } from '../services/errors';
 import { isBackendEnabled } from '../services/backend/initBackend';
+import KeyboardSafeView from '../components/KeyboardSafeView';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PaymentRating'>;
 
@@ -153,6 +154,7 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
   const comentarioLen = comentario.length;
 
   return (
+    <KeyboardSafeView>
     <SafeAreaView style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -224,6 +226,7 @@ export default function PaymentRatingScreen({ navigation, route }: Props) {
         </View>
       </ScrollView>
     </SafeAreaView>
+    </KeyboardSafeView>
   );
 }
 

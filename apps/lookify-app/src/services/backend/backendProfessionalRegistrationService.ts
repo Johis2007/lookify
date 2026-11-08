@@ -1,7 +1,10 @@
 // src/services/backend/backendProfessionalRegistrationService.ts
-// Registro real: POST /users (público, como mobile-web) + login +
-// beauty_professionals en pending. guardarServicios usa professional_services
-// (borra y re-inserta). Sin códigos de activación en Directus.
+// Registro real: el BFF crea el usuario EN EL SERVIDOR, con consentimientos y
+// perfil beauty_professionals (pending) en una sola operación. SIN login
+// automático: al terminar, la app vuelve al login principal con "Ingresar".
+// guardarServicios usa professional_services (borra y re-inserta) y requiere
+// la sesión creada al iniciar sesión manualmente. Sin códigos de activación
+// en Directus.
 
 import {
   ProfessionalRegistrationService,

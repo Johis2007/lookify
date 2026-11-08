@@ -40,7 +40,7 @@ export default function ProfessionalStackNavigator() {
   return (
     <>
       <ProfessionalIncomingRequestListener />
-      <Stack.Navigator initialRouteName="ProfessionalLogin" screenOptions={{ headerShown: false }}>
+      <Stack.Navigator initialRouteName="RegisterProfessional" screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ProfessionalLogin" component={ProfessionalLoginScreen} />
       <Stack.Screen name="RegisterProfessional" component={RegisterProfessionalScreen} />
       <Stack.Screen name="ProfessionalTermsRead" component={ProfessionalTermsReadScreen} />

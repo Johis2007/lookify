@@ -24,11 +24,13 @@ import {
 import { BACKEND } from '../lib/backend/config';
 import {
   connectClientRealtime,
+  emitClientLocation,
   joinClientBookingRoom,
   onBookingEvent,
   onBookingLocation,
   onBookingStatus,
 } from '../lib/backend/realtime';
+import { useLiveLocation } from '../hooks/useLiveLocation';
 import { loadClientSession } from '../lib/backend/clientAuth';
 import { getBookingService } from '../services/bookingService';
 
@@ -280,6 +282,22 @@ export default function TrackingView({ navigation, route }: Props) {
     };
   }, [modoReal, bookingId, applyPosition]);
 
+  // --- Backend: el cliente emite su GPS en vivo (throttle 3 s) para que el
+  // profesional lo vea moverse. Solo mientras la reserva está activa.
+  const { location: myGps } = useLiveLocation(
+    Boolean(modoReal && bookingId && estado !== 'cancelled' && estado !== 'expired' && estado !== 'completed'),
+    { timeInterval: 3000, distanceInterval: 5 }
+  );
+  const lastEmitRef = useRef(0);
+  useEffect(() => {
+    if (!modoReal || !bookingId || !myGps) return;
+    if (estado === 'cancelled' || estado === 'expired' || estado === 'completed') return;
+    const now = Date.now();
+    if (now - lastEmitRef.current < 3000) return;
+    lastEmitRef.current = now;
+    emitClientLocation(String(bookingId), myGps.latitude, myGps.longitude);
+  }, [modoReal, bookingId, myGps, estado]);
+
   // --- Backend: al iniciar/completar (o cancelar) se detiene el rastreo ---
   useEffect(() => {
     if (!modoReal || !datosValidos) return;
@@ -401,6 +419,7 @@ export default function TrackingView({ navigation, route }: Props) {
         ]}
         trail={trail}
         follow={follow}
+        myLocation={clientCoord}
       />
 
       <SafeAreaView style={styles.statusBar} edges={['top']} pointerEvents="none">

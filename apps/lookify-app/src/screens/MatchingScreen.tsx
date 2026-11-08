@@ -29,10 +29,12 @@ import { MOCK_CLIENT_LOCATION } from '../constants/geo';
 import {
   connectClientRealtime,
   disconnectClientRealtime,
+  emitClientLocation,
   joinClientBookingRoom,
   onBookingStatus,
 } from '../lib/backend/realtime';
 import { loadClientSession } from '../lib/backend/clientAuth';
+import { useLiveLocation } from '../hooks/useLiveLocation';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Matching'>;
 
@@ -67,6 +69,22 @@ export default function MatchingScreen({ navigation, route }: Props) {
   const [expiraEn, setExpiraEn] = useState<number | null>(null);
   const [segundos, setSegundos] = useState<number | null>(null);
   const [errorReal, setErrorReal] = useState<string | null>(null);
+
+  // El cliente emite su GPS en vivo mientras busca (para que el pro lo ubique
+  // al aceptar). Throttle 3 s; solo en modo real con reserva activa.
+  const { location: myGps } = useLiveLocation(
+    Boolean(modoReal && bookingId && estadoReal === 'buscando'),
+    { timeInterval: 3000, distanceInterval: 5 }
+  );
+  const lastClientEmitRef = useRef(0);
+  useEffect(() => {
+    if (!modoReal || !bookingId || !myGps) return;
+    if (estadoReal !== 'buscando') return;
+    const now = Date.now();
+    if (now - lastClientEmitRef.current < 3000) return;
+    lastClientEmitRef.current = now;
+    emitClientLocation(String(bookingId), myGps.latitude, myGps.longitude);
+  }, [modoReal, bookingId, myGps, estadoReal]);
 
   const allowExitRef = useRef(false);
   const alertOpenRef = useRef(false);

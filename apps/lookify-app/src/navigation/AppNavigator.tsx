@@ -2,7 +2,7 @@
 // Stack de navegación principal. A medida que agreguemos pantallas
 // (Matching, Profile, Tracking, Payment), se registran aquí.
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -24,6 +24,7 @@ import ClientPrivacyReadScreen from '../screens/ClientPrivacyReadScreen';
 import ProfessionalStackNavigator, {
   ProfessionalStackParamList,
 } from './ProfessionalStackNavigator';
+import { initBackend } from '../services/backend/initBackend';
 import { CategoriaId } from '../data/mockProfessionals';
 import { ProfesionalPublico } from '../services/bookingService';
 
@@ -89,6 +90,10 @@ export type RootStackParamList = {
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function AppNavigator() {
+  useEffect(() => {
+    initBackend();
+  }, []);
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>

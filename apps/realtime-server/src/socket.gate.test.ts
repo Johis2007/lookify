@@ -33,6 +33,9 @@ const stats: RealtimeStats = {
   locInvalid: 0,
   trackRelayed: 0,
   trackRateLimited: 0,
+  clientLocRelayed: 0,
+  clientLocRateLimited: 0,
+  clientLocInvalid: 0,
 };
 
 // Redis en memoria: basta para comprobar qué claves escribe (o no) el gate.

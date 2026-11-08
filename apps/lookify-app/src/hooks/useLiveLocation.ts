@@ -26,7 +26,15 @@ type PermissionState = 'unknown' | 'granted' | 'denied';
 
 export function useLiveLocation(
   active = true,
-  opts?: { timeInterval?: number; distanceInterval?: number; maxAccuracyM?: number }
+  opts?: {
+    timeInterval?: number;
+    distanceInterval?: number;
+    maxAccuracyM?: number;
+    /** Preparado para background location (A). Mantener false por defecto:
+     *  activar requiere permisos ACCESS_BACKGROUND_LOCATION, plugin config y
+     *  TaskManager. No habilitar sin revisar impacto en batería/Play Store. */
+    background?: boolean;
+  }
 ): { location: LiveCoords | null; error: string | null; permission: PermissionState } {
   const [location, setLocation] = useState<LiveCoords | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +43,7 @@ export function useLiveLocation(
   const timeInterval = opts?.timeInterval ?? 2000;
   const distanceInterval = opts?.distanceInterval ?? 5;
   const maxAccuracyM = opts?.maxAccuracyM ?? 30;
+  const background = opts?.background === true;
 
   useEffect(() => {
     if (!active) return;
