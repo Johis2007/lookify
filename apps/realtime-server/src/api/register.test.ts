@@ -154,6 +154,59 @@ maybe('rechaza registro sin consentimientos y no crea usuario', async () => {
   assert.equal(user.rowCount, 0);
 });
 
+maybe('rechaza documento ya registrado ANTES de crear el usuario', async () => {
+  const ownerEmail = `qa-identity-owner-${randomUUID()}@lookify.app`;
+  const documentNumber = `DOC${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`;
+  const owner = await pool.query<{ id: string }>(
+    `INSERT INTO directus_users (id, email, first_name, status)
+     VALUES (gen_random_uuid(), $1, 'QA Identity', 'active') RETURNING id`,
+    [ownerEmail],
+  );
+  const ownerId = owner.rows[0].id;
+  await pool.query(
+    `INSERT INTO client_profiles ("user", display_name, document_type, document_number, nationality, birth_date)
+     VALUES ($1, 'QA Identity', 'CC', $2, 'Colombiana', '1990-01-01')`,
+    [ownerId, documentNumber],
+  );
+
+  try {
+    // Mismo documento que ya existe en client_profiles → 409 y SIN usuario nuevo.
+    const email = emailFor('documento-duplicado');
+    const duplicate = await post(baseUrl, {
+      email,
+      password: 'Password123!',
+      firstName: 'QA Documento',
+      consents: CONSENTS,
+      documentType: 'CC',
+      documentNumber,
+      nationality: 'Colombiana',
+      birthDate: '1992-05-05',
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.json?.error, 'document_duplicate');
+    const created = await pool.query('SELECT 1 FROM directus_users WHERE email = $1', [email]);
+    assert.equal(created.rowCount, 0);
+
+    // Documento distinto → el registro sigue funcionando.
+    const okEmail = emailFor('documento-ok');
+    createdEmails.push(okEmail);
+    const ok = await post(baseUrl, {
+      email: okEmail,
+      password: 'Password123!',
+      firstName: 'QA Documento Ok',
+      consents: CONSENTS,
+      documentType: 'Pasaporte',
+      documentNumber: `P${documentNumber}`.slice(0, 40),
+      nationality: 'Colombiana',
+      birthDate: '1992-05-05',
+    });
+    assert.equal(ok.status, 201);
+  } finally {
+    await pool.query('DELETE FROM client_profiles WHERE "user" = $1', [ownerId]);
+    await pool.query('DELETE FROM directus_users WHERE id = $1', [ownerId]);
+  }
+});
+
 maybe('rate limit propio responde 429', async () => {
   const app = express();
   app.use(express.json());

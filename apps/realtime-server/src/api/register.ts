@@ -10,6 +10,10 @@ const ConsentBody = z
   })
   .strict();
 
+// Identidad que la app valida en pantalla. El BFF la comprueba ANTES de crear
+// el usuario (mismo orden que el mock): así un documento duplicado no deja una
+// cuenta creada a medias. La persistencia ocurre después, en el perfil
+// (POST /api/clients/me o /api/professionals/me).
 const RegisterBody = z
   .object({
     email: z.string().trim().toLowerCase().email().max(254),
@@ -21,8 +25,31 @@ const RegisterBody = z
         privacy: ConsentBody,
       })
       .strict(),
+    documentType: z.enum(['CC', 'Pasaporte']).optional(),
+    documentNumber: z
+      .string()
+      .trim()
+      .min(6)
+      .max(40)
+      .regex(/^[A-Za-z0-9]+$/, 'invalid_document')
+      .optional(),
+    nationality: z.string().trim().min(2).max(80).optional(),
+    // YYYY-MM-DD (formatDateLocalISO de la app).
+    birthDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_birth_date')
+      .optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if ((value.documentNumber === undefined) !== (value.documentType === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['documentNumber'],
+        message: 'document_requires_type',
+      });
+    }
+  });
 
 export type RegisterRouterOptions = {
   appRoleId?: string;
@@ -86,7 +113,21 @@ export function createRegisterRouter(options: RegisterRouterOptions = {}): Route
       if (!appRoleId) throw new HttpError(503, 'registration_unavailable');
       if (!options.pool) throw new HttpError(503, 'registration_unavailable');
 
-      const { email, password, firstName, consents } = parsed.data;
+      const { email, password, firstName, consents, documentType, documentNumber } = parsed.data;
+
+      // Documento ya registrado (cliente o profesional): se decide ANTES de
+      // crear el usuario, como en el mock, para no dejar cuentas a medias.
+      if (documentNumber && documentType && options.pool) {
+        const dup = await options.pool.query(
+          `SELECT 1 FROM beauty_professionals WHERE document_type = $1 AND document_number = $2
+           UNION ALL
+           SELECT 1 FROM client_profiles WHERE document_type = $1 AND document_number = $2
+           LIMIT 1`,
+          [documentType, documentNumber],
+        );
+        if (dup.rows[0]) throw new HttpError(409, 'document_duplicate');
+      }
+
       const created = await adminFetch('/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -208,3 +208,42 @@ maybe('rating_avg se recalcula y las reseñas exponen solo el primer nombre', as
   assert.equal(body.includes(user1), false);
   assert.equal(body.includes('@'), false);
 });
+
+maybe('identidad del registro: se persiste y el documento duplicado da 409', async () => {
+  const stamp = Date.now();
+  const first = await mkUser(`client.identity-a-${stamp}@lookify.app`, 'Cliente Identidad');
+  const second = await mkUser(`client.identity-b-${stamp}@lookify.app`, 'Cliente Identidad Dos');
+  try {
+    const created = await api('POST', '/api/clients/me', first, {
+      displayName: 'Cliente Identidad',
+      documentType: 'CC',
+      documentNumber: '1234567890',
+      nationality: 'Colombiana',
+      birthDate: '1995-04-12',
+    });
+    assert.ok(created.status === 200 || created.status === 201);
+    assert.equal(created.json.data.documentType, 'CC');
+    assert.equal(created.json.data.documentNumber, '1234567890');
+    assert.equal(created.json.data.nationality, 'Colombiana');
+    assert.equal(created.json.data.birthDate, '1995-04-12');
+
+    // Se lee de vuelta con el mismo formato (to_char, sin zona horaria).
+    const read = await api('GET', '/api/clients/me', first);
+    assert.equal(read.status, 200);
+    assert.equal(read.json.data.birthDate, '1995-04-12');
+
+    // Mismo documento en otra cuenta → índice único parcial.
+    const duplicate = await api('POST', '/api/clients/me', second, {
+      displayName: 'Otra Cuenta',
+      documentType: 'CC',
+      documentNumber: '1234567890',
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.json.error, 'document_duplicate');
+  } finally {
+    await pool.query('DELETE FROM client_profiles WHERE "user" = ANY($1::uuid[])', [
+      [first, second],
+    ]);
+    await pool.query('DELETE FROM directus_users WHERE id = ANY($1::uuid[])', [[first, second]]);
+  }
+});

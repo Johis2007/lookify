@@ -81,6 +81,54 @@ maybe('POST /me crea el perfil: user del token, pending, rating 0, offline', asy
   assert.equal(row.rows[0].user, newProUser);
 });
 
+maybe('POST /me persiste la identidad del registro y el documento es único', async () => {
+  const stamp = Date.now();
+  const mkProUser = async (label: string): Promise<string> => {
+    const r = await pool.query<{ id: string }>(
+      `INSERT INTO directus_users (id, first_name, email, status)
+       VALUES (gen_random_uuid(), 'Pro Identidad', $1, 'active') RETURNING id`,
+      [`qa-identity-${label}-${stamp}@lookify.app`],
+    );
+    return r.rows[0].id;
+  };
+  const first = await mkProUser('a');
+  const second = await mkProUser('b');
+  try {
+    const created = await api('POST', '/api/professionals/me', first, {
+      displayName: 'Pro Identidad',
+      documentType: 'Pasaporte',
+      documentNumber: 'AB123456',
+      nationality: 'Colombiana',
+      birthDate: '1990-07-21',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.json.data.documentType, 'Pasaporte');
+    assert.equal(created.json.data.documentNumber, 'AB123456');
+    assert.equal(created.json.data.nationality, 'Colombiana');
+    assert.equal(created.json.data.birthDate, '1990-07-21');
+
+    // La identidad se lee de vuelta (GET propio) con el mismo formato.
+    const read = await api('GET', '/api/professionals/me', first);
+    assert.equal(read.status, 200);
+    assert.equal(read.json.data.documentNumber, 'AB123456');
+    assert.equal(read.json.data.birthDate, '1990-07-21');
+
+    // Mismo documento en otra cuenta → índice único parcial.
+    const duplicate = await api('POST', '/api/professionals/me', second, {
+      displayName: 'Otro Pro',
+      documentType: 'Pasaporte',
+      documentNumber: 'AB123456',
+    });
+    assert.equal(duplicate.status, 409);
+    assert.equal(duplicate.json.error, 'document_duplicate');
+  } finally {
+    await pool.query('DELETE FROM beauty_professionals WHERE "user" = ANY($1::uuid[])', [
+      [first, second],
+    ]);
+    await pool.query('DELETE FROM directus_users WHERE id = ANY($1::uuid[])', [[first, second]]);
+  }
+});
+
 maybe('POST /me por segunda vez -> 409 (sin duplicados)', async () => {
   const res = await api('POST', '/api/professionals/me', newProUser, { displayName: 'Duplicado' });
   assert.equal(res.status, 409);

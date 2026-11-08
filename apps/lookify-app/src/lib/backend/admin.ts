@@ -38,6 +38,12 @@ export type VerificationPro = {
   avatar?: string | null;
   verification_status?: string;
   verification_note?: string | null;
+  /** Identidad recogida en el registro (persistida, antes se descartaba). */
+  document_type?: string | null;
+  document_number?: string | null;
+  nationality?: string | null;
+  /** 'YYYY-MM-DD' (campo date de Directus). */
+  birth_date?: string | null;
 };
 
 export type VerificationDoc = {
@@ -115,7 +121,8 @@ export async function fetchVerificationQueue(filter: VerificationFilter): Promis
   return adminApi<VerificationPro[]>(
     'GET',
     `/items/beauty_professionals?filter[verification_status][_eq]=${filter}` +
-      `&limit=50&sort=-id&fields=id,display_name,specialties,bio,years_exp,phone,rating_avg,avatar,verification_status,verification_note`,
+      `&limit=50&sort=-id&fields=id,display_name,specialties,bio,years_exp,phone,rating_avg,avatar,verification_status,verification_note,` +
+      `document_type,document_number,nationality,birth_date`,
   );
 }
 

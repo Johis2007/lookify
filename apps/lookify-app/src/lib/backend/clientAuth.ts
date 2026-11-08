@@ -10,6 +10,7 @@ import { bffApi } from './bff';
 import { findMockUser } from '../../data/mockUsers';
 import { CLIENT_TERMS_VERSION } from '../../constants/legal/termsClientMeta';
 import { CLIENT_DATA_POLICY_VERSION } from '../../constants/legal/dataPolicyClientMeta';
+import type { TipoDocumentoId } from '../../utils/validators';
 
 export type ClientSession = {
   token: string;
@@ -62,16 +63,49 @@ function toDisplayName(me: BffMe, fallback: string): string {
   return full || fallback || 'Cliente';
 }
 
-export async function ensureClientProfile(token: string, _userId: string, nombre: string, phone?: string): Promise<void> {
+/** Identidad que la app recoge en el registro (la persiste el BFF). */
+export type IdentityRegistro = {
+  tipoDocumento?: TipoDocumentoId;
+  numeroDocumento?: string;
+  nacionalidad?: string;
+  fechaNacimiento?: string;
+};
+
+/** Campos de identidad en camelCase, listos para el BFF. Vacío si no hay. */
+function identityBody(identity?: IdentityRegistro) {
+  const numero = identity?.numeroDocumento?.trim();
+  const nacionalidad = identity?.nacionalidad?.trim();
+  return {
+    ...(identity?.tipoDocumento && numero
+      ? { documentType: identity.tipoDocumento, documentNumber: numero }
+      : {}),
+    ...(nacionalidad ? { nationality: nacionalidad } : {}),
+    ...(identity?.fechaNacimiento ? { birthDate: identity.fechaNacimiento } : {}),
+  };
+}
+
+/** Cuerpo del perfil de cliente: siempre displayName + lo que venga. */
+function clientProfileBody(nombre: string, phone?: string, identity?: IdentityRegistro) {
+  return {
+    displayName: nombre,
+    ...(phone?.trim() ? { phone: phone.trim() } : {}),
+    ...identityBody(identity),
+  };
+}
+
+export async function ensureClientProfile(
+  token: string,
+  _userId: string,
+  nombre: string,
+  phone?: string,
+  identity?: IdentityRegistro,
+): Promise<void> {
   // Ola 2a: el perfil se crea/actualiza solo por el BFF; el user sale del JWT.
   await bffApi(
     'POST',
     '/api/clients/me',
     token,
-    {
-      displayName: nombre,
-      ...(phone?.trim() ? { phone: phone.trim() } : {}),
-    },
+    clientProfileBody(nombre, phone, identity),
     'VALIDATION',
   ).catch(() => undefined);
 }
@@ -121,10 +155,20 @@ export async function registerClient(input: {
   email: string;
   password: string;
   telefono?: string;
+  tipoDocumento?: TipoDocumentoId;
+  numeroDocumento?: string;
+  nacionalidad?: string;
+  fechaNacimiento?: string;
 }): Promise<ClientSession> {
   const nombre = input.nombre.trim();
   const cleanEmail = input.email.trim();
   if (!nombre || !cleanEmail || !input.password) throw new ServiceError('VALIDATION');
+  const identity: IdentityRegistro = {
+    tipoDocumento: input.tipoDocumento,
+    numeroDocumento: input.numeroDocumento,
+    nacionalidad: input.nacionalidad,
+    fechaNacimiento: input.fechaNacimiento,
+  };
   await bffApi('POST', '/api/auth/register', null, {
     email: cleanEmail,
     password: input.password,
@@ -133,10 +177,22 @@ export async function registerClient(input: {
       terms: { version: CLIENT_TERMS_VERSION },
       privacy: { version: CLIENT_DATA_POLICY_VERSION },
     },
+    // El BFF valida el documento ANTES de crear la cuenta (sin duplicados).
+    ...identityBody(identity),
   });
   const { accessToken, refreshToken } = await loginDirectus(cleanEmail, input.password);
   const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);
-  await ensureClientProfile(accessToken, me.id, nombre, input.telefono);
+  // La identidad se persiste en el perfil. Un documento duplicado debe llegar
+  // a la pantalla; el resto de fallos se ignoran como antes (la cuenta ya
+  // quedó creada y el login igual funciona).
+  await bffApi(
+    'POST',
+    '/api/clients/me',
+    accessToken,
+    clientProfileBody(nombre, input.telefono, identity),
+  ).catch((e: unknown) => {
+    if (e instanceof ServiceError && e.code === 'DOCUMENTO_DUPLICADO') throw e;
+  });
   const session: ClientSession = {
     token: accessToken,
     ...(refreshToken ? { refreshToken } : {}),
@@ -152,6 +208,7 @@ export function clientErrorMessage(error: unknown): string {
   if (error instanceof ServiceError) {
     if (error.code === 'INVALID_CREDENTIALS') return 'Correo o contraseña incorrectos';
     if (error.code === 'EMAIL_DUPLICATE') return 'Este correo ya está registrado';
+    if (error.code === 'DOCUMENTO_DUPLICADO') return 'Este documento ya está registrado';
     if (error.code === 'NETWORK') return 'Sin conexión con el servidor. Revisa tu internet.';
     return error.message || 'No se pudo completar. Intenta de nuevo.';
   }

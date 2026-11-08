@@ -33,6 +33,7 @@ import {
   CLIENT_DATA_POLICY_VERSION,
 } from '../constants/legal/dataPolicyClientMeta';
 import { CLIENT_TERMS_VERSION } from '../constants/legal/termsClientMeta';
+import { formatDateLocalISO } from '../utils/formatDateLocalISO';
 
 const TIPOS_DOCUMENTO = [
   { id: 'CC' as const, label: 'C.C.' },
@@ -152,6 +153,11 @@ export default function RegisterClientScreen({ navigation }: Props) {
         email: form.email,
         password: form.password,
         telefono: form.telefono,
+        // Identidad validada en pantalla: se persiste en el perfil del cliente.
+        tipoDocumento,
+        numeroDocumento: form.numeroDocumento,
+        nacionalidad: form.nacionalidad,
+        ...(fechaNacimiento ? { fechaNacimiento: formatDateLocalISO(fechaNacimiento) } : {}),
       });
       navigation.reset({
         index: 0,

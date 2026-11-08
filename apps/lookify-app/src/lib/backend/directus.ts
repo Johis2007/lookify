@@ -42,6 +42,7 @@ export function toServiceError(status: number, body: any, fallback: ServiceError
   if (status === 403) return new ServiceError('PROFESIONAL_NO_HABILITADO');
   if (status === 404) return new ServiceError(fallback);
   if (status === 409) {
+    if (raw.includes('document_duplicate')) return new ServiceError('DOCUMENTO_DUPLICADO');
     if (raw.includes('email_duplicate')) return new ServiceError('EMAIL_DUPLICATE');
     return new ServiceError('SOLICITUD_NO_VIGENTE');
   }

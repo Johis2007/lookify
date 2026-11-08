@@ -26,7 +26,15 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
   return {
     async registrarProfesional(datos: RegistrarProfesionalRequest): Promise<RegistrarProfesionalResponse> {
       // Registro por BFF (sin token). El servidor fija el rol App User; el
-      // cliente nunca envía role/policies/token.
+      // cliente nunca envía role/policies/token. La identidad se valida aquí
+      // (documento duplicado → 409 antes de crear la cuenta) y se persiste en
+      // el perfil: antes se descartaba.
+      const identity = {
+        documentType: datos.tipoDocumento,
+        documentNumber: datos.numeroDocumento.trim(),
+        nationality: datos.nacionalidad.trim(),
+        birthDate: datos.fechaNacimiento,
+      };
       await bffApi('POST', '/api/auth/register', null, {
         email: datos.email.trim(),
         password: datos.password,
@@ -35,6 +43,7 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
           terms: { version: datos.consentimientoTerminos.version },
           privacy: { version: datos.consentimientoPoliticaDatos.version },
         },
+        ...identity,
       });
       const { accessToken, refreshToken } = await loginDirectus(datos.email.trim(), datos.password);
       const me = await bffApi<{ id: string }>('GET', '/api/users/me', accessToken);
@@ -43,6 +52,7 @@ export function createBackendProfessionalRegistrationService(): ProfessionalRegi
       const created = await bffApi<{ id: number }>('POST', '/api/professionals/me', accessToken, {
         displayName: datos.nombre.trim(),
         phone: datos.telefono,
+        ...identity,
       });
       const professionalId = Number(created?.id);
       if (!Number.isInteger(professionalId) || professionalId <= 0) {

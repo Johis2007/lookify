@@ -47,6 +47,13 @@ const FILTERS: { key: VerificationFilter; label: string }[] = [
   { key: 'rejected', label: '❌ Rechazados' },
 ];
 
+/** 'YYYY-MM-DD' → 'dd/mm/aaaa' (sin desfase de zona horaria). */
+function formatBirthDate(value?: string | null): string {
+  if (!value) return '—';
+  const [y, m, d] = value.split('-');
+  return y && m && d ? `${d}/${m}/${y}` : value;
+}
+
 export default function AdminVerificationScreen({ navigation }: Props) {
   const { width } = useWindowDimensions();
   const wide = width >= 1024;
@@ -229,6 +236,11 @@ export default function AdminVerificationScreen({ navigation }: Props) {
                       <Text style={styles.dName}>{selected.display_name}</Text>
                       <Text style={styles.dSub}>{selected.specialties || selected.bio || 'Sin especialidad'}</Text>
                       <Text style={styles.dMeta}>📞 {selected.phone || '—'} · ⭐ {selected.rating_avg ?? 'nuevo'}</Text>
+                      <Text style={styles.dMeta}>
+                        🪪 {selected.document_type || '—'}
+                        {selected.document_number ? ` ${selected.document_number}` : ''} · 🌎{' '}
+                        {selected.nationality || '—'} · 🎂 {formatBirthDate(selected.birth_date)}
+                      </Text>
                     </View>
                   </View>
 

@@ -73,11 +73,32 @@ const PhoneField = z
   .regex(/^[+()\-\s\d]{7,20}$/, 'invalid_phone')
   .max(24);
 
+// Identidad que la app recoge en el registro (cliente y profesional usan el
+// mismo vocabulario). Se valida en pantalla y aquí se persiste: antes se
+// descartaba al enviar. El número es único por tipo (índice parcial en DB).
+const IdentityFields = {
+  documentType: z.enum(['CC', 'Pasaporte']).optional(),
+  documentNumber: z
+    .string()
+    .trim()
+    .min(6)
+    .max(40)
+    .regex(/^[A-Za-z0-9]+$/, 'invalid_document')
+    .optional(),
+  nationality: z.string().trim().min(2).max(80).optional(),
+  // YYYY-MM-DD (formatDateLocalISO de la app).
+  birthDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'invalid_birth_date')
+    .optional(),
+};
+
 const CreateProfileBody = z
   .object({
     displayName: z.string().trim().min(1).max(120),
     phone: PhoneField.optional(),
     bio: z.string().trim().max(2000).optional(),
+    ...IdentityFields,
   })
   .strict();
 
@@ -186,8 +207,10 @@ const FIELD_MAP: Record<string, string> = {
   verificationStatus: 'verification_status',
 };
 
-const PROFILE_FIELDS =
-  'id, user, display_name, bio, avatar, is_online, rating_avg, verification_status, verification_note, years_exp, specialties, phone, activated_at';
+const PROFILE_FIELDS = `id, user, display_name, bio, avatar, is_online, rating_avg,
+  verification_status, verification_note, years_exp, specialties, phone, activated_at,
+  document_type, document_number, nationality,
+  to_char(birth_date, 'YYYY-MM-DD') AS birth_date`;
 
 export type ProfessionalRow = {
   id: number;
@@ -203,6 +226,11 @@ export type ProfessionalRow = {
   specialties: unknown;
   phone: string | null;
   activated_at: Date | null;
+  document_type: string | null;
+  document_number: string | null;
+  nationality: string | null;
+  /** 'YYYY-MM-DD' (to_char en la consulta, sin ambigüedad de zona horaria). */
+  birth_date: string | null;
 };
 
 function toProfileDto(row: ProfessionalRow) {
@@ -218,6 +246,10 @@ function toProfileDto(row: ProfessionalRow) {
     yearsExp: row.years_exp,
     specialties: row.specialties,
     phone: row.phone,
+    documentType: row.document_type,
+    documentNumber: row.document_number,
+    nationality: row.nationality,
+    birthDate: row.birth_date,
     activated: row.verification_status === 'verified' && row.activated_at !== null,
   };
 }
@@ -1289,11 +1321,27 @@ export function createProfessionalsRouter(
 
       const { rows } = await pool.query<ProfessionalRow>(
         `INSERT INTO beauty_professionals
-           ("user", display_name, phone, bio, is_online, rating_avg, verification_status)
-         VALUES ($1, $2, $3, $4, false, 0, 'pending')
+           ("user", display_name, phone, bio, is_online, rating_avg, verification_status,
+            document_type, document_number, nationality, birth_date)
+         VALUES ($1, $2, $3, $4, false, 0, 'pending', $5, $6, $7, $8)
          RETURNING ${PROFILE_FIELDS}`,
-        [user.userId, body.displayName, body.phone ?? null, body.bio ?? null],
-      );
+        [
+          user.userId,
+          body.displayName,
+          body.phone ?? null,
+          body.bio ?? null,
+          body.documentType ?? null,
+          body.documentNumber ?? null,
+          body.nationality ?? null,
+          body.birthDate ?? null,
+        ],
+      ).catch((err: unknown) => {
+        // Mismo documento ya registrado por otro usuario (índice único parcial).
+        if ((err as { code?: string }).code === '23505') {
+          throw new HttpError(409, 'document_duplicate');
+        }
+        throw err;
+      });
       res.status(201).json({ data: toProfileDto(rows[0]) });
     }),
   );
