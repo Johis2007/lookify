@@ -22,6 +22,8 @@
     "db:cleanup:radar": "node scripts/radar-cleanup.mjs"
   },
   "dependencies": {
+    "expo": "58.0.24",
+    "expo-splash-screen": "58.0.14",
     "express": "^5.2.1"
   }
 }
